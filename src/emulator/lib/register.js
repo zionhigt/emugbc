@@ -28,18 +28,20 @@ export function FlagRegister(size) {
     const parent = Register(size);
     class FlagRegister extends parent {
         constructor(properties) {
+            super();
             for (const key of Object.keys(properties)) {
                 const priv = `_${key}`;
                 this[priv] = properties[key];
+                const self = this;
                 Object.defineProperty(this, key, {
                     get() { 
                         const offset = properties[key].offset;
-                        return byte.getBit(this.getValue(), offset);
+                        return byte.getBit(self.getValue(), offset);
                      },
                     set(v) {
                         const offset = properties[key].offset;
-                        this.setValue(
-                            byte.setBit(this.getValue(), offset, v)
+                        self.setValue(
+                            byte.setBit(self.getValue(), offset, v)
                         );
                     },
                     enumerable: true,
@@ -47,7 +49,30 @@ export function FlagRegister(size) {
             }
         }
     }
+
+    return FlagRegister;
 }
+
+export class Extendedregister {
+    constructor(highRegister, lowRegister) {
+        this.highRegister = highRegister;
+        this.lowRegister = lowRegister;
+    }
+
+    getValue() {
+        return byte.buildU16(
+            this.highRegister.getValue(),
+            this.lowRegister.getValue()
+        )
+    }
+
+    setValue(value) {
+        const { high, low } = byte.U16to2U8(value);
+        this.highRegister.setValue(high);
+        this.lowRegister.setValue(low);
+    }
+}
+
 
 export function Register(size) {
     switch(size) {
