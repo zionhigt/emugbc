@@ -249,11 +249,35 @@ export default function() {
     });
 
     //------------------ BITWISE NOT -------------------------------
-    buildInstruction("CPL", 2, 1, function(cpu) {
+    buildInstruction("CPL", 1, 1, function(cpu) {
         const a = byte.revertBits(cpu.registers.A.getValue());
         cpu.registers.A.setValue(a);
         cpu.registers.F.N = 1;
         cpu.registers.F.H = 1;
+    });
+    //------------------ DECIMAL -------------------------------
+    buildInstruction("DAA", 1, 1, function(cpu) {
+        const n = cpu.registers.F.N;
+        const h = cpu.registers.F.H;
+        const c = cpu.registers.F.C;
+        let a = cpu.registers.A.getValue();
+        let acc = 0;
+        if (n) {
+            if (h) acc += 0x6;
+            if (c) acc += 0x60;
+            cpu.registers.A.setValue(a - acc);
+
+        } else {
+            if (h || (a & 0xf) > 0x9) acc += 0x6;
+            if (c || a > 0x99) {
+                acc += 0x60;
+                cpu.registers.F.C = 1;
+            }
+            cpu.registers.A.setValue(a + acc);
+        }
+        a = cpu.registers.A.getValue();
+        cpu.updateZeroFlag(a);
+        cpu.registers.F.H = 0;
     });
 
     return instructions;
