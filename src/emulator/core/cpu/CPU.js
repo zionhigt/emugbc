@@ -68,6 +68,31 @@ export default class CPU {
         this.registers = new CPURegister();
         this.memory = memory;
         this.stack = new Stack(this.memory, this.registers.SP);
+        this._ime = false;
+        this._imeScheduled = false;
+        this._halt = false;
+    }
+
+    get ime() {
+        return this._ime;
+    }
+    get imeScheduled() {
+        return this._imeScheduled;
+    }
+    get halted() {
+        return this._halt;
+    }
+    di() {
+        this._ime = false;
+        this._imeScheduled = false;
+    }
+
+    ei() {
+        this._imeScheduled = true;
+    }
+
+    halt() {
+        this._halt = true;
     }
 
     updateZeroFlag(value) {
