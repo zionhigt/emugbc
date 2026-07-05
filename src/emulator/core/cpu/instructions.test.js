@@ -313,6 +313,38 @@ describe('instructions', () => {
     });
   });
 
+  describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
+    it('expose CCF avec son id et une méthode run', () => {
+      expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
+      expect(instructions.CCF.id).toBe('CCF');
+      expect(typeof instructions.CCF.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'C=0 devient 1', F: 0b0000_0000, expF: 0b0001_0000 },
+      { cas: 'C=1 devient 0 (INVERSION, pas mise à 1)', F: 0b0001_0000, expF: 0b0000_0000 },
+      { cas: 'N et H sont forcés à 0 au passage', F: 0b0110_0000, expF: 0b0001_0000 },
+      { cas: 'Z est préservé (Z=1 reste 1)', F: 0b1001_0000, expF: 0b1000_0000 },
+      { cas: 'tout levé : Z survit, N H tombent, C s\'inverse', F: 0b1111_0000, expF: 0b1000_0000 },
+    ].map((c) => ({ ...c, label: `CCF avec F=${bin(c.F)}` })))(
+      '$cas : $label',
+      ({ F: flags, expF, label }) => {
+        const cpu = new CPU();
+        cpu.registers.F.setValue(flags);
+        instructions.CCF.run(cpu);
+        expect(bin(cpu.registers.F.getValue()), `${label} : ${dumpFlags(cpu.registers.F)}`).toBe(bin(expF));
+      },
+    );
+
+    it('est une involution : deux CCF reviennent au point de départ (pour C)', () => {
+      const cpu = new CPU();
+      cpu.registers.F.setValue(0b0001_0000); // C=1
+      instructions.CCF.run(cpu);
+      instructions.CCF.run(cpu);
+      expect(+!!cpu.registers.F.C, `après deux CCF : ${dumpFlags(cpu.registers.F)}`).toBe(1);
+    });
+  });
+
   describe('BIT_u3_r8 : teste le bit u3 de r8 — Z = INVERSE du bit, C PRÉSERVÉ', () => {
     it('expose BIT_u3_r8 avec son id et une méthode run', () => {
       expect(instructions.BIT_u3_r8, 'instructions.BIT_u3_r8 est absent').toBeDefined();
