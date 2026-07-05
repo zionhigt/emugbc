@@ -163,6 +163,32 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('CP_A_HL : compare A avec l\'octet pointé — flags de SUB, résultat JETÉ', () => {
+    it('expose CP_A_HL avec son id et une méthode run', () => {
+      expect(instructions.CP_A_HL, 'instructions.CP_A_HL est absent').toBeDefined();
+      expect(instructions.CP_A_HL.id).toBe('CP_A_HL');
+      expect(typeof instructions.CP_A_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'égalité via le pointeur → Z levé', A: 0x42, byte: 0x42, Z: 1, H: 0, C: 0 },
+      { cas: 'A plus petit → emprunts levés', A: 0x05, byte: 0x07, Z: 0, H: 1, C: 1 },
+    ].map((c) => ({ ...c, label: `CP_A_HL(A=${hex(c.A, 2)}, [0xC123]=${hex(c.byte, 2)})` })))(
+      '$cas : $label',
+      ({ A, byte, Z, H, C, label }) => {
+        const cpu = setup({ A, byte, cIn: 0 });
+        instructions.CP_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.A.getValue(), 2), `${label} → A doit rester INTACT, ${dumpFlags(F)}`).toBe(hex(A, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N=1 (soustraction), ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(C);
+        expect(hex(cpu.memory.read(0xc123), 2), `${label} → l'octet pointé intact`).toBe(hex(byte, 2));
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).

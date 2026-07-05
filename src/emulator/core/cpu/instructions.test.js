@@ -313,6 +313,62 @@ describe('instructions', () => {
     });
   });
 
+  describe('CP_A_r8 / CP_A_n8 : compare A avec l\'opérande — flags de SUB, résultat JETÉ', () => {
+    it('expose CP_A_r8 et CP_A_n8', () => {
+      for (const id of ['CP_A_r8', 'CP_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    const cpCases = [
+      { cas: 'égalité → Z levé, aucun emprunt', A: 0x42, val: 0x42, Z: 1, H: 0, C: 0 },
+      { cas: 'A plus grand, soustraction sage', A: 0x19, val: 0x05, Z: 0, H: 0, C: 0 },
+      { cas: 'A plus petit → emprunt global ET de nibble (5-7)', A: 0x05, val: 0x07, Z: 0, H: 1, C: 1 },
+      { cas: 'emprunt du nibble seulement (0x10-0x01)', A: 0x10, val: 0x01, Z: 0, H: 1, C: 0 },
+      { cas: 'emprunt global sans emprunt de nibble (0x1F-0x2E)', A: 0x1f, val: 0x2e, Z: 0, H: 0, C: 1 },
+    ];
+
+    const expectCp = (cpu, label, { A, Z, H, C }) => {
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), `${label} → A doit rester INTACT (le résultat est jeté), ${dumpFlags(F)}`).toBe(hex(A, 2));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N doit valoir 1 (c'est une soustraction), ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.H, `${label} → H (emprunt du nibble bas), ${dumpFlags(F)}`).toBe(H);
+      expect(+!!F.C, `${label} → C (emprunt : val > A), ${dumpFlags(F)}`).toBe(C);
+    };
+
+    it.each(
+      cpCases.map((c) => ({ ...c, instr: 'CP_A_r8', label: `CP_A_r8(A=${hex(c.A, 2)}, r8=${hex(c.val, 2)})` })),
+    )('$cas : $label', ({ instr, A, val, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.B.setValue(val);
+      cpu.registers.F.N = 0; // doit être forcé à 1
+      instructions.CP_A_r8.run(cpu, cpu.registers.B);
+      expectCp(cpu, label, { A, Z, H, C });
+      expect(hex(cpu.registers.B.getValue(), 2), `${label} → B intact`).toBe(hex(val, 2));
+    });
+
+    it.each(
+      cpCases.map((c) => ({ ...c, label: `CP_A_n8(A=${hex(c.A, 2)}, n8=${hex(c.val, 2)})` })),
+    )('immédiat — $cas : $label', ({ A, val, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 0;
+      instructions.CP_A_n8.run(cpu, val);
+      expectCp(cpu, label, { A, Z, H, C });
+    });
+
+    it("CP A,A : toujours égal — l'idiome « A est-il nul... non, égal à lui-même » : Z=1, H=0, C=0", () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x9c);
+      instructions.CP_A_r8.run(cpu, cpu.registers.A);
+      expectCp(cpu, 'CP_A_r8(A=0x9C, A)', { A: 0x9c, Z: 1, H: 0, C: 0 });
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
