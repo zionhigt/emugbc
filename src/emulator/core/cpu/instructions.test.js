@@ -619,6 +619,73 @@ describe('instructions', () => {
     });
   });
 
+  describe('INC_r8 : incrémente r8 — Z/N/H posés, C PRÉSERVÉ même sur wrap', () => {
+    it('expose INC_r8 avec son id et une méthode run', () => {
+      expect(instructions.INC_r8, 'instructions.INC_r8 est absent').toBeDefined();
+      expect(instructions.INC_r8.id).toBe('INC_r8');
+      expect(typeof instructions.INC_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'incrément simple', val: 0x41, cIn: 0, expVal: 0x42, Z: 0, H: 0 },
+      { cas: 'retenue de nibble (0x0F + 1 = 0x10)', val: 0x0f, cIn: 1, expVal: 0x10, Z: 0, H: 1 },
+      { cas: 'wrap 0xFF → 0x00 : Z et H levés, C=0 INTACT', val: 0xff, cIn: 0, expVal: 0x00, Z: 1, H: 1 },
+      { cas: 'wrap 0xFF → 0x00 : C=1 reste 1 (INC ne touche jamais C)', val: 0xff, cIn: 1, expVal: 0x00, Z: 1, H: 1 },
+      { cas: 'borne exacte du nibble sans retenue (0x0E + 1)', val: 0x0e, cIn: 0, expVal: 0x0f, Z: 0, H: 0 },
+    ].map((c) => ({ ...c, label: `INC_r8(B=${hex(c.val, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ val, cIn, expVal, Z, H, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 1; // doit être forcé à 0 (addition)
+        cpu.registers.F.C = cIn; // ne doit JAMAIS bouger
+        instructions.INC_r8.run(cpu, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.B.getValue(), 2), `${label} → B, ${dumpFlags(F)}`).toBe(hex(expVal, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit valoir 0 (addition), ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H (retenue du nibble bas), ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C doit être PRÉSERVÉ (il valait ${cIn}), ${dumpFlags(F)}`).toBe(cIn);
+      },
+    );
+  });
+
+  describe('INC_r16 / INC_SP : incrémente un registre 16 bits — AUCUN flag touché', () => {
+    it('expose INC_r16 et INC_SP', () => {
+      for (const id of ['INC_r16', 'INC_SP']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('INC_r16 : incrément simple, flags intacts (tous levés le restent)', () => {
+      const cpu = new CPU();
+      cpu.registers.BC.setValue(0x1234);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.INC_r16.run(cpu, cpu.registers.BC);
+      expect(hex(cpu.registers.BC.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0x1235));
+      expect(bin(cpu.registers.F.getValue()), 'aucun flag ne doit bouger').toBe(bin(0b1111_0000));
+    });
+
+    it('INC_r16 : wrap 0xFFFF → 0x0000 sans lever le moindre flag (même pas Z sur le 0 final !)', () => {
+      const cpu = new CPU();
+      cpu.registers.DE.setValue(0xffff);
+      instructions.INC_r16.run(cpu, cpu.registers.DE);
+      expect(hex(cpu.registers.DE.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0x0000));
+      expect(bin(cpu.registers.F.getValue()), 'flags toujours vierges').toBe(bin(0b0000_0000));
+    });
+
+    it('INC_SP : SP est la cible implicite, flags intacts', () => {
+      const cpu = new CPU();
+      cpu.registers.SP.setValue(0xfffd);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.INC_SP.run(cpu);
+      expect(hex(cpu.registers.SP.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0xfffe));
+      expect(bin(cpu.registers.F.getValue()), 'aucun flag ne doit bouger').toBe(bin(0b1111_0000));
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();

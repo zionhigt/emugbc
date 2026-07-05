@@ -217,6 +217,33 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('INC_HL : incrémente l\'octet pointé par HL, EN mémoire — flags de INC r8', () => {
+    it('expose INC_HL avec son id et une méthode run', () => {
+      expect(instructions.INC_HL, 'instructions.INC_HL est absent').toBeDefined();
+      expect(instructions.INC_HL.id).toBe('INC_HL');
+      expect(typeof instructions.INC_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'incrément simple en mémoire', byte: 0x41, cIn: 0, expByte: 0x42, Z: 0, H: 0 },
+      { cas: 'retenue de nibble (0x0F + 1)', byte: 0x0f, cIn: 1, expByte: 0x10, Z: 0, H: 1 },
+      { cas: 'wrap 0xFF → 0x00 : Z et H levés, C intact', byte: 0xff, cIn: 1, expByte: 0x00, Z: 1, H: 1 },
+    ].map((c) => ({ ...c, label: `INC_HL([0xC123]=${hex(c.byte, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ byte, cIn, expByte, Z, H, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        instructions.INC_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.memory.read(0xc123), 2), `${label} → l'octet doit être incrémenté EN mémoire, ${dumpFlags(F)}`).toBe(hex(expByte, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N=0 (addition), ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C préservé, ${dumpFlags(F)}`).toBe(cIn);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (le pointeur) ne doit pas bouger').toBe(hex(0xc123));
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
