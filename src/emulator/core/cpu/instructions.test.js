@@ -686,6 +686,104 @@ describe('instructions', () => {
     });
   });
 
+  describe('JP_n16 / JP_cc_n16 / JP_HL : sauts absolus — PC remplacé, aucun flag', () => {
+    it('expose JP_n16, JP_cc_n16 et JP_HL', () => {
+      for (const id of ['JP_n16', 'JP_cc_n16', 'JP_HL']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('JP_n16 : PC = n16, flags intacts', () => {
+      const cpu = new CPU();
+      cpu.registers.PC.setValue(0xc003);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.JP_n16.run(cpu, 0x1234);
+      expect(hex(cpu.registers.PC.getValue()), 'PC remplacé').toBe(hex(0x1234));
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+
+    it.each([
+      { cc: 'Z', F: 0b1000_0000, taken: true },
+      { cc: 'Z', F: 0b0000_0000, taken: false },
+      { cc: 'NC', F: 0b0000_0000, taken: true },
+      { cc: 'C', F: 0b0000_0000, taken: false },
+    ].map((c) => ({
+      ...c,
+      label: `JP_cc_n16("${c.cc}", 0x1234) avec F=${bin(c.F)}`,
+      attendu: c.taken ? 'prise' : 'pas prise',
+    })))('JP_cc_n16, condition $attendu : $label', ({ cc, F: flags, taken, label }) => {
+      const cpu = new CPU();
+      cpu.registers.PC.setValue(0xc003);
+      cpu.registers.SP.setValue(0xfffe);
+      cpu.registers.F.setValue(flags);
+      instructions.JP_cc_n16.run(cpu, cc, 0x1234);
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.PC.getValue()), `${label} → PC, ${dumpFlags(F)}`).toBe(hex(taken ? 0x1234 : 0xc003));
+      expect(hex(cpu.registers.SP.getValue()), `${label} → JP ne touche JAMAIS à la pile (pas un CALL !)`).toBe(hex(0xfffe));
+      expect(bin(F.getValue()), `${label} → flags intacts`).toBe(bin(flags));
+    });
+
+    it('JP_HL : PC = valeur de HL, HL intact — le saut le moins cher du CPU (1 cycle)', () => {
+      const cpu = new CPU();
+      cpu.registers.PC.setValue(0xc003);
+      cpu.registers.HL.setValue(0x8000);
+      instructions.JP_HL.run(cpu);
+      expect(hex(cpu.registers.PC.getValue()), 'PC reçoit la valeur de HL').toBe(hex(0x8000));
+      expect(hex(cpu.registers.HL.getValue()), 'HL ne bouge pas').toBe(hex(0x8000));
+    });
+  });
+
+  describe('JR_n16 / JR_cc_n16 : sauts relatifs — PC = PC + offset signé (octet brut)', () => {
+    // Convention : PC pointe déjà après le JR (2 octets consommés par le décodeur).
+    // L'offset reçu est l'octet encodé BRUT ; l'instruction l'interprète via sign8.
+    it('expose JR_n16 et JR_cc_n16', () => {
+      for (const id of ['JR_n16', 'JR_cc_n16']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it.each([
+      { cas: 'saut avant', pc: 0xc002, offset: 0x05, expPC: 0xc007 },
+      { cas: 'offset 0 : le no-op de la doc (JR vers l\'instruction suivante)', pc: 0xc002, offset: 0x00, expPC: 0xc002 },
+      { cas: 'offset -2 (0xFE) : la boucle infinie de la doc (retour sur le JR lui-même)', pc: 0xc002, offset: 0xfe, expPC: 0xc000 },
+      { cas: 'saut arrière maximal (-128)', pc: 0xc002, offset: 0x80, expPC: 0xbf82 },
+      { cas: 'saut avant maximal (+127)', pc: 0xc002, offset: 0x7f, expPC: 0xc081 },
+      { cas: 'wrap 16 bits vers le haut (PC bas + offset négatif)', pc: 0x0001, offset: 0xfe, expPC: 0xffff },
+    ].map((c) => ({ ...c, label: `JR_n16(PC=${hex(c.pc)}, offset=${hex(c.offset, 2)})` })))(
+      '$cas : $label',
+      ({ pc, offset, expPC, label }) => {
+        const cpu = new CPU();
+        cpu.registers.PC.setValue(pc);
+        cpu.registers.F.setValue(0b1111_0000);
+        instructions.JR_n16.run(cpu, offset);
+        expect(hex(cpu.registers.PC.getValue()), `${label} → PC`).toBe(hex(expPC));
+        expect(bin(cpu.registers.F.getValue()), `${label} → flags intacts`).toBe(bin(0b1111_0000));
+      },
+    );
+
+    it.each([
+      { cc: 'NZ', F: 0b0000_0000, taken: true },
+      { cc: 'NZ', F: 0b1000_0000, taken: false },
+      { cc: 'C', F: 0b0001_0000, taken: true },
+      { cc: 'NC', F: 0b0001_0000, taken: false },
+    ].map((c) => ({
+      ...c,
+      label: `JR_cc_n16("${c.cc}", 0x05) avec F=${bin(c.F)}`,
+      attendu: c.taken ? 'prise' : 'pas prise',
+    })))('JR_cc_n16, condition $attendu : $label', ({ cc, F: flags, taken, label }) => {
+      const cpu = new CPU();
+      cpu.registers.PC.setValue(0xc002);
+      cpu.registers.F.setValue(flags);
+      instructions.JR_cc_n16.run(cpu, cc, 0x05);
+      expect(hex(cpu.registers.PC.getValue()), `${label} → PC, ${dumpFlags(cpu.registers.F)}`).toBe(hex(taken ? 0xc007 : 0xc002));
+      expect(bin(cpu.registers.F.getValue()), `${label} → flags intacts`).toBe(bin(flags));
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
