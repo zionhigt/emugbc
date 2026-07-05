@@ -280,5 +280,50 @@ export default function() {
         cpu.registers.F.H = 0;
     });
 
+    //------------------ DECREMENTS -------------------------------
+
+    function DEC8(cpu, reg) {
+        const a = reg.getValue();
+        const raw = a - 1;
+        reg.decrement();
+        const operation = {
+            id: 1,
+            a, b: 1,
+            size: 8,
+            raw,
+        }
+        cpu
+        .updateZeroFlag(raw)
+        .updateNAndHFlags(operation)
+    }
+    function DEC16(reg) {
+        reg.decrement();
+    }
+
+    buildInstruction("DEC_r8", 1, 1, function(cpu, r8) {
+        return DEC8(cpu, r8);
+    });
+    buildInstruction("DEC_HL", 3, 1, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        const a = cpu.memory.read(hl);
+        const raw = a - 1;
+        cpu.memory.write(hl, raw);
+        const operation = {
+            id: 1,
+            a, b: 1,
+            size: 8,
+            raw,
+        }
+        cpu
+        .updateZeroFlag(raw)
+        .updateNAndHFlags(operation)
+    });
+    buildInstruction("DEC_r16", 2, 1, function(cpu, r16) {
+        return DEC16(r16);
+    });
+    buildInstruction("DEC_SP", 2, 1, function(cpu) {
+        return DEC16(cpu.registers.SP);
+    });
+
     return instructions;
 }
