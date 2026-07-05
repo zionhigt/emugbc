@@ -369,6 +369,59 @@ describe('instructions', () => {
     });
   });
 
+  describe('CPL : A = ~A (complément bit à bit) — N=1, H=1, Z et C PRÉSERVÉS', () => {
+    it('expose CPL avec son id et une méthode run', () => {
+      expect(instructions.CPL, 'instructions.CPL est absent').toBeDefined();
+      expect(instructions.CPL.id).toBe('CPL');
+      expect(typeof instructions.CPL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'inversion de chaque bit', A: 0b1010_0101, expA: 0b0101_1010 },
+      { cas: 'zéro devient tout-à-un', A: 0b0000_0000, expA: 0b1111_1111 },
+      { cas: 'tout-à-un devient zéro', A: 0b1111_1111, expA: 0b0000_0000 },
+    ].map((c) => ({ ...c, label: `CPL(A=${bin(c.A)})` })))(
+      '$cas : $label',
+      ({ A, expA, label }) => {
+        const cpu = new CPU();
+        cpu.registers.A.setValue(A);
+        cpu.registers.F.N = 0; // doit être forcé à 1
+        cpu.registers.F.H = 0; // doit être forcé à 1
+        instructions.CPL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+        expect(+!!F.N, `${label} → N doit être forcé à 1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H doit être forcé à 1, ${dumpFlags(F)}`).toBe(1);
+      },
+    );
+
+    it('Z et C sont préservés — même quand le résultat vaut 0x00', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0xff);
+      cpu.registers.F.setValue(0b0001_0000); // Z=0, C=1
+      instructions.CPL.run(cpu);
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), dumpFlags(F)).toBe('0x00');
+      expect(+!!F.Z, `A vaut 0 mais CPL ne calcule PAS Z : ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.C, `C était levé, il doit le rester : ${dumpFlags(F)}`).toBe(1);
+
+      const cpu2 = new CPU();
+      cpu2.registers.A.setValue(0x0f);
+      cpu2.registers.F.setValue(0b1000_0000); // Z=1, C=0
+      instructions.CPL.run(cpu2);
+      expect(+!!cpu2.registers.F.Z, `Z était levé, il doit le rester : ${dumpFlags(cpu2.registers.F)}`).toBe(1);
+      expect(+!!cpu2.registers.F.C, `C était éteint, il doit le rester : ${dumpFlags(cpu2.registers.F)}`).toBe(0);
+    });
+
+    it('est une involution : deux CPL rendent A intact', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x5a);
+      instructions.CPL.run(cpu);
+      instructions.CPL.run(cpu);
+      expect(hex(cpu.registers.A.getValue(), 2), 'CPL(CPL(A)) = A').toBe('0x5A');
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
