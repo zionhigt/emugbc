@@ -81,6 +81,17 @@ export class Extendedregister {
         this.highRegister.setValue(high);
         this.lowRegister.setValue(low);
     }
+
+    increment() {
+        return this.setValue(
+            this.getValue() + 1
+        )
+    }
+    decrement() {
+        return this.setValue(
+            this.getValue() - 1
+        )
+    }
 }
 
 
