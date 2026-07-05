@@ -560,6 +560,65 @@ describe('instructions', () => {
     });
   });
 
+  describe('famille interruptions : DI / EI / HALT — état interne du CPU, aucun flag', () => {
+    it("état initial du CPU : ime éteint, aucun EI armé, pas endormi", () => {
+      const cpu = new CPU();
+      expect(cpu.ime, 'cpu.ime doit exister et démarrer à false').toBe(false);
+      expect(cpu.imeScheduled, 'cpu.imeScheduled doit exister et démarrer à false').toBe(false);
+      expect(cpu.halted, 'cpu.halted doit exister et démarrer à false').toBe(false);
+    });
+
+    it('expose DI, EI et HALT', () => {
+      for (const id of ['DI', 'EI', 'HALT']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('DI : éteint ime immédiatement', () => {
+      const cpu = new CPU();
+      // setup via l'état privé : aucun chemin public n'allume ime avant que la
+      // boucle d'exécution (à venir) ne consomme imeScheduled — fidèle au hardware.
+      cpu._ime = true;
+      instructions.DI.run(cpu);
+      expect(cpu.ime, 'DI doit couper ime').toBe(false);
+    });
+
+    it("EI : n'allume PAS ime tout de suite — il ARME l'allumage (délai d'une instruction)", () => {
+      const cpu = new CPU();
+      instructions.EI.run(cpu);
+      expect(cpu.ime, "ime doit rester éteint juste après EI (c'est tout le délai)").toBe(false);
+      expect(cpu.imeScheduled, "l'allumage doit être armé pour la boucle d'exécution").toBe(true);
+    });
+
+    it("DI annule aussi un EI en attente (EI puis DI : l'allumage n'aura jamais lieu)", () => {
+      const cpu = new CPU();
+      instructions.EI.run(cpu);
+      instructions.DI.run(cpu);
+      expect(cpu.ime, 'ime éteint').toBe(false);
+      expect(cpu.imeScheduled, "l'armement doit être désamorcé par DI").toBe(false);
+    });
+
+    it('HALT : endort le CPU (cpu.halted) — le réveil viendra avec le chapitre interruptions', () => {
+      const cpu = new CPU();
+      instructions.HALT.run(cpu);
+      expect(cpu.halted, 'le CPU doit être marqué endormi').toBe(true);
+    });
+
+    it('aucune des trois ne touche aux flags', () => {
+      for (const id of ['DI', 'EI', 'HALT']) {
+        const cpu = new CPU();
+        cpu.registers.F.setValue(0b1111_0000);
+        instructions[id].run(cpu);
+        expect(
+          bin(cpu.registers.F.getValue()),
+          `${id} ne doit pas toucher aux flags : ${dumpFlags(cpu.registers.F)}`,
+        ).toBe(bin(0b1111_0000));
+      }
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
