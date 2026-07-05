@@ -162,4 +162,93 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       },
     );
   });
+
+  describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
+    // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
+    // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
+    const setupCall = ({ pc, sp }) => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.PC.setValue(pc);
+      cpu.registers.SP.setValue(sp);
+      return cpu;
+    };
+
+    it('expose CALL_n16 avec son id et une méthode run', () => {
+      expect(instructions.CALL_n16, 'instructions.CALL_n16 est absent').toBeDefined();
+      expect(instructions.CALL_n16.id).toBe('CALL_n16');
+      expect(typeof instructions.CALL_n16.run).toBe('function');
+    });
+
+    it('saute : PC vaut n16 après exécution', () => {
+      const cpu = setupCall({ pc: 0xc003, sp: 0xfffe });
+      instructions.CALL_n16.run(cpu, 0x1234);
+      expect(hex(cpu.registers.PC.getValue()), 'PC → la destination').toBe(hex(0x1234));
+    });
+
+    it("pousse l'adresse de retour (le PC d'entrée, déjà incrémenté) sur la pile", () => {
+      // scénario : un CALL 0x1234 situé à 0xC000 (3 octets) ; le décodeur a
+      // amené PC à 0xC003 — c'est CETTE adresse qui doit finir sur la pile.
+      const cpu = setupCall({ pc: 0xc003, sp: 0xfffe });
+      instructions.CALL_n16.run(cpu, 0x1234);
+      expect(hex(cpu.registers.SP.getValue()), 'SP a descendu de 2').toBe(hex(0xfffc));
+      expect(hex(cpu.memory.read(0xfffd), 2), 'octet haut du retour à SP+1').toBe('0xC0');
+      expect(hex(cpu.memory.read(0xfffc), 2), 'octet bas du retour à SP').toBe('0x03');
+    });
+
+    it("aller-retour : un pop rend l'adresse de retour (ce que fera RET)", () => {
+      const cpu = setupCall({ pc: 0xc003, sp: 0xfffe });
+      instructions.CALL_n16.run(cpu, 0x1234);
+      expect(hex(cpu.stack.pop()), 'RET récupérera 0xC003').toBe(hex(0xc003));
+      expect(hex(cpu.registers.SP.getValue()), 'SP restauré').toBe(hex(0xfffe));
+    });
+
+    it('ne touche à aucun flag (« Flags: None affected »)', () => {
+      const cpu = setupCall({ pc: 0xc003, sp: 0xfffe });
+      cpu.registers.F.setValue(0b1111_0000); // Z N H C tous levés
+      instructions.CALL_n16.run(cpu, 0x1234);
+      expect(bin(cpu.registers.F.getValue()), dumpFlags(cpu.registers.F)).toBe(bin(0b1111_0000));
+    });
+
+    describe('CALL_cc_n16 : appelle seulement si la condition cc est vraie', () => {
+      // cc est le mnémonique de la doc : "Z" (Z levé), "NZ" (Z éteint),
+      // "C" (C levé), "NC" (C éteint) — l'instruction évalue F elle-même.
+      it('expose CALL_cc_n16 avec son id et une méthode run', () => {
+        expect(instructions.CALL_cc_n16, 'instructions.CALL_cc_n16 est absent').toBeDefined();
+        expect(instructions.CALL_cc_n16.id).toBe('CALL_cc_n16');
+        expect(typeof instructions.CALL_cc_n16.run).toBe('function');
+      });
+
+      it.each([
+        { cc: 'Z', F: 0b1000_0000, taken: true },
+        { cc: 'Z', F: 0b0000_0000, taken: false },
+        { cc: 'NZ', F: 0b0000_0000, taken: true },
+        { cc: 'NZ', F: 0b1000_0000, taken: false },
+        { cc: 'C', F: 0b0001_0000, taken: true },
+        { cc: 'C', F: 0b0000_0000, taken: false },
+        { cc: 'NC', F: 0b0000_0000, taken: true },
+        { cc: 'NC', F: 0b0001_0000, taken: false },
+      ].map((c) => ({
+        ...c,
+        label: `CALL_cc_n16("${c.cc}", 0x1234) avec F=${bin(c.F)}`,
+        attendu: c.taken ? 'prise (taken)' : 'pas prise (untaken)',
+      })))(
+        '$label : condition $attendu',
+        ({ cc, F: flags, taken, label }) => {
+          const cpu = setupCall({ pc: 0xc003, sp: 0xfffe });
+          cpu.registers.F.setValue(flags);
+          instructions.CALL_cc_n16.run(cpu, cc, 0x1234);
+          const F = cpu.registers.F;
+          if (taken) {
+            expect(hex(cpu.registers.PC.getValue()), `${label} : PC doit sauter, ${dumpFlags(F)}`).toBe(hex(0x1234));
+            expect(hex(cpu.registers.SP.getValue()), `${label} : le retour doit être empilé`).toBe(hex(0xfffc));
+            expect(hex(cpu.stack.pop()), `${label} : adresse de retour sur la pile`).toBe(hex(0xc003));
+          } else {
+            expect(hex(cpu.registers.PC.getValue()), `${label} : PC ne doit PAS bouger, ${dumpFlags(F)}`).toBe(hex(0xc003));
+            expect(hex(cpu.registers.SP.getValue()), `${label} : rien ne doit être empilé`).toBe(hex(0xfffe));
+          }
+          expect(bin(F.getValue()), `${label} : les flags ne bougent jamais`).toBe(bin(flags));
+        },
+      );
+    });
+  });
 });
