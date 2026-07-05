@@ -28,9 +28,20 @@ function ADC(cpu, a, b, c, size) {
     .updateCarryFlag(operation);
 }
 
+function AND(cpu, a, b) {
+    const raw = a & b;
+    cpu.registers.A.setValue(raw);
+    const value = cpu.registers.A.getValue();
+    cpu.updateZeroFlag(value);
+    cpu.registers.F.N = 0;
+    cpu.registers.F.H = 1;
+    cpu.registers.F.C = 0;
+}
+
 
 
 export default function() {
+    //------------------ ALU -------------------------------
     buildInstruction("ADC_A_r8", 1, 1, function(cpu, reg8) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
@@ -119,6 +130,23 @@ export default function() {
         return cpu
         .updateNAndHFlags(operation)
         .updateCarryFlag(operation);
+    });
+
+    //------------------ LOGIC -------------------------------
+    buildInstruction("AND_A_r8", 1, 1, function(cpu, reg8) {
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        AND(cpu, a, r8)
+    });
+    buildInstruction("AND_A_HL", 2, 1, function(cpu) {
+        const a = cpu.registers.A.getValue();
+        const hl = cpu.registers.HL.getValue();
+        const r8 = cpu.memory.read(hl);
+        AND(cpu, a, r8)
+    });
+    buildInstruction("AND_A_n8", 2, 2, function(cpu, n8) {
+        const a = cpu.registers.A.getValue();
+        AND(cpu, a, n8)
     });
 
     return instructions;
