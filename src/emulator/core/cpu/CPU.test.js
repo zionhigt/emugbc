@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 
 import CPU from './CPU';
+import buildMemory from './CPUMemory';
+
+const Memory = buildMemory();
 
 // Formatage lisible pour le debug : binaire et hexa plutôt que décimal
 const bin = (n, width = 8) => '0b' + (n >>> 0).toString(2).padStart(width, '0');
@@ -266,6 +269,79 @@ describe('CPU', () => {
       expect(bin(cpu.registers.F.getValue()), dumpFlags(cpu.registers.F)).toBe(bin(0b1111_0000));
       cpu.updateZeroFlag(0x42); // doit remettre Z=0 sans toucher au reste
       expect(bin(cpu.registers.F.getValue()), dumpFlags(cpu.registers.F)).toBe(bin(0b0111_0000));
+    });
+  });
+
+  describe('cpu.stack : push(reg16) / pop() → valeur 16 bits', () => {
+    const makeCpu = (sp) => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.SP.setValue(sp);
+      return cpu;
+    };
+
+    it('expose stack.push et stack.pop', () => {
+      const cpu = makeCpu(0xfffe);
+      expect(cpu.stack, 'cpu.stack est absent').toBeDefined();
+      expect(typeof cpu.stack.push, 'stack.push doit être appelable').toBe('function');
+      expect(typeof cpu.stack.pop, 'stack.pop doit être appelable').toBe('function');
+    });
+
+    it('push : écrit high à SP-1, low à SP-2, et SP descend de 2 (la pile pousse vers le bas)', () => {
+      const cpu = makeCpu(0xfffe);
+      cpu.registers.BC.setValue(0x1234);
+      cpu.stack.push(cpu.registers.BC);
+      expect(hex(cpu.registers.SP.getValue()), 'SP après push').toBe(hex(0xfffc));
+      expect(hex(cpu.memory.read(0xfffd), 2), 'octet HAUT à SP-1 (0xFFFD)').toBe('0x12');
+      expect(hex(cpu.memory.read(0xfffc), 2), 'octet BAS à SP-2 (0xFFFC) — little-endian').toBe('0x34');
+      expect(hex(cpu.registers.BC.getValue()), 'le registre poussé ne doit pas bouger').toBe(hex(0x1234));
+    });
+
+    it('pop : lit low à SP puis high à SP+1, rend la valeur, et SP remonte de 2', () => {
+      const cpu = makeCpu(0xfffc);
+      cpu.memory.write(0xfffc, 0x34); // low
+      cpu.memory.write(0xfffd, 0x12); // high
+      const value = cpu.stack.pop();
+      expect(hex(value), 'pop doit reconstituer high|low').toBe(hex(0x1234));
+      expect(hex(cpu.registers.SP.getValue()), 'SP après pop').toBe(hex(0xfffe));
+    });
+
+    it('aller-retour : pop rend ce que push a empilé, SP revient à sa valeur initiale', () => {
+      const cpu = makeCpu(0xfffe);
+      cpu.registers.DE.setValue(0xbeef);
+      cpu.stack.push(cpu.registers.DE);
+      expect(hex(cpu.stack.pop()), 'push puis pop').toBe(hex(0xbeef));
+      expect(hex(cpu.registers.SP.getValue()), 'SP restauré').toBe(hex(0xfffe));
+    });
+
+    it('LIFO : deux push, les pop ressortent dans l\'ordre inverse', () => {
+      const cpu = makeCpu(0xfffe);
+      cpu.registers.BC.setValue(0x1111);
+      cpu.registers.DE.setValue(0x2222);
+      cpu.stack.push(cpu.registers.BC);
+      cpu.stack.push(cpu.registers.DE);
+      expect(hex(cpu.stack.pop()), 'premier pop = dernier push').toBe(hex(0x2222));
+      expect(hex(cpu.stack.pop()), 'second pop = premier push').toBe(hex(0x1111));
+      expect(hex(cpu.registers.SP.getValue()), 'SP restauré après le compte rond').toBe(hex(0xfffe));
+    });
+
+    it('SP wrappe aux bornes du tableau (aucun garde-fou, comme le vrai hardware)', () => {
+      const cpu = makeCpu(0x0001);
+      cpu.registers.BC.setValue(0xabcd);
+      cpu.stack.push(cpu.registers.BC); // high → 0x0000, low → 0xFFFF (wrap)
+      expect(hex(cpu.registers.SP.getValue()), 'SP a wrappé').toBe(hex(0xffff));
+      expect(hex(cpu.memory.read(0x0000), 2), 'octet haut à 0x0000').toBe('0xAB');
+      expect(hex(cpu.memory.read(0xffff), 2), 'octet bas à 0xFFFF').toBe('0xCD');
+      expect(hex(cpu.stack.pop()), 'l\'aller-retour survit au wrap').toBe(hex(0xabcd));
+      expect(hex(cpu.registers.SP.getValue()), 'SP revenu à 0x0001').toBe(hex(0x0001));
+    });
+
+    it('ne touche pas aux flags', () => {
+      const cpu = makeCpu(0xfffe);
+      cpu.registers.F.setValue(0b1111_0000); // Z N H C tous levés
+      cpu.registers.BC.setValue(0x1234);
+      cpu.stack.push(cpu.registers.BC);
+      cpu.stack.pop();
+      expect(bin(cpu.registers.F.getValue()), dumpFlags(cpu.registers.F)).toBe(bin(0b1111_0000));
     });
   });
 });
