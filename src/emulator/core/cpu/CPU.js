@@ -11,6 +11,36 @@ class CPUFlagRegister extends FlagRegister(8) {
         })
     }
 }
+
+class Stack {
+    constructor(memory, pointer) {
+        this.pointer = pointer; // U16 Register implementation
+        this.memory = memory; // CPUMemory implementation
+    }
+
+    _push(byte) {
+        this.pointer.decrement();
+        this.memory.write(this.pointer.getValue(), byte);
+    }
+    _pop(byte) {
+        const value = this.memory.read(this.pointer.getValue());
+        this.pointer.increment();
+        return value;
+    }
+
+    push(value) {
+        const { high, low } = byte.U16to2U8(value?.getValue ? value.getValue() : value);
+        this._push(high);
+        this._push(low);
+    }
+
+    pop() {
+        const low = this._pop();
+        const high = this._pop();
+        return byte.buildU16(high, low);
+    }
+    
+}
 class CPURegister {
     constructor() {
         this.A = new (Register(8));
@@ -37,6 +67,7 @@ export default class CPU {
     constructor(memory) {
         this.registers = new CPURegister();
         this.memory = memory;
+        this.stack = new Stack(this.memory, this.registers.SP);
     }
 
     updateZeroFlag(value) {
