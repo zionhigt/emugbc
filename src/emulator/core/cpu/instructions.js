@@ -206,9 +206,9 @@ export default function() {
     //------------------ CARRY -------------------------------
 
     buildInstruction("CCF", 1, 1, function(cpu, n16) {
-        cpu.registers.C = +!cpu.registers.C;
-        cpu.registers.H = 0;
-        cpu.registers.N = 0;
+        cpu.registers.F.C = +!cpu.registers.F.C
+        cpu.registers.F.H = 0;
+        cpu.registers.F.N = 0;
     });
     return instructions;
 }
