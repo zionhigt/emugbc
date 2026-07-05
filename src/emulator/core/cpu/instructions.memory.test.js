@@ -82,4 +82,30 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     expect(hex(cpu.registers.HL.getValue()), 'HL ne doit pas bouger').toBe('0xC123');
     expect(hex(cpu.memory.read(0xc123), 2), "l'octet pointé ne doit pas bouger").toBe('0x02');
   });
+
+  describe('ADD_A_HL : comme ADC_A_HL mais sans retenue entrante', () => {
+    it('expose ADD_A_HL avec son id et une méthode run', () => {
+      expect(instructions.ADD_A_HL, 'instructions.ADD_A_HL est absent').toBeDefined();
+      expect(instructions.ADD_A_HL.id).toBe('ADD_A_HL');
+      expect(typeof instructions.ADD_A_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'addition simple via le pointeur', A: 0x01, byte: 0x02, cIn: 0, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: 'IGNORE la retenue entrante (différence avec ADC)', A: 0x01, byte: 0x02, cIn: 1, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: 'débordement complet : A wrappe à 0, Z H C levés', A: 0xff, byte: 0x01, cIn: 0, expA: 0x00, Z: 1, H: 1, C: 1 },
+    ].map((c) => ({ ...c, label: `ADD_A_HL(A=${hex(c.A, 2)}, [0xC123]=${hex(c.byte, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ A, byte, cIn, expA, Z, H, C, label }) => {
+        const cpu = setup({ A, byte, cIn });
+        instructions.ADD_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit valoir 0 après une addition, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(C);
+      },
+    );
+  });
 });
