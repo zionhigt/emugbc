@@ -324,6 +324,50 @@ export default function() {
     buildInstruction("DEC_SP", 2, 1, function(cpu) {
         return DEC16(cpu.registers.SP);
     });
+    //------------------ INCREMENTS -------------------------------
+
+    function INC8(cpu, reg) {
+        const a = reg.getValue();
+        const raw = a + 1;
+        reg.increment();
+        const operation = {
+            id: 0,
+            a, b: 1,
+            size: 8,
+            raw,
+        }
+        cpu
+        .updateZeroFlag(reg.getValue())
+        .updateNAndHFlags(operation)
+    }
+    function INC16(reg) {
+        reg.increment();
+    }
+
+    buildInstruction("INC_r8", 1, 1, function(cpu, r8) {
+        return INC8(cpu, r8);
+    });
+    buildInstruction("INC_HL", 3, 1, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        const a = cpu.memory.read(hl);
+        const raw = a + 1;
+        cpu.memory.write(hl, raw);
+        const operation = {
+            id: 0,
+            a, b: 1,
+            size: 8,
+            raw,
+        }
+        cpu
+        .updateZeroFlag(cpu.memory.read(hl))
+        .updateNAndHFlags(operation)
+    });
+    buildInstruction("INC_r16", 2, 1, function(cpu, r16) {
+        return INC16(r16);
+    });
+    buildInstruction("INC_SP", 2, 1, function(cpu) {
+        return INC16(cpu.registers.SP);
+    });
 
     //------------------ INTERRUPT -------------------------------
     buildInstruction("DI", 1, 1, function(cpu) {
