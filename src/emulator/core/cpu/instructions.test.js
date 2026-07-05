@@ -422,6 +422,69 @@ describe('instructions', () => {
     });
   });
 
+  describe('DAA : ajuste A en BCD après une arithmétique — H=0, N préservé, C montant', () => {
+    it('expose DAA avec son id et une méthode run', () => {
+      expect(instructions.DAA, 'instructions.DAA est absent').toBeDefined();
+      expect(instructions.DAA.id).toBe('DAA');
+      expect(typeof instructions.DAA.run).toBe('function');
+    });
+
+    it.each([
+      // ----- branche addition (N=0) -----
+      { cas: 'addition déjà propre : rien à ajuster (12+34=46)', A: 0x46, N: 0, H: 0, C: 0, expA: 0x46, expZ: 0, expC: 0 },
+      { cas: 'nibble bas réparé via H (28+19 : binaire 0x41, H=1 → 47)', A: 0x41, N: 0, H: 1, C: 0, expA: 0x47, expZ: 0, expC: 0 },
+      { cas: 'nibble bas réparé via chiffre>9, sans H (15+27 : 0x3C → 42)', A: 0x3c, N: 0, H: 0, C: 0, expA: 0x42, expZ: 0, expC: 0 },
+      { cas: 'nibble haut réparé via A>0x99, C se lève (50+60 : 0xB0 → 10, retenue)', A: 0xb0, N: 0, H: 0, C: 0, expA: 0x10, expZ: 0, expC: 1 },
+      { cas: 'nibble haut réparé via C déjà levé (90+80 : 0x10 C=1 → 70, C reste)', A: 0x10, N: 0, H: 0, C: 1, expA: 0x70, expZ: 0, expC: 1 },
+      { cas: 'double réparation (99+99 : 0x32 H=1 C=1 → 98, retenue)', A: 0x32, N: 0, H: 1, C: 1, expA: 0x98, expZ: 0, expC: 1 },
+      { cas: 'résultat 00 : Z se lève (50+50 : 0xA0 → 00, retenue)', A: 0xa0, N: 0, H: 0, C: 0, expA: 0x00, expZ: 1, expC: 1 },
+      // ----- branche soustraction (N=1) : C ne bouge JAMAIS -----
+      { cas: 'soustraction propre : rien à ajuster (47-12=35)', A: 0x35, N: 1, H: 0, C: 0, expA: 0x35, expZ: 0, expC: 0 },
+      { cas: 'emprunt de nibble réparé via H (41-19 : binaire 0x28, H=1 → 22)', A: 0x28, N: 1, H: 1, C: 0, expA: 0x22, expZ: 0, expC: 0 },
+      { cas: 'emprunt complet (15-27 : 0xEE H=1 C=1 → 88, C reste levé)', A: 0xee, N: 1, H: 1, C: 1, expA: 0x88, expZ: 0, expC: 1 },
+      { cas: 'zéro en soustraction (42-42=00) : Z levé, C intact', A: 0x00, N: 1, H: 0, C: 0, expA: 0x00, expZ: 1, expC: 0 },
+    ].map((c) => ({ ...c, label: `DAA(A=${hex(c.A, 2)}, N=${c.N} H=${c.H} C=${c.C})` })))(
+      '$cas : $label',
+      ({ A, N, H, C, expA, expZ, expC, label }) => {
+        const cpu = new CPU();
+        cpu.registers.A.setValue(A);
+        cpu.registers.F.N = N;
+        cpu.registers.F.H = H;
+        cpu.registers.F.C = C;
+        instructions.DAA.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(expZ);
+        expect(+!!F.N, `${label} → N doit être PRÉSERVÉ, ${dumpFlags(F)}`).toBe(N);
+        expect(+!!F.H, `${label} → H doit TOUJOURS finir à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(expC);
+      },
+    );
+
+    it('intégration : ADD réel puis DAA — le score BCD 28+19 affiche 47', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x28);
+      cpu.registers.B.setValue(0x19);
+      instructions.ADD_A_r8.run(cpu, cpu.registers.B); // pose H=1 tout seul
+      instructions.DAA.run(cpu);
+      expect(
+        hex(cpu.registers.A.getValue(), 2),
+        `les post-it N/H laissés par ADD guident DAA : ${dumpFlags(cpu.registers.F)}`,
+      ).toBe('0x47');
+    });
+
+    it('intégration : ADD avec retenue BCD — 99+99 affiche 98 avec C levé', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x99);
+      cpu.registers.B.setValue(0x99);
+      instructions.ADD_A_r8.run(cpu, cpu.registers.B); // 0x32, H=1, C=1
+      instructions.DAA.run(cpu);
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), dumpFlags(F)).toBe('0x98');
+      expect(+!!F.C, `la retenue décimale (198 > 99) : ${dumpFlags(F)}`).toBe(1);
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
