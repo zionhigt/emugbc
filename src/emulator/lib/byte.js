@@ -38,8 +38,13 @@ export function buildU16(high, low) {
  */
 export function U16to2U8(byte) {
     const high = (byte >> 8);
-    const low = byte % 256;
+    const low = byte % 0x100;
     return { high, low };
+}
+
+export function sign8(byte) {
+    if (getBit(byte, 7)) return byte - 0x100;
+    return byte;
 }
 
 export default {
@@ -48,4 +53,5 @@ export default {
     setBit,
     buildU16,
     U16to2U8,
+    sign8,
 };
