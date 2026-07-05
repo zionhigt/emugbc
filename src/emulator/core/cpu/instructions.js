@@ -4,9 +4,21 @@ const instructions = {
 
 }
 
+/**
+ * 
+ * @param {*} id 
+ * @param {*} cycle: int | Array(taken, untaken) 
+ * @param {*} bytes 
+ * @param {*} run 
+ */
 function buildInstruction(id, cycle, bytes, run) {
+    let untaken = cycle;
+    let taken = untaken
+    if (Array.isArray(cycle) && cycle.length === 2) {
+        [ taken, untaken ] = cycle;
+    }
     instructions[id] = {
-        id, cycle, bytes,
+        id, cycle: untaken, extraCycle: taken - untaken, bytes,
         run() { return run.apply(this, ...[arguments]) }
     }
 }
@@ -165,6 +177,38 @@ export default function() {
         cpu.registers.F.N = 0;
         cpu.registers.F.H = 1;
     });
+    //------------------ CALL -------------------------------
+    buildInstruction("CALL_n16", 6, 3, function(cpu, n16) {
+        cpu.stack.push(cpu.registers.PC.getValue());
+        cpu.registers.PC.setValue(n16);
+    });
+    buildInstruction("CALL_cc_n16", [6, 3], 3, function(cpu, cc, n16) {
+        let match = false;
+        switch (cc) {
+            case "Z":
+                match = cpu.registers.F.Z;
+                break;
+            case "NZ":
+                match = !cpu.registers.F.Z;
+                break;
+            case "C":
+                match = cpu.registers.F.C;
+                break;
+            case "NC":
+                match = !cpu.registers.F.C;
+                break;
+        }
+        if (match) {
+            cpu.stack.push(cpu.registers.PC.getValue());
+            cpu.registers.PC.setValue(n16);
+        }
+    });
+    //------------------ CARRY -------------------------------
 
+    buildInstruction("CCF", 1, 1, function(cpu, n16) {
+        cpu.registers.C = +!cpu.registers.C;
+        cpu.registers.H = 0;
+        cpu.registers.N = 0;
+    });
     return instructions;
 }
