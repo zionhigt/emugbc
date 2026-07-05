@@ -150,14 +150,14 @@ export default function() {
     });
 
     //------------------ BIT -------------------------------
-    buildInstruction("BIT_u3_r8", 1, 1, function(cpu, u3, reg8) {
+    buildInstruction("BIT_u3_r8", 2, 2, function(cpu, u3, reg8) {
         const a = cpu.registers.A.getValue();
         const r8 = reg8.getValue();
         cpu.registers.F.Z = +(!byte.getFlag(r8, u3));
         cpu.registers.F.N = 0;
         cpu.registers.F.H = 1;
     });
-    buildInstruction("BIT_u3_HL", 2, 1, function(cpu, u3) {
+    buildInstruction("BIT_u3_HL", 3, 2, function(cpu, u3) {
         const a = cpu.registers.A.getValue();
         const hl = cpu.registers.HL.getValue();
         const r8 = cpu.memory.read(hl);
