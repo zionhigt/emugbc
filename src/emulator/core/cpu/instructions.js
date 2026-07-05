@@ -4,9 +4,9 @@ const instructions = {
 
 }
 
-function buildInstruction(id, run) {
+function buildInstruction(id, cycle, bytes, run) {
     instructions[id] = {
-        id,
+        id, cycle, bytes,
         run() { return run.apply(this, ...[arguments]) }
     }
 }
@@ -31,43 +31,43 @@ function ADC(cpu, a, b, c, size) {
 
 
 export default function() {
-    buildInstruction("ADC_A_r8", function(cpu, reg8) {
+    buildInstruction("ADC_A_r8", 1, 1, function(cpu, reg8) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
         const r8 = reg8.getValue();
         return ADC(cpu, a, r8, c, 8);
     });
-    buildInstruction("ADD_A_r8", function(cpu, reg8) {
+    buildInstruction("ADD_A_r8", 1, 1, function(cpu, reg8) {
         const a = cpu.registers.A.getValue();
         const r8 = reg8.getValue();
         return ADC(cpu, a, r8, 0, 8);
     });
 
-    buildInstruction("ADC_A_HL", function(cpu) {
+    buildInstruction("ADC_A_HL", 2, 1, function(cpu) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
         const hl = cpu.registers.HL.getValue();
         const r8 = cpu.memory.read(hl);
         return ADC(cpu, a, r8, c, 8);
     });
-    buildInstruction("ADD_A_HL", function(cpu) {
+    buildInstruction("ADD_A_HL", 2, 1, function(cpu) {
         const a = cpu.registers.A.getValue();
         const hl = cpu.registers.HL.getValue();
         const r8 = cpu.memory.read(hl);
         return ADC(cpu, a, r8, 0, 8);
     });
 
-    buildInstruction("ADC_A_n8", function(cpu, n8) {
+    buildInstruction("ADC_A_n8", 2, 2, function(cpu, n8) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
         return ADC(cpu, a, n8, c, 8);
     });
-    buildInstruction("ADD_A_n8", function(cpu, n8) {
+    buildInstruction("ADD_A_n8", 2, 2, function(cpu, n8) {
         const a = cpu.registers.A.getValue();
         return ADC(cpu, a, n8, 0, 8);
     });
     
-    buildInstruction("ADD_HL_r16", function(cpu, r16) {
+    buildInstruction("ADD_HL_r16", 2, 1, function(cpu, r16) {
         const hl = cpu.registers.HL.getValue();
         const b = r16.getValue();
         const raw = hl + b;
@@ -84,7 +84,7 @@ export default function() {
         .updateNAndHFlags(operation)
         .updateCarryFlag(operation);
     });
-    buildInstruction("ADD_HL_SP", function(cpu) {
+    buildInstruction("ADD_HL_SP", 2, 1, function(cpu) {
         const hl = cpu.registers.HL.getValue();
         const b = cpu.registers.SP.getValue();
         const raw = hl + b;
@@ -101,7 +101,7 @@ export default function() {
         .updateNAndHFlags(operation)
         .updateCarryFlag(operation);
     });
-    buildInstruction("ADD_SP_e8", function(cpu, e8) {
+    buildInstruction("ADD_SP_e8", 4, 2, function(cpu, e8) {
         const sp = cpu.registers.SP.getValue();
         const a = byte.U16to2U8(sp).low;
         const b = byte.sign8(e8);
