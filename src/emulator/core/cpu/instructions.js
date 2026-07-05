@@ -248,5 +248,13 @@ export default function() {
         return CPA(cpu, a, n8);
     });
 
+    //------------------ BITWISE NOT -------------------------------
+    buildInstruction("CPL", 2, 1, function(cpu) {
+        const a = byte.revertBits(cpu.registers.A.getValue());
+        cpu.registers.A.setValue(a);
+        cpu.registers.F.N = 1;
+        cpu.registers.F.H = 1;
+    });
+
     return instructions;
 }
