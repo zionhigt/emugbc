@@ -312,4 +312,45 @@ describe('instructions', () => {
       expectAnd(cpu2, 'AND_A_r8(A=0x00, A)', { expA: 0x00, Z: 1 });
     });
   });
+
+  describe('BIT_u3_r8 : teste le bit u3 de r8 — Z = INVERSE du bit, C PRÉSERVÉ', () => {
+    it('expose BIT_u3_r8 avec son id et une méthode run', () => {
+      expect(instructions.BIT_u3_r8, 'instructions.BIT_u3_r8 est absent').toBeDefined();
+      expect(instructions.BIT_u3_r8.id).toBe('BIT_u3_r8');
+      expect(typeof instructions.BIT_u3_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'bit levé → Z=0', u3: 7, val: 0b1000_0000, cIn: 0, Z: 0 },
+      { cas: 'bit éteint → Z=1 (Z est l\'inverse du bit !)', u3: 7, val: 0b0111_1111, cIn: 0, Z: 1 },
+      { cas: 'bit 0 (extrémité droite) levé', u3: 0, val: 0b0000_0001, cIn: 1, Z: 0 },
+      { cas: 'bit du milieu levé, seul', u3: 3, val: 0b0000_1000, cIn: 1, Z: 0 },
+      { cas: 'bit du milieu éteint, tous les autres levés', u3: 3, val: 0b1111_0111, cIn: 0, Z: 1 },
+      { cas: 'octet nul : tous les bits éteints', u3: 5, val: 0b0000_0000, cIn: 1, Z: 1 },
+    ].map((c) => ({ ...c, label: `BIT_u3_r8(u3=${c.u3}, B=${bin(c.val)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ u3, val, cIn, Z, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 1; // doit être forcé à 0
+        cpu.registers.F.H = 0; // doit être forcé à 1
+        cpu.registers.F.C = cIn; // ne doit PAS bouger (absent des flags de la doc)
+        instructions.BIT_u3_r8.run(cpu, u3, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H doit être forcé à 1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.C, `${label} → C doit être PRÉSERVÉ (il valait ${cIn}), ${dumpFlags(F)}`).toBe(cIn);
+        expect(bin(cpu.registers.B.getValue()), `${label} → B est un test pur, rien ne s'écrit`).toBe(bin(val));
+      },
+    );
+
+    it('ne touche pas non plus à A (test pur, seuls les flags bougent)', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x42);
+      cpu.registers.B.setValue(0b1000_0000);
+      instructions.BIT_u3_r8.run(cpu, 7, cpu.registers.B);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A ne doit pas bouger').toBe('0x42');
+    });
+  });
 });

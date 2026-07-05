@@ -134,4 +134,32 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       },
     );
   });
+
+  describe('BIT_u3_HL : teste le bit u3 de [HL] — Z = INVERSE du bit, C PRÉSERVÉ', () => {
+    it('expose BIT_u3_HL avec son id et une méthode run', () => {
+      expect(instructions.BIT_u3_HL, 'instructions.BIT_u3_HL est absent').toBeDefined();
+      expect(instructions.BIT_u3_HL.id).toBe('BIT_u3_HL');
+      expect(typeof instructions.BIT_u3_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'bit levé dans l\'octet pointé → Z=0', u3: 7, byte: 0b1000_0000, cIn: 1, Z: 0 },
+      { cas: 'bit éteint dans l\'octet pointé → Z=1', u3: 7, byte: 0b0111_1111, cIn: 0, Z: 1 },
+      { cas: 'bit 0 de l\'octet pointé', u3: 0, byte: 0b0000_0001, cIn: 0, Z: 0 },
+    ].map((c) => ({ ...c, label: `BIT_u3_HL(u3=${c.u3}, [0xC123]=${bin(c.byte)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ u3, byte, cIn, Z, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        cpu.registers.F.H = 0; // doit être forcé à 1
+        instructions.BIT_u3_HL.run(cpu, u3);
+        const F = cpu.registers.F;
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H doit être forcé à 1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.C, `${label} → C doit être PRÉSERVÉ (il valait ${cIn}), ${dumpFlags(F)}`).toBe(cIn);
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet pointé ne doit pas bouger`).toBe(bin(byte));
+        expect(hex(cpu.registers.A.getValue(), 2), 'A ne doit pas bouger').toBe('0x42');
+      },
+    );
+  });
 });
