@@ -70,6 +70,19 @@ function matchCC(cpu, cc) {
 }
 
 
+function CPA(cpu, a, b) {
+    const raw = a - b;
+    const operation = {
+        id: 1,
+        size: 8,
+        a, b,
+        raw: raw,
+    }
+    cpu
+    .updateZeroFlag(raw)
+    .updateNAndHFlags(operation)
+    .updateCarryFlag(operation)
+}
 
 export default function() {
     //------------------ ALU -------------------------------
@@ -215,5 +228,25 @@ export default function() {
         cpu.registers.F.H = 0;
         cpu.registers.F.N = 0;
     });
+    
+    //------------------ COMPARE -------------------------------
+
+    buildInstruction("CP_A_r8", 1, 1, function(cpu, reg8) {
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        return CPA(cpu, a, r8);
+    });
+
+    buildInstruction("CP_A_HL", 2, 1, function(cpu) {
+        const a = cpu.registers.A.getValue();
+        const hl = cpu.registers.HL.getValue();
+        const r8 = cpu.memory.read(hl);
+        return CPA(cpu, a, r8);
+    });
+    buildInstruction("CP_A_n8", 2, 1, function(cpu, n8) {
+        const a = cpu.registers.A.getValue();
+        return CPA(cpu, a, n8);
+    });
+
     return instructions;
 }
