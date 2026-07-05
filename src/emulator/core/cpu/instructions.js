@@ -50,6 +50,25 @@ function AND(cpu, a, b) {
     cpu.registers.F.C = 0;
 }
 
+function matchCC(cpu, cc) {
+    let match = false;
+    switch (cc) {
+        case "Z":
+            match = cpu.registers.F.Z;
+            break;
+        case "NZ":
+            match = !cpu.registers.F.Z;
+            break;
+        case "C":
+            match = cpu.registers.F.C;
+            break;
+        case "NC":
+            match = !cpu.registers.F.C;
+            break;
+    }
+    return match;
+}
+
 
 
 export default function() {
@@ -183,22 +202,8 @@ export default function() {
         cpu.registers.PC.setValue(n16);
     });
     buildInstruction("CALL_cc_n16", [6, 3], 3, function(cpu, cc, n16) {
-        let match = false;
-        switch (cc) {
-            case "Z":
-                match = cpu.registers.F.Z;
-                break;
-            case "NZ":
-                match = !cpu.registers.F.Z;
-                break;
-            case "C":
-                match = cpu.registers.F.C;
-                break;
-            case "NC":
-                match = !cpu.registers.F.C;
-                break;
-        }
-        if (match) {
+        
+        if (matchCC(cpu, cc)) {
             cpu.stack.push(cpu.registers.PC.getValue());
             cpu.registers.PC.setValue(n16);
         }
