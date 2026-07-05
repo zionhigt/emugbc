@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { Register, FlagRegister } from './register';
+import { Register, FlagRegister, Extendedregister } from './register';
 
 // Formatage lisible pour le debug : binaire et hexa plutôt que décimal
 const bin = (n, width = 8) => '0b' + (n >>> 0).toString(2).padStart(width, '0');
@@ -108,6 +108,63 @@ describe('Register', () => {
       const value = reg.getValue();
       expect(value, `setValue(0x1FFFF) : getValue() a retourné ${hex(value)}, attendu 0xFFFF`).toBe(0xffff);
     });
+  });
+});
+
+describe('Extendedregister', () => {
+  const makePair = () => {
+    const high = new (Register(8))();
+    const low = new (Register(8))();
+    return { high, low, pair: new Extendedregister(high, low) };
+  };
+
+  it('increment ajoute 1 à la valeur 16 bits — et les deux moitiés sont justes', () => {
+    const { high, low, pair } = makePair();
+    pair.setValue(0x1234);
+    pair.increment();
+    expect(pair.getValue()).toBe(0x1235);
+    expect(high.getValue(), 'registre haut inchangé').toBe(0x12);
+    expect(low.getValue(), 'registre bas incrémenté').toBe(0x35);
+  });
+
+  it('decrement retranche 1 — et les deux moitiés sont justes', () => {
+    const { high, low, pair } = makePair();
+    pair.setValue(0x1234);
+    pair.decrement();
+    expect(pair.getValue()).toBe(0x1233);
+    expect(high.getValue(), 'registre haut inchangé').toBe(0x12);
+    expect(low.getValue(), 'registre bas décrémenté').toBe(0x33);
+  });
+
+  it("increment traverse la frontière des deux registres 8 bits (0x12FF + 1 = 0x1300)", () => {
+    const { high, low, pair } = makePair();
+    pair.setValue(0x12ff);
+    pair.increment();
+    expect(pair.getValue(), 'la retenue du bas doit remonter dans le haut').toBe(0x1300);
+    expect(high.getValue(), 'registre haut').toBe(0x13);
+    expect(low.getValue(), 'registre bas').toBe(0x00);
+  });
+
+  it('decrement traverse la frontière dans l\'autre sens (0x1300 - 1 = 0x12FF)', () => {
+    const { high, low, pair } = makePair();
+    pair.setValue(0x1300);
+    pair.decrement();
+    expect(pair.getValue(), "l'emprunt du bas doit se servir dans le haut").toBe(0x12ff);
+    expect(high.getValue()).toBe(0x12);
+    expect(low.getValue()).toBe(0xff);
+  });
+
+  it('wrap complet : increment de 0xFFFF donne 0x0000, decrement de 0x0000 donne 0xFFFF', () => {
+    const { high, low, pair } = makePair();
+    pair.setValue(0xffff);
+    pair.increment();
+    expect(pair.getValue(), '0xFFFF + 1 wrappe').toBe(0x0000);
+    expect(high.getValue(), 'haut wrappé').toBe(0x00);
+    expect(low.getValue(), 'bas wrappé').toBe(0x00);
+    pair.decrement();
+    expect(pair.getValue(), '0x0000 - 1 wrappe').toBe(0xffff);
+    expect(high.getValue(), 'haut re-rempli').toBe(0xff);
+    expect(low.getValue(), 'bas re-rempli').toBe(0xff);
   });
 });
 
