@@ -325,5 +325,16 @@ export default function() {
         return DEC16(cpu.registers.SP);
     });
 
+    //------------------ INTERRUPT -------------------------------
+    buildInstruction("DI", 1, 1, function(cpu) {
+        return cpu.di();
+    });
+    buildInstruction("EI", 1, 1, function(cpu) {
+        return cpu.ei();
+    });
+    buildInstruction("HALT", 1, 1, function(cpu) {
+        return cpu.halt();
+    });
+
     return instructions;
 }
