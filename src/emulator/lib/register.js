@@ -11,6 +11,16 @@ class BaseRegister {
     setValue(value) {
         this._buffer[0] = value;
     }
+    increment() {
+        return this.setValue(
+            this.getValue() + 1
+        )
+    }
+    decrement() {
+        return this.setValue(
+            this.getValue() - 1
+        )
+    }
 }
 
 class Register8 extends BaseRegister {
