@@ -406,6 +406,141 @@ export default function() {
         }
     });
 
+    //------------------ LOAD -------------------------------
+    function LOAD(reg, value) {
+        reg.setValue(value);
+    }
+    buildInstruction("LD_r8_r8", 1, 1, function(cpu, a8, b8) {
+        LOAD(a8, b8.getValue());
+    });
+    buildInstruction("LD_r8_n8", 2, 2, function(cpu, a8, n8) {
+        LOAD(a8, n8);
+    });
+    buildInstruction("LD_r16_n16", 3, 3, function(cpu, a16, n16) {
+        LOAD(a16, n16);
+    });
+    buildInstruction("LD_HL_r8", 2, 1, function(cpu, a8) {
+        cpu.memory.write(
+            cpu.registers.HL.getValue(),
+            a8.getValue()
+        );
+    });
+    buildInstruction("LD_HL_n8", 3, 2, function(cpu, n8) {
+        cpu.memory.write(
+            cpu.registers.HL.getValue(),
+            n8
+        );
+    });
+    buildInstruction("LD_r8_HL", 2, 1, function(cpu, a8) {
+        a8.setValue(
+            cpu.memory.read(cpu.registers.HL.getValue())
+        );
+    });
+    buildInstruction("LD_r16_A", 2, 1, function(cpu, a8) {
+        cpu.memory.write(
+            a8.getValue(),
+            cpu.registers.A.getValue()
+        );
+    });
+    buildInstruction("LD_n16_A", 4, 3, function(cpu, n16) {
+        cpu.memory.write(
+            n16,
+            cpu.registers.A.getValue()
+        );
+    });
+    buildInstruction("LDH_n16_A", 3, 2, function(cpu, n16) {
+        cpu.memory.write(
+            0xFF00 | n16,
+            cpu.registers.A.getValue()
+        );
+    });
+    buildInstruction("LDH_C_A", 2, 1, function(cpu) {
+        cpu.memory.write(
+            0xFF00 + cpu.registers.C.getValue(),
+            cpu.registers.A.getValue()
+        );
+    });
+    buildInstruction("LD_A_r16", 2, 1, function(cpu, r16) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(r16.getValue())
+        )
+    });
+    buildInstruction("LD_A_n16", 4, 3, function(cpu, n16) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(n16)
+        )
+    });
+    buildInstruction("LDH_A_n16", 3, 2, function(cpu, n16) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(0xFF00 | n16)
+        )
+    });
+    buildInstruction("LDH_A_C", 2, 1, function(cpu) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(0xFF00 + cpu.registers.C.getValue())
+        )
+    });
+    buildInstruction("LD_HLI_A", 2, 1, function(cpu) {
+        cpu.memory.write(
+            cpu.registers.HL.getValue(),
+            cpu.registers.A.getValue()
+        );
+        cpu.registers.HL.increment();
+    });
+    buildInstruction("LD_HLD_A", 2, 1, function(cpu) {
+        cpu.memory.write(
+            cpu.registers.HL.getValue(),
+            cpu.registers.A.getValue()
+        );
+        cpu.registers.HL.decrement();
+    });
+    buildInstruction("LD_A_HLD", 2, 1, function(cpu) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(cpu.registers.HL.getValue())
+        );
+        cpu.registers.HL.decrement();
+    });
+    buildInstruction("LD_A_HLI", 2, 1, function(cpu) {
+        cpu.registers.A.setValue(
+            cpu.memory.read(cpu.registers.HL.getValue())
+        );
+        cpu.registers.HL.increment();
+    });
+    buildInstruction("LD_SP_n16", 3, 3, function(cpu, n16) {
+        cpu.registers.SP.setValue(n16);
+    });
+    buildInstruction("LD_n16_SP", 5, 3, function(cpu, n16) {
+        cpu.memory.write(
+            n16,
+            cpu.registers.SP.getValue() & 0xff,
+        );
+        cpu.memory.write(
+            n16 + 1,
+            cpu.registers.SP.getValue() >> 8,
+        );
+    });
+    buildInstruction("LD_HL_SP_e8", 3, 2, function(cpu, e8) {
+        const sp = cpu.registers.SP.getValue();
+        const a = byte.U16to2U8(sp).low;
+        const b = byte.sign8(e8);
+        const raw = sp + b;
+        cpu.registers.HL.setValue(raw);
+        const operation = {
+            id: 0,
+            size: 8,
+            a: a,
+            b: e8,
+            raw: a + e8,
+
+        }
+        cpu.registers.F.Z = 0;
+        return cpu
+        .updateNAndHFlags(operation)
+        .updateCarryFlag(operation);
+    });
+    buildInstruction("LD_SP_HL", 2, 1, function(cpu) {
+        LOAD(cpu.registers.SP, cpu.registers.HL.getValue());
+    });
 
     return instructions;
 }
