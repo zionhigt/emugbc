@@ -54,4 +54,5 @@ export default {
     buildU16,
     U16to2U8,
     sign8,
+    revertBits,
 };
