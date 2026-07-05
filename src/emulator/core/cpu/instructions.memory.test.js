@@ -108,4 +108,30 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       },
     );
   });
+
+  describe('AND_A_HL : A = A & [HL] — H TOUJOURS 1, C TOUJOURS 0', () => {
+    it('expose AND_A_HL avec son id et une méthode run', () => {
+      expect(instructions.AND_A_HL, 'instructions.AND_A_HL est absent').toBeDefined();
+      expect(instructions.AND_A_HL.id).toBe('AND_A_HL');
+      expect(typeof instructions.AND_A_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'ET bit à bit via le pointeur', A: 0b1100_1010, byte: 0b1010_0110, expA: 0b1000_0010, Z: 0 },
+      { cas: 'aucun bit commun → Z levé', A: 0b1111_0000, byte: 0b0000_1111, expA: 0b0000_0000, Z: 1 },
+    ].map((c) => ({ ...c, label: `AND_A_HL(A=${bin(c.A)}, [0xC123]=${bin(c.byte)})` })))(
+      '$cas : $label',
+      ({ A, byte, expA, Z, label }) => {
+        const cpu = setup({ A, byte, cIn: 1 }); // C=1 pré-levé : doit être forcé à 0
+        cpu.registers.F.H = 0; // doit être forcé à 1
+        instructions.AND_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H doit être forcé à 1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.C, `${label} → C doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      },
+    );
+  });
 });

@@ -252,4 +252,64 @@ describe('instructions', () => {
       expect(+!!F.Z, `SP=0x0000 mais Z est forcé à 0 par la doc : ${dumpFlags(F)}`).toBe(0);
     });
   });
+
+  describe('AND_A_r8 / AND_A_n8 : A = A & opérande — H TOUJOURS 1, C TOUJOURS 0', () => {
+    it('expose AND_A_r8 et AND_A_n8', () => {
+      for (const id of ['AND_A_r8', 'AND_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    // Avant chaque run : N=1, H=0, C=1 — l'exact contraire des valeurs imposées
+    // par la doc (N=0, H=1, C=0), pour vérifier que l'instruction les force bien.
+    const setupAnd = (A) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 1;
+      cpu.registers.F.H = 0;
+      cpu.registers.F.C = 1;
+      return cpu;
+    };
+
+    const expectAnd = (cpu, label, { expA, Z }) => {
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `${label} → H doit être forcé à 1 (bizarrerie du SM83), ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.C, `${label} → C doit être forcé à 0, ${dumpFlags(F)}`).toBe(0);
+    };
+
+    it.each([
+      { cas: 'ET bit à bit simple', instr: 'AND_A_r8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b1000_0010, Z: 0 },
+      { cas: 'aucun bit commun → résultat nul, Z levé', instr: 'AND_A_r8', A: 0b1111_0000, val: 0b0000_1111, expA: 0b0000_0000, Z: 1 },
+      { cas: 'masquage classique : garder le nibble bas', instr: 'AND_A_r8', A: 0b1111_1111, val: 0b0000_1111, expA: 0b0000_1111, Z: 0 },
+      { cas: 'immédiat : ET simple', instr: 'AND_A_n8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b1000_0010, Z: 0 },
+      { cas: 'immédiat : bits alternés opposés → nul', instr: 'AND_A_n8', A: 0b0101_0101, val: 0b1010_1010, expA: 0b0000_0000, Z: 1 },
+    ].map((c) => ({ ...c, label: `${c.instr}(A=${bin(c.A)}, ${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ instr, A, val, expA, Z, label }) => {
+        const cpu = setupAnd(A);
+        if (instr === 'AND_A_r8') {
+          cpu.registers.B.setValue(val);
+          instructions.AND_A_r8.run(cpu, cpu.registers.B);
+        } else {
+          instructions.AND_A_n8.run(cpu, val);
+        }
+        expectAnd(cpu, label, { expA, Z });
+      },
+    );
+
+    it("AND A,A : A inchangé, flags posés (l'idiome GB pour tester si A est nul)", () => {
+      const cpu = setupAnd(0b0100_0010);
+      instructions.AND_A_r8.run(cpu, cpu.registers.A);
+      expectAnd(cpu, 'AND_A_r8(A=0b01000010, A)', { expA: 0b0100_0010, Z: 0 });
+
+      const cpu2 = setupAnd(0x00);
+      instructions.AND_A_r8.run(cpu2, cpu2.registers.A);
+      expectAnd(cpu2, 'AND_A_r8(A=0x00, A)', { expA: 0x00, Z: 1 });
+    });
+  });
 });
