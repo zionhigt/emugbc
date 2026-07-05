@@ -380,5 +380,32 @@ export default function() {
         return cpu.halt();
     });
 
+    //------------------ JUMP -------------------------------
+    buildInstruction("JP_n16", 4, 3, function(cpu, n16) {
+        cpu.registers.PC.setValue(n16);
+    });
+    buildInstruction("JP_cc_n16", [4, 3], 3, function(cpu, cc, n16) {
+        if (matchCC(cpu, cc)) {
+            cpu.registers.PC.setValue(n16);
+        }
+    });
+    buildInstruction("JP_HL", 1, 1, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        cpu.registers.PC.setValue(hl);
+    });
+    buildInstruction("JR_n16", 3, 2, function(cpu, n16) {
+        const pc = cpu.registers.PC.getValue();
+        n16 = pc + byte.sign8(n16);
+        cpu.registers.PC.setValue(n16);
+    });
+    buildInstruction("JR_cc_n16", [3, 2], 2, function(cpu, cc, n16) {
+        if (matchCC(cpu, cc)) {
+            const pc = cpu.registers.PC.getValue();
+            n16 = pc + byte.sign8(n16);
+            cpu.registers.PC.setValue(n16);
+        }
+    });
+
+
     return instructions;
 }
