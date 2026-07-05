@@ -45,6 +45,55 @@ describe('Register', () => {
     );
   });
 
+  describe('increment / decrement', () => {
+    it('increment ajoute 1', () => {
+      const reg = new (Register(8))();
+      reg.setValue(0x41);
+      reg.increment();
+      expect(reg.getValue()).toBe(0x42);
+    });
+
+    it('decrement retranche 1', () => {
+      const reg = new (Register(8))();
+      reg.setValue(0x43);
+      reg.decrement();
+      expect(reg.getValue()).toBe(0x42);
+    });
+
+    it('increment wrappe au max : 0xFF → 0x00 (8 bits), 0xFFFF → 0x0000 (16 bits)', () => {
+      const reg8 = new (Register(8))();
+      reg8.setValue(0xff);
+      reg8.increment();
+      expect(reg8.getValue(), '0xFF + 1 doit wrapper à 0').toBe(0x00);
+
+      const reg16 = new (Register(16))();
+      reg16.setValue(0xffff);
+      reg16.increment();
+      expect(reg16.getValue(), '0xFFFF + 1 doit wrapper à 0').toBe(0x0000);
+    });
+
+    it('decrement wrappe à zéro : 0x00 → 0xFF (8 bits), 0x0000 → 0xFFFF (16 bits)', () => {
+      const reg8 = new (Register(8))();
+      reg8.decrement();
+      expect(reg8.getValue(), '0x00 - 1 doit wrapper au max').toBe(0xff);
+
+      const reg16 = new (Register(16))();
+      reg16.decrement();
+      expect(reg16.getValue(), '0x0000 - 1 doit wrapper au max (le wrap de SP de la pile)').toBe(0xffff);
+    });
+
+    it('les appels se cumulent et push/pop se neutralisent (2 décréments + 2 incréments)', () => {
+      const reg = new (Register(16))();
+      reg.setValue(0xfffe);
+      reg.decrement();
+      reg.decrement();
+      expect(reg.getValue(), 'après 2 décréments').toBe(0xfffc);
+      reg.increment();
+      reg.increment();
+      expect(reg.getValue(), 'revenu au point de départ').toBe(0xfffe);
+    });
+  });
+
   describe('Register(16)', () => {
     it('stocke une valeur 16 bits', () => {
       const reg = new (Register(16))();
