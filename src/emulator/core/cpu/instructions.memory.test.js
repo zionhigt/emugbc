@@ -189,6 +189,34 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('DEC_HL : décrémente l\'octet pointé par HL, EN mémoire — flags de DEC r8', () => {
+    it('expose DEC_HL avec son id et une méthode run', () => {
+      expect(instructions.DEC_HL, 'instructions.DEC_HL est absent').toBeDefined();
+      expect(instructions.DEC_HL.id).toBe('DEC_HL');
+      expect(typeof instructions.DEC_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'décrément simple en mémoire', byte: 0x43, cIn: 0, expByte: 0x42, Z: 0, H: 0 },
+      { cas: 'tombe à zéro → Z levé', byte: 0x01, cIn: 1, expByte: 0x00, Z: 1, H: 0 },
+      { cas: 'wrap 0x00 → 0xFF, C intact', byte: 0x00, cIn: 1, expByte: 0xff, Z: 0, H: 1 },
+    ].map((c) => ({ ...c, label: `DEC_HL([0xC123]=${hex(c.byte, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ byte, cIn, expByte, Z, H, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        instructions.DEC_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.memory.read(0xc123), 2), `${label} → l'octet doit être décrémenté EN mémoire, ${dumpFlags(F)}`).toBe(hex(expByte, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N=1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C préservé, ${dumpFlags(F)}`).toBe(cIn);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (le pointeur) ne doit pas bouger').toBe(hex(0xc123));
+        expect(hex(cpu.registers.A.getValue(), 2), 'A n\'est pas concerné').toBe('0x42');
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).

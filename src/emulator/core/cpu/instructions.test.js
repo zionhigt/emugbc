@@ -485,6 +485,81 @@ describe('instructions', () => {
     });
   });
 
+  describe('DEC_r8 : décrémente r8 — Z/N/H posés, C PRÉSERVÉ même sur wrap', () => {
+    it('expose DEC_r8 avec son id et une méthode run', () => {
+      expect(instructions.DEC_r8, 'instructions.DEC_r8 est absent').toBeDefined();
+      expect(instructions.DEC_r8.id).toBe('DEC_r8');
+      expect(typeof instructions.DEC_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'décrément simple', val: 0x43, cIn: 0, expVal: 0x42, Z: 0, H: 0 },
+      { cas: 'tombe pile à zéro → Z levé (la fin des boucles DEC+JR NZ)', val: 0x01, cIn: 1, expVal: 0x00, Z: 1, H: 0 },
+      { cas: 'emprunt de nibble (0x10 → 0x0F)', val: 0x10, cIn: 0, expVal: 0x0f, Z: 0, H: 1 },
+      { cas: 'wrap 0x00 → 0xFF : H levé mais C INTACT (C=0 reste 0)', val: 0x00, cIn: 0, expVal: 0xff, Z: 0, H: 1 },
+      { cas: 'wrap 0x00 → 0xFF : C=1 reste 1 (DEC ne touche jamais C)', val: 0x00, cIn: 1, expVal: 0xff, Z: 0, H: 1 },
+    ].map((c) => ({ ...c, label: `DEC_r8(B=${hex(c.val, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ val, cIn, expVal, Z, H, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 0; // doit être forcé à 1
+        cpu.registers.F.C = cIn; // ne doit JAMAIS bouger
+        instructions.DEC_r8.run(cpu, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.B.getValue(), 2), `${label} → B, ${dumpFlags(F)}`).toBe(hex(expVal, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N doit valoir 1 (soustraction), ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H (emprunt du nibble bas), ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C doit être PRÉSERVÉ (il valait ${cIn}), ${dumpFlags(F)}`).toBe(cIn);
+      },
+    );
+
+    it('fonctionne sur A aussi (r8 = n\'importe quel registre 8 bits)', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x01);
+      instructions.DEC_r8.run(cpu, cpu.registers.A);
+      expect(hex(cpu.registers.A.getValue(), 2), dumpFlags(cpu.registers.F)).toBe('0x00');
+      expect(+!!cpu.registers.F.Z, dumpFlags(cpu.registers.F)).toBe(1);
+    });
+  });
+
+  describe('DEC_r16 / DEC_SP : décrémente un registre 16 bits — AUCUN flag touché', () => {
+    it('expose DEC_r16 et DEC_SP', () => {
+      for (const id of ['DEC_r16', 'DEC_SP']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('DEC_r16 : décrément simple, flags intacts (tous levés le restent)', () => {
+      const cpu = new CPU();
+      cpu.registers.BC.setValue(0x1234);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.DEC_r16.run(cpu, cpu.registers.BC);
+      expect(hex(cpu.registers.BC.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0x1233));
+      expect(bin(cpu.registers.F.getValue()), 'aucun flag ne doit bouger').toBe(bin(0b1111_0000));
+    });
+
+    it('DEC_r16 : wrap 0x0000 → 0xFFFF sans lever le moindre flag (même pas Z sur le 0 de départ)', () => {
+      const cpu = new CPU();
+      cpu.registers.DE.setValue(0x0000);
+      instructions.DEC_r16.run(cpu, cpu.registers.DE);
+      expect(hex(cpu.registers.DE.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0xffff));
+      expect(bin(cpu.registers.F.getValue()), 'flags toujours vierges').toBe(bin(0b0000_0000));
+    });
+
+    it('DEC_SP : SP est la cible implicite, flags intacts', () => {
+      const cpu = new CPU();
+      cpu.registers.SP.setValue(0xfffe);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.DEC_SP.run(cpu);
+      expect(hex(cpu.registers.SP.getValue()), dumpFlags(cpu.registers.F)).toBe(hex(0xfffd));
+      expect(bin(cpu.registers.F.getValue()), 'aucun flag ne doit bouger').toBe(bin(0b1111_0000));
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
