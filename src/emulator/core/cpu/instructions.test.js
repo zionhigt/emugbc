@@ -784,6 +784,86 @@ describe('instructions', () => {
     });
   });
 
+  describe('famille LD (côté registres) : copies pures, aucun flag — sauf LD HL,SP+e8', () => {
+    it('expose les LD registre-vers-registre et immédiats', () => {
+      for (const id of ['LD_r8_r8', 'LD_r8_n8', 'LD_r16_n16', 'LD_SP_n16', 'LD_SP_HL', 'LD_HL_SP_e8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('LD_r8_r8 : copie src dans dest, src intact, flags intacts', () => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(0x42);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.LD_r8_r8.run(cpu, cpu.registers.A, cpu.registers.B);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A reçoit la copie').toBe('0x42');
+      expect(hex(cpu.registers.B.getValue(), 2), 'B (source) intact').toBe('0x42');
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+
+    it('LD_r8_r8 vers soi-même (LD B,B) : no-op parfait', () => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(0x42);
+      instructions.LD_r8_r8.run(cpu, cpu.registers.B, cpu.registers.B);
+      expect(hex(cpu.registers.B.getValue(), 2), 'B inchangé').toBe('0x42');
+    });
+
+    it('LD_r8_n8 : copie l\'immédiat dans le registre', () => {
+      const cpu = new CPU();
+      instructions.LD_r8_n8.run(cpu, cpu.registers.D, 0x99);
+      expect(hex(cpu.registers.D.getValue(), 2)).toBe('0x99');
+    });
+
+    it('LD_r16_n16 : copie 16 bits — les deux moitiés sont justes', () => {
+      const cpu = new CPU();
+      instructions.LD_r16_n16.run(cpu, cpu.registers.BC, 0x1234);
+      expect(hex(cpu.registers.BC.getValue()), 'valeur composée').toBe(hex(0x1234));
+      expect(hex(cpu.registers.B.getValue(), 2), 'octet haut dans B').toBe('0x12');
+      expect(hex(cpu.registers.C.getValue(), 2), 'octet bas dans C').toBe('0x34');
+    });
+
+    it("LD_SP_n16 : l'instruction qui installe la pile (LD SP, 0xFFFE)", () => {
+      const cpu = new CPU();
+      instructions.LD_SP_n16.run(cpu, 0xfffe);
+      expect(hex(cpu.registers.SP.getValue())).toBe(hex(0xfffe));
+    });
+
+    it('LD_SP_HL : SP reçoit la valeur de HL, HL intact', () => {
+      const cpu = new CPU();
+      cpu.registers.HL.setValue(0xbeef);
+      instructions.LD_SP_HL.run(cpu);
+      expect(hex(cpu.registers.SP.getValue()), 'SP copié').toBe(hex(0xbeef));
+      expect(hex(cpu.registers.HL.getValue()), 'HL intact').toBe(hex(0xbeef));
+    });
+
+    describe('LD_HL_SP_e8 : HL = SP + e8 signé — les flags bizarres de ADD SP,e8, et SP INTACT', () => {
+      it.each([
+        { cas: 'e8 positif simple', SP: 0xc000, e8: 0x05, expHL: 0xc005, H: 0, C: 0 },
+        { cas: 'half-carry sur l\'octet bas (F+1)', SP: 0xc00f, e8: 0x01, expHL: 0xc010, H: 1, C: 0 },
+        { cas: 'carry sur l\'octet bas (FF+1)', SP: 0xc0ff, e8: 0x01, expHL: 0xc100, H: 1, C: 1 },
+        { cas: 'e8 négatif (0xFE = -2), H et C en non-signé', SP: 0xc005, e8: 0xfe, expHL: 0xc003, H: 1, C: 1 },
+      ].map((c) => ({ ...c, label: `LD_HL_SP_e8(SP=${hex(c.SP)}, e8=${hex(c.e8, 2)})` })))(
+        '$cas : $label',
+        ({ SP, e8, expHL, H, C, label }) => {
+          const cpu = new CPU();
+          cpu.registers.SP.setValue(SP);
+          cpu.registers.F.N = 1; // doit tomber à 0
+          cpu.registers.F.Z = 1; // doit être FORCÉ à 0
+          instructions.LD_HL_SP_e8.run(cpu, e8);
+          const F = cpu.registers.F;
+          expect(hex(cpu.registers.HL.getValue()), `${label} → HL, ${dumpFlags(F)}`).toBe(hex(expHL));
+          expect(hex(cpu.registers.SP.getValue()), `${label} → SP ne doit PAS bouger (différence avec ADD SP,e8)`).toBe(hex(SP));
+          expect(+!!F.Z, `${label} → Z forcé à 0, ${dumpFlags(F)}`).toBe(0);
+          expect(+!!F.N, `${label} → N=0, ${dumpFlags(F)}`).toBe(0);
+          expect(+!!F.H, `${label} → H (octet bas non-signé), ${dumpFlags(F)}`).toBe(H);
+          expect(+!!F.C, `${label} → C (octet bas non-signé), ${dumpFlags(F)}`).toBe(C);
+        },
+      );
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();

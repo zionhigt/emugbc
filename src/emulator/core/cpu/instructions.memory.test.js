@@ -244,6 +244,160 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('famille LD (côté mémoire) : copies via pointeurs — aucun flag', () => {
+    const makeCpu = () => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.F.setValue(0b1111_0000); // sentinelle : aucune LD ne doit y toucher
+      return cpu;
+    };
+    const expectFlagsIntact = (cpu, label) =>
+      expect(bin(cpu.registers.F.getValue()), `${label} : flags intacts`).toBe(bin(0b1111_0000));
+
+    it('expose toutes les LD mémoire', () => {
+      for (const id of [
+        'LD_HL_r8', 'LD_HL_n8', 'LD_r8_HL',
+        'LD_r16_A', 'LD_A_r16', 'LD_n16_A', 'LD_A_n16',
+        'LDH_n16_A', 'LDH_A_n16', 'LDH_C_A', 'LDH_A_C',
+        'LD_HLI_A', 'LD_HLD_A', 'LD_A_HLI', 'LD_A_HLD',
+        'LD_n16_SP',
+      ]) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('LD_HL_r8 : écrit r8 à l\'adresse pointée par HL', () => {
+      const cpu = makeCpu();
+      cpu.registers.HL.setValue(0xc123);
+      cpu.registers.B.setValue(0x42);
+      instructions.LD_HL_r8.run(cpu, cpu.registers.B);
+      expect(hex(cpu.memory.read(0xc123), 2), 'octet écrit en mémoire').toBe('0x42');
+      expect(hex(cpu.registers.B.getValue(), 2), 'B intact').toBe('0x42');
+      expect(hex(cpu.registers.HL.getValue()), 'HL intact').toBe(hex(0xc123));
+      expectFlagsIntact(cpu, 'LD_HL_r8');
+    });
+
+    it("LD_HL_n8 : écrit l'immédiat à l'adresse pointée", () => {
+      const cpu = makeCpu();
+      cpu.registers.HL.setValue(0xc123);
+      instructions.LD_HL_n8.run(cpu, 0x99);
+      expect(hex(cpu.memory.read(0xc123), 2)).toBe('0x99');
+      expectFlagsIntact(cpu, 'LD_HL_n8');
+    });
+
+    it("LD_r8_HL : lit l'octet pointé dans le registre, mémoire intacte", () => {
+      const cpu = makeCpu();
+      cpu.registers.HL.setValue(0xc123);
+      cpu.memory.write(0xc123, 0x2a);
+      instructions.LD_r8_HL.run(cpu, cpu.registers.D);
+      expect(hex(cpu.registers.D.getValue(), 2), 'D reçoit la copie').toBe('0x2A');
+      expect(hex(cpu.memory.read(0xc123), 2), 'mémoire intacte').toBe('0x2A');
+      expectFlagsIntact(cpu, 'LD_r8_HL');
+    });
+
+    it('LD_r16_A / LD_A_r16 : A vers [r16] et retour (via BC et DE)', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      cpu.registers.BC.setValue(0xc200);
+      instructions.LD_r16_A.run(cpu, cpu.registers.BC);
+      expect(hex(cpu.memory.read(0xc200), 2), 'A écrit à [BC]').toBe('0x42');
+
+      cpu.registers.DE.setValue(0xc300);
+      cpu.memory.write(0xc300, 0x77);
+      instructions.LD_A_r16.run(cpu, cpu.registers.DE);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A lu depuis [DE]').toBe('0x77');
+      expectFlagsIntact(cpu, 'LD_r16_A / LD_A_r16');
+    });
+
+    it('LD_n16_A / LD_A_n16 : A vers une adresse absolue et retour', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      instructions.LD_n16_A.run(cpu, 0xc456);
+      expect(hex(cpu.memory.read(0xc456), 2), 'A écrit à n16').toBe('0x42');
+
+      cpu.memory.write(0xc789, 0x77);
+      instructions.LD_A_n16.run(cpu, 0xc789);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A lu depuis n16').toBe('0x77');
+      expectFlagsIntact(cpu, 'LD_n16_A / LD_A_n16');
+    });
+
+    it('LDH_n16_A / LDH_A_n16 : la page haute 0xFF00 — l\'octet reçu est le bas de l\'adresse', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      instructions.LDH_n16_A.run(cpu, 0x44); // → 0xFF44
+      expect(hex(cpu.memory.read(0xff44), 2), 'A écrit à 0xFF00 | 0x44').toBe('0x42');
+
+      cpu.memory.write(0xff85, 0x90);
+      instructions.LDH_A_n16.run(cpu, 0x85);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A lu depuis 0xFF85').toBe('0x90');
+      expectFlagsIntact(cpu, 'LDH_n16_A / LDH_A_n16');
+    });
+
+    it('LDH_C_A / LDH_A_C : adresse 0xFF00 + registre C (le REGISTRE C, pas le flag !)', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      cpu.registers.C.setValue(0x44);
+      instructions.LDH_C_A.run(cpu);
+      expect(hex(cpu.memory.read(0xff44), 2), 'A écrit à 0xFF00 + C').toBe('0x42');
+
+      cpu.memory.write(0xff44, 0x90);
+      instructions.LDH_A_C.run(cpu);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A lu depuis 0xFF00 + C').toBe('0x90');
+      expectFlagsIntact(cpu, 'LDH_C_A / LDH_A_C');
+    });
+
+    it('LD_HLI_A : écrit A à [HL] PUIS incrémente HL', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      cpu.registers.HL.setValue(0xc123);
+      instructions.LD_HLI_A.run(cpu);
+      expect(hex(cpu.memory.read(0xc123), 2), "l'écriture se fait à l'adresse d'AVANT l'incrément").toBe('0x42');
+      expect(hex(cpu.registers.HL.getValue()), 'HL incrémenté après coup').toBe(hex(0xc124));
+      expectFlagsIntact(cpu, 'LD_HLI_A');
+    });
+
+    it('LD_HLD_A : écrit A à [HL] PUIS décrémente HL', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x42);
+      cpu.registers.HL.setValue(0xc123);
+      instructions.LD_HLD_A.run(cpu);
+      expect(hex(cpu.memory.read(0xc123), 2), "l'écriture se fait à l'adresse d'AVANT le décrément").toBe('0x42');
+      expect(hex(cpu.registers.HL.getValue()), 'HL décrémenté après coup').toBe(hex(0xc122));
+      expectFlagsIntact(cpu, 'LD_HLD_A');
+    });
+
+    it('LD_A_HLI : lit [HL] dans A PUIS incrémente HL — la boucle de copie idiomatique', () => {
+      const cpu = makeCpu();
+      cpu.registers.HL.setValue(0xc123);
+      cpu.memory.write(0xc123, 0x2a);
+      instructions.LD_A_HLI.run(cpu);
+      expect(hex(cpu.registers.A.getValue(), 2), "A reçoit l'octet d'AVANT l'incrément").toBe('0x2A');
+      expect(hex(cpu.registers.HL.getValue()), 'HL incrémenté après coup').toBe(hex(0xc124));
+      expectFlagsIntact(cpu, 'LD_A_HLI');
+    });
+
+    it('LD_A_HLD : lit [HL] dans A PUIS décrémente HL', () => {
+      const cpu = makeCpu();
+      cpu.registers.HL.setValue(0xc123);
+      cpu.memory.write(0xc123, 0x2a);
+      instructions.LD_A_HLD.run(cpu);
+      expect(hex(cpu.registers.A.getValue(), 2)).toBe('0x2A');
+      expect(hex(cpu.registers.HL.getValue()), 'HL décrémenté après coup').toBe(hex(0xc122));
+      expectFlagsIntact(cpu, 'LD_A_HLD');
+    });
+
+    it('LD_n16_SP : écrit SP en mémoire, little-endian (bas à n16, haut à n16+1)', () => {
+      const cpu = makeCpu();
+      cpu.registers.SP.setValue(0xbeef);
+      instructions.LD_n16_SP.run(cpu, 0xc300);
+      expect(hex(cpu.memory.read(0xc300), 2), 'octet BAS de SP à n16').toBe('0xEF');
+      expect(hex(cpu.memory.read(0xc301), 2), 'octet HAUT de SP à n16+1').toBe('0xBE');
+      expect(hex(cpu.registers.SP.getValue()), 'SP intact').toBe(hex(0xbeef));
+      expectFlagsIntact(cpu, 'LD_n16_SP');
+    });
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
