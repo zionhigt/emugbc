@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { getBit, getFlag, setBit, revertBits, buildU16, U16to2U8 } from './byte';
+import { getBit, getFlag, setBit, revertBits, buildU16, U16to2U8, sign8 } from './byte';
 
 // Formatage lisible pour le debug : le décimal est illisible pour du bit-à-bit
 const bin = (n, width = 8) => '0b' + (n >>> 0).toString(2).padStart(width, '0');
@@ -86,6 +86,30 @@ describe('byte', () => {
         expect(bin(result), label).toBe(bin(expected));
       },
     );
+  });
+
+  describe('sign8', () => {
+    // Interprétation complément à deux d'un octet brut : 0x00..0x7F → 0..127, 0x80..0xFF → -128..-1
+    it.each([
+      { cas: 'zéro', byte: 0x00, expected: 0 },
+      { cas: 'petit positif', byte: 0x05, expected: 5 },
+      { cas: 'plus grand positif (bit 7 à 0)', byte: 0x7f, expected: 127 },
+      { cas: 'plus petit négatif (bit 7 seul)', byte: 0x80, expected: -128 },
+      { cas: '-1 (tous bits levés)', byte: 0xff, expected: -1 },
+      { cas: '-2 (le e8 de ADD SP,e8)', byte: 0xfe, expected: -2 },
+    ].map((c) => ({ ...c, label: `sign8(${hex(c.byte, 2)})` })))(
+      '$cas : $label → $expected',
+      ({ byte, expected, label }) => {
+        expect(sign8(byte), label).toBe(expected);
+      },
+    );
+
+    it('conserve la valeur modulo 256 (même octet, autre représentant)', () => {
+      for (const byte of [0x00, 0x01, 0x7f, 0x80, 0xc3, 0xff]) {
+        const signed = sign8(byte);
+        expect((signed + 0x100) % 0x100, `sign8(${hex(byte, 2)}) = ${signed}`).toBe(byte);
+      }
+    });
   });
 
   describe('buildU16', () => {
