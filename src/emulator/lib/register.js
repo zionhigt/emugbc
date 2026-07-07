@@ -58,6 +58,10 @@ export function FlagRegister(size) {
                 });
             }
         }
+
+        setValue(value) {
+            return super.setValue(value & 0xf0);
+        }
     }
 
     return FlagRegister;
