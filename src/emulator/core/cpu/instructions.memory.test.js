@@ -559,6 +559,78 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('RET / RET_cc / RETI : les retours — un POP dans PC', () => {
+    // pile préparée avec une adresse de retour 0xC003 (little-endian)
+    const makeCpuReady = () => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.PC.setValue(0x1234); // on est "dans la fonction"
+      cpu.registers.SP.setValue(0xfffc);
+      cpu.memory.write(0xfffc, 0x03); // low du retour
+      cpu.memory.write(0xfffd, 0xc0); // high du retour
+      return cpu;
+    };
+
+    it('expose RET, RET_cc et RETI', () => {
+      for (const id of ['RET', 'RET_cc', 'RETI']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('RET : dépile le retour dans PC, SP remonte de 2, flags intacts', () => {
+      const cpu = makeCpuReady();
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.RET.run(cpu);
+      expect(hex(cpu.registers.PC.getValue()), 'PC = adresse dépilée').toBe(hex(0xc003));
+      expect(hex(cpu.registers.SP.getValue()), 'SP remonté').toBe(hex(0xfffe));
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+
+    it('intégration : CALL puis RET — le cycle de fonction complet revient au point de départ', () => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.PC.setValue(0xc003); // après le CALL (convention décodeur)
+      cpu.registers.SP.setValue(0xfffe);
+      instructions.CALL_n16.run(cpu, 0x1234); // on part dans la fonction
+      expect(hex(cpu.registers.PC.getValue()), 'aller').toBe(hex(0x1234));
+      instructions.RET.run(cpu); // la fonction rend la main
+      expect(hex(cpu.registers.PC.getValue()), 'retour pile après le CALL').toBe(hex(0xc003));
+      expect(hex(cpu.registers.SP.getValue()), 'SP au compte rond').toBe(hex(0xfffe));
+    });
+
+    it.each([
+      { cc: 'Z', F: 0b1000_0000, taken: true },
+      { cc: 'Z', F: 0b0000_0000, taken: false },
+      { cc: 'NC', F: 0b0000_0000, taken: true },
+      { cc: 'C', F: 0b0000_0000, taken: false },
+    ].map((c) => ({
+      ...c,
+      label: `RET_cc("${c.cc}") avec F=${bin(c.F)}`,
+      attendu: c.taken ? 'prise (dépile)' : 'pas prise (ne dépile RIEN)',
+    })))('RET_cc, condition $attendu : $label', ({ cc, F: flags, taken, label }) => {
+      const cpu = makeCpuReady();
+      cpu.registers.F.setValue(flags);
+      instructions.RET_cc.run(cpu, cc);
+      const F = cpu.registers.F;
+      if (taken) {
+        expect(hex(cpu.registers.PC.getValue()), `${label} → PC dépilé, ${dumpFlags(F)}`).toBe(hex(0xc003));
+        expect(hex(cpu.registers.SP.getValue()), `${label} → SP remonté`).toBe(hex(0xfffe));
+      } else {
+        expect(hex(cpu.registers.PC.getValue()), `${label} → PC immobile, ${dumpFlags(F)}`).toBe(hex(0x1234));
+        expect(hex(cpu.registers.SP.getValue()), `${label} → SP immobile, rien n'a été dépilé`).toBe(hex(0xfffc));
+      }
+      expect(bin(F.getValue()), `${label} → flags intacts`).toBe(bin(flags));
+    });
+
+    it('RETI : dépile comme RET et allume IME IMMÉDIATEMENT (pas le délai d\'EI !)', () => {
+      const cpu = makeCpuReady();
+      instructions.RETI.run(cpu);
+      expect(hex(cpu.registers.PC.getValue()), 'PC dépilé').toBe(hex(0xc003));
+      expect(hex(cpu.registers.SP.getValue()), 'SP remonté').toBe(hex(0xfffe));
+      expect(cpu.ime, 'ime doit être allumé TOUT DE SUITE, pas armé pour plus tard').toBe(true);
+    });
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
