@@ -424,6 +424,92 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('PUSH / POP : la pile a ses instructions officielles', () => {
+    const makeCpu = (sp = 0xfffe) => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.SP.setValue(sp);
+      return cpu;
+    };
+
+    it('expose PUSH_r16, POP_r16, PUSH_AF et POP_AF', () => {
+      for (const id of ['PUSH_r16', 'POP_r16', 'PUSH_AF', 'POP_AF']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it('PUSH_r16 : high à SP-1, low à SP-2, SP descend de 2, source et flags intacts', () => {
+      const cpu = makeCpu();
+      cpu.registers.BC.setValue(0x1234);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.PUSH_r16.run(cpu, cpu.registers.BC);
+      expect(hex(cpu.registers.SP.getValue()), 'SP').toBe(hex(0xfffc));
+      expect(hex(cpu.memory.read(0xfffd), 2), 'octet haut').toBe('0x12');
+      expect(hex(cpu.memory.read(0xfffc), 2), 'octet bas').toBe('0x34');
+      expect(hex(cpu.registers.BC.getValue()), 'BC intact').toBe(hex(0x1234));
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+
+    it('POP_r16 : lit low à SP, high à SP+1, SP remonte de 2, flags intacts', () => {
+      const cpu = makeCpu(0xfffc);
+      cpu.memory.write(0xfffc, 0x34);
+      cpu.memory.write(0xfffd, 0x12);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.POP_r16.run(cpu, cpu.registers.DE);
+      expect(hex(cpu.registers.DE.getValue()), 'DE reconstitué').toBe(hex(0x1234));
+      expect(hex(cpu.registers.SP.getValue()), 'SP').toBe(hex(0xfffe));
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts (POP r16 n\'y touche pas)').toBe(bin(0b1111_0000));
+    });
+
+    it('aller-retour : PUSH BC puis POP DE transfère la valeur, SP au compte rond', () => {
+      const cpu = makeCpu();
+      cpu.registers.BC.setValue(0xbeef);
+      instructions.PUSH_r16.run(cpu, cpu.registers.BC);
+      instructions.POP_r16.run(cpu, cpu.registers.DE);
+      expect(hex(cpu.registers.DE.getValue()), 'DE = ancien BC').toBe(hex(0xbeef));
+      expect(hex(cpu.registers.SP.getValue()), 'SP restauré').toBe(hex(0xfffe));
+    });
+
+    it('PUSH_AF : A en haut, F en bas — la photo complète des flags part sur la pile', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x12);
+      cpu.registers.F.setValue(0b1011_0000); // Z=1 N=0 H=1 C=1
+      instructions.PUSH_AF.run(cpu);
+      expect(hex(cpu.registers.SP.getValue()), 'SP').toBe(hex(0xfffc));
+      expect(hex(cpu.memory.read(0xfffd), 2), 'A à SP+1').toBe('0x12');
+      expect(bin(cpu.memory.read(0xfffc)), 'F à SP, tel quel').toBe(bin(0b1011_0000));
+    });
+
+    it('POP_AF : LE piège — le nibble bas de l\'octet dépilé est JETÉ (F câblé à 0 en bas)', () => {
+      const cpu = makeCpu(0xfffc);
+      cpu.memory.write(0xfffc, 0b1011_0101); // 0xB5 : nibble bas plein de déchets
+      cpu.memory.write(0xfffd, 0x12);
+      instructions.POP_AF.run(cpu);
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), 'A depuis l\'octet haut').toBe('0x12');
+      expect(+!!F.Z, `Z depuis le bit 7, ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.N, `N depuis le bit 6, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `H depuis le bit 5, ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.C, `C depuis le bit 4, ${dumpFlags(F)}`).toBe(1);
+      expect(bin(F.getValue()), 'le nibble bas de F doit être VIDE (0xB5 devient 0xB0)').toBe(bin(0b1011_0000));
+      expect(hex(cpu.registers.SP.getValue()), 'SP').toBe(hex(0xfffe));
+    });
+
+    it('aller-retour AF : PUSH AF puis POP AF restitue A et les 4 flags à l\'identique', () => {
+      const cpu = makeCpu();
+      cpu.registers.A.setValue(0x9c);
+      cpu.registers.F.setValue(0b0101_0000); // N=1 C=1
+      instructions.PUSH_AF.run(cpu);
+      cpu.registers.A.setValue(0x00);
+      cpu.registers.F.setValue(0b0000_0000);
+      instructions.POP_AF.run(cpu);
+      expect(hex(cpu.registers.A.getValue(), 2), 'A restauré').toBe('0x9C');
+      expect(bin(cpu.registers.F.getValue()), `flags restaurés : ${dumpFlags(cpu.registers.F)}`).toBe(bin(0b0101_0000));
+      expect(hex(cpu.registers.SP.getValue()), 'SP au compte rond').toBe(hex(0xfffe));
+    });
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
