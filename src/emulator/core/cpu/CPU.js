@@ -87,6 +87,11 @@ export default class CPU {
         this._imeScheduled = false;
     }
 
+    start() {
+        this._ime = true;
+        this._imeScheduled = false;
+    }
+    
     ei() {
         this._imeScheduled = true;
     }

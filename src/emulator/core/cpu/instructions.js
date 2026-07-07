@@ -621,7 +621,21 @@ export default function() {
         const raw = byte.setBit(a, u3, 0);
         cpu.memory.write(hl, raw);
     });
+    
+    //------------------ RET -------------------------------
 
+    buildInstruction("RET", 4, 1, function(cpu) {
+        cpu.registers.PC.setValue(cpu.stack.pop());
+    });
+    buildInstruction("RET_cc", [5, 2], 1, function(cpu, cc) {
+        if (matchCC(cpu, cc)) {
+            cpu.registers.PC.setValue(cpu.stack.pop());
+        }
+    });
+    buildInstruction("RETI", 4, 1, function(cpu) {
+        cpu.start();
+        cpu.registers.PC.setValue(cpu.stack.pop());
+    });
 
     return instructions;
 }
