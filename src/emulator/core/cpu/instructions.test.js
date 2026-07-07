@@ -864,6 +864,36 @@ describe('instructions', () => {
     });
   });
 
+  describe('NOP : ne fait rien — et le prouver est tout un art', () => {
+    it('expose NOP avec son id et une méthode run', () => {
+      expect(instructions.NOP, 'instructions.NOP est absent').toBeDefined();
+      expect(instructions.NOP.id).toBe('NOP');
+      expect(typeof instructions.NOP.run).toBe('function');
+    });
+
+    it('ne touche à RIEN : registres, flags, état interne', () => {
+      const cpu = new CPU();
+      cpu.registers.AF.setValue(0x12f0);
+      cpu.registers.BC.setValue(0x3456);
+      cpu.registers.DE.setValue(0x789a);
+      cpu.registers.HL.setValue(0xbcde);
+      cpu.registers.SP.setValue(0xfffe);
+      cpu.registers.PC.setValue(0xc001);
+
+      instructions.NOP.run(cpu);
+
+      expect(hex(cpu.registers.AF.getValue()), 'AF (dont les flags)').toBe(hex(0x12f0));
+      expect(hex(cpu.registers.BC.getValue()), 'BC').toBe(hex(0x3456));
+      expect(hex(cpu.registers.DE.getValue()), 'DE').toBe(hex(0x789a));
+      expect(hex(cpu.registers.HL.getValue()), 'HL').toBe(hex(0xbcde));
+      expect(hex(cpu.registers.SP.getValue()), 'SP').toBe(hex(0xfffe));
+      expect(hex(cpu.registers.PC.getValue()), 'PC (le décodeur avancera, pas NOP)').toBe(hex(0xc001));
+      expect(cpu.ime, 'ime').toBe(false);
+      expect(cpu.imeScheduled, 'imeScheduled').toBe(false);
+      expect(cpu.halted, 'halted').toBe(false);
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
