@@ -612,10 +612,10 @@ export default function() {
 
     //------------------ RES -------------------------------
 
-    buildInstruction("RES_u3_r8", 3, 1, function(cpu, u3, r8) {
+    buildInstruction("RES_u3_r8", 2, 2, function(cpu, u3, r8) {
         r8.setValue(byte.setBit(r8.getValue(), u3, 0));
     });
-    buildInstruction("RES_u3_HL", 3, 1, function(cpu, u3) {
+    buildInstruction("RES_u3_HL", 4, 2, function(cpu, u3) {
         const hl = cpu.registers.HL.getValue();
         const a = cpu.memory.read(hl);
         const raw = byte.setBit(a, u3, 0);
