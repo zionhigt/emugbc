@@ -597,16 +597,16 @@ export default function() {
 
     //------------------ STACK -------------------------------
 
-    buildInstruction("POP_AF", 1, 1, function(cpu) {
+    buildInstruction("POP_AF", 3, 1, function(cpu) {
         cpu.registers.AF.setValue(cpu.stack.pop());
     });
-    buildInstruction("POP_r16", 1, 1, function(cpu, r16) {
+    buildInstruction("POP_r16", 3, 1, function(cpu, r16) {
         r16.setValue(cpu.stack.pop());
     });
-    buildInstruction("PUSH_AF", 1, 1, function(cpu) {
+    buildInstruction("PUSH_AF", 4, 1, function(cpu) {
         cpu.stack.push(cpu.registers.AF);
     });
-    buildInstruction("PUSH_r16", 1, 1, function(cpu, r16) {
+    buildInstruction("PUSH_r16", 4, 1, function(cpu, r16) {
         cpu.stack.push(r16);
 
     });
