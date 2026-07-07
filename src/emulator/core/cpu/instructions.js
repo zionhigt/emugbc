@@ -186,6 +186,15 @@ export default function() {
         cpu.registers.F.H = 0;
         cpu.registers.F.C = 0;
     }
+    function XOR(cpu, a, b) {
+        const raw = a ^ b;
+        cpu.registers.A.setValue(raw);
+        const value = cpu.registers.A.getValue();
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+        cpu.registers.F.C = 0;
+    }
 
     buildInstruction("AND_A_r8", 1, 1, function(cpu, reg8) {
         const a = cpu.registers.A.getValue();
@@ -216,6 +225,21 @@ export default function() {
     buildInstruction("OR_A_n8", 2, 2, function(cpu, n8) {
         const a = cpu.registers.A.getValue();
         OR(cpu, a, n8)
+    });
+    buildInstruction("XOR_A_r8", 1, 1, function(cpu, reg8) {
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        XOR(cpu, a, r8)
+    });
+    buildInstruction("XOR_A_HL", 2, 1, function(cpu) {
+        const a = cpu.registers.A.getValue();
+        const hl = cpu.registers.HL.getValue();
+        const r8 = cpu.memory.read(hl);
+        XOR(cpu, a, r8)
+    });
+    buildInstruction("XOR_A_n8", 2, 2, function(cpu, n8) {
+        const a = cpu.registers.A.getValue();
+        XOR(cpu, a, n8)
     });
 
     //------------------ BIT -------------------------------
