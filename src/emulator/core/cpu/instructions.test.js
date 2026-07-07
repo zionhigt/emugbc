@@ -894,6 +894,65 @@ describe('instructions', () => {
     });
   });
 
+  describe('OR_A_r8 / OR_A_n8 : A = A | opérande — N, H et C TOUS forcés à 0', () => {
+    it('expose OR_A_r8 et OR_A_n8', () => {
+      for (const id of ['OR_A_r8', 'OR_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    // Avant chaque run : N=1, H=1, C=1 — le contraire des valeurs imposées (0 partout).
+    const setupOr = (A) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 1;
+      cpu.registers.F.H = 1;
+      cpu.registers.F.C = 1;
+      return cpu;
+    };
+
+    const expectOr = (cpu, label, { expA, Z }) => {
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `${label} → H forcé à 0 (contrairement à AND !), ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.C, `${label} → C forcé à 0, ${dumpFlags(F)}`).toBe(0);
+    };
+
+    it.each([
+      { cas: 'OU bit à bit simple', instr: 'OR_A_r8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b1110_1110, Z: 0 },
+      { cas: 'poser des bits : les deux nibbles se complètent', instr: 'OR_A_r8', A: 0b0000_1111, val: 0b1111_0000, expA: 0b1111_1111, Z: 0 },
+      { cas: 'zéro | zéro → Z levé (seul cas nul possible)', instr: 'OR_A_r8', A: 0b0000_0000, val: 0b0000_0000, expA: 0b0000_0000, Z: 1 },
+      { cas: 'immédiat : OU simple', instr: 'OR_A_n8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b1110_1110, Z: 0 },
+      { cas: 'immédiat : zéro | zéro', instr: 'OR_A_n8', A: 0b0000_0000, val: 0b0000_0000, expA: 0b0000_0000, Z: 1 },
+    ].map((c) => ({ ...c, label: `${c.instr}(A=${bin(c.A)}, ${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ instr, A, val, expA, Z, label }) => {
+        const cpu = setupOr(A);
+        if (instr === 'OR_A_r8') {
+          cpu.registers.B.setValue(val);
+          instructions.OR_A_r8.run(cpu, cpu.registers.B);
+        } else {
+          instructions.OR_A_n8.run(cpu, val);
+        }
+        expectOr(cpu, label, { expA, Z });
+      },
+    );
+
+    it("OR A,A : L'idiome GB pour tester si A est nul (plus courant que AND A,A)", () => {
+      const cpu = setupOr(0b0100_0010);
+      instructions.OR_A_r8.run(cpu, cpu.registers.A);
+      expectOr(cpu, 'OR_A_r8(A=0b01000010, A)', { expA: 0b0100_0010, Z: 0 });
+
+      const cpu2 = setupOr(0x00);
+      instructions.OR_A_r8.run(cpu2, cpu2.registers.A);
+      expectOr(cpu2, 'OR_A_r8(A=0x00, A)', { expA: 0x00, Z: 1 });
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();

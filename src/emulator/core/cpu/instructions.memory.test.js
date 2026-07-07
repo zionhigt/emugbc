@@ -398,6 +398,32 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     });
   });
 
+  describe('OR_A_HL : A = A | [HL] — N, H et C forcés à 0', () => {
+    it('expose OR_A_HL avec son id et une méthode run', () => {
+      expect(instructions.OR_A_HL, 'instructions.OR_A_HL est absent').toBeDefined();
+      expect(instructions.OR_A_HL.id).toBe('OR_A_HL');
+      expect(typeof instructions.OR_A_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'OU bit à bit via le pointeur', A: 0b1100_1010, byte: 0b1010_0110, expA: 0b1110_1110, Z: 0 },
+      { cas: 'zéro | zéro → Z levé', A: 0b0000_0000, byte: 0b0000_0000, expA: 0b0000_0000, Z: 1 },
+    ].map((c) => ({ ...c, label: `OR_A_HL(A=${bin(c.A)}, [0xC123]=${bin(c.byte)})` })))(
+      '$cas : $label',
+      ({ A, byte, expA, Z, label }) => {
+        const cpu = setup({ A, byte, cIn: 1 }); // C=1 pré-levé : doit être forcé à 0
+        cpu.registers.F.H = 1; // doit être forcé à 0
+        instructions.OR_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.C, `${label} → C forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
