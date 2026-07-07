@@ -953,6 +953,68 @@ describe('instructions', () => {
     });
   });
 
+  describe('XOR_A_r8 / XOR_A_n8 : A = A ^ opérande — N, H et C forcés à 0', () => {
+    it('expose XOR_A_r8 et XOR_A_n8', () => {
+      for (const id of ['XOR_A_r8', 'XOR_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    const setupXor = (A) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 1; // les trois doivent être forcés à 0
+      cpu.registers.F.H = 1;
+      cpu.registers.F.C = 1;
+      return cpu;
+    };
+
+    const expectXor = (cpu, label, { expA, Z }) => {
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), `${label} → A, ${dumpFlags(F)}`).toBe(bin(expA));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.C, `${label} → C forcé à 0, ${dumpFlags(F)}`).toBe(0);
+    };
+
+    it.each([
+      { cas: 'OU exclusif : seuls les bits différents survivent', instr: 'XOR_A_r8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b0110_1100, Z: 0 },
+      { cas: 'opérandes identiques → zéro, Z levé', instr: 'XOR_A_r8', A: 0b0101_1010, val: 0b0101_1010, expA: 0b0000_0000, Z: 1 },
+      { cas: 'basculer des bits : XOR avec un masque inverse la sélection', instr: 'XOR_A_r8', A: 0b1111_0000, val: 0b1111_1111, expA: 0b0000_1111, Z: 0 },
+      { cas: 'immédiat : XOR simple', instr: 'XOR_A_n8', A: 0b1100_1010, val: 0b1010_0110, expA: 0b0110_1100, Z: 0 },
+      { cas: 'immédiat : XOR 0x00 est neutre (A inchangé)', instr: 'XOR_A_n8', A: 0b0110_1100, val: 0b0000_0000, expA: 0b0110_1100, Z: 0 },
+    ].map((c) => ({ ...c, label: `${c.instr}(A=${bin(c.A)}, ${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ instr, A, val, expA, Z, label }) => {
+        const cpu = setupXor(A);
+        if (instr === 'XOR_A_r8') {
+          cpu.registers.B.setValue(val);
+          instructions.XOR_A_r8.run(cpu, cpu.registers.B);
+        } else {
+          instructions.XOR_A_n8.run(cpu, val);
+        }
+        expectXor(cpu, label, { expA, Z });
+      },
+    );
+
+    it("XOR A,A : L'IDIOME — remettre A à zéro en un octet (plus court que LD A,0)", () => {
+      const cpu = setupXor(0x9c);
+      instructions.XOR_A_r8.run(cpu, cpu.registers.A);
+      expectXor(cpu, 'XOR_A_r8(A=0x9C, A)', { expA: 0x00, Z: 1 });
+    });
+
+    it('est une involution : XOR deux fois avec la même valeur rend A intact', () => {
+      const cpu = setupXor(0b1100_1010);
+      cpu.registers.B.setValue(0b1010_0110);
+      instructions.XOR_A_r8.run(cpu, cpu.registers.B);
+      instructions.XOR_A_r8.run(cpu, cpu.registers.B);
+      expect(bin(cpu.registers.A.getValue()), 'A ^ B ^ B = A').toBe(bin(0b1100_1010));
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
