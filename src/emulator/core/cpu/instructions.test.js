@@ -1015,6 +1015,39 @@ describe('instructions', () => {
     });
   });
 
+  describe('RES_u3_r8 : éteint le bit u3 de r8 — AUCUN flag touché', () => {
+    it('expose RES_u3_r8 avec son id et une méthode run', () => {
+      expect(instructions.RES_u3_r8, 'instructions.RES_u3_r8 est absent').toBeDefined();
+      expect(instructions.RES_u3_r8.id).toBe('RES_u3_r8');
+      expect(typeof instructions.RES_u3_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'éteint le bit visé sans toucher aux autres', u3: 3, val: 0b1111_1111, expVal: 0b1111_0111 },
+      { cas: 'bit 7 (le plus à gauche)', u3: 7, val: 0b1010_1010, expVal: 0b0010_1010 },
+      { cas: 'bit 0 (le plus à droite)', u3: 0, val: 0b0000_0001, expVal: 0b0000_0000 },
+      { cas: 'idempotent : bit déjà éteint, rien ne bouge', u3: 5, val: 0b1001_0110, expVal: 0b1001_0110 },
+    ].map((c) => ({ ...c, label: `RES_u3_r8(u3=${c.u3}, B=${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ u3, val, expVal, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.setValue(0b1111_0000); // sentinelle
+        instructions.RES_u3_r8.run(cpu, u3, cpu.registers.B);
+        expect(bin(cpu.registers.B.getValue()), `${label} → B`).toBe(bin(expVal));
+        expect(bin(cpu.registers.F.getValue()), `${label} → flags intacts (pas de Z, contrairement à BIT !)`).toBe(bin(0b1111_0000));
+      },
+    );
+
+    it('même un résultat à zéro ne lève PAS Z (RES ne calcule aucun flag)', () => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(0b0000_1000);
+      instructions.RES_u3_r8.run(cpu, 3, cpu.registers.B); // B devient 0
+      expect(bin(cpu.registers.B.getValue()), 'B éteint').toBe(bin(0b0000_0000));
+      expect(+!!cpu.registers.F.Z, `B vaut 0 mais Z reste tel quel : ${dumpFlags(cpu.registers.F)}`).toBe(0);
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();

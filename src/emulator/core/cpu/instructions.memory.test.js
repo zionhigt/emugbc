@@ -536,6 +536,29 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('RES_u3_HL : éteint le bit u3 de l\'octet pointé, EN mémoire — aucun flag', () => {
+    it('expose RES_u3_HL avec son id et une méthode run', () => {
+      expect(instructions.RES_u3_HL, 'instructions.RES_u3_HL est absent').toBeDefined();
+      expect(instructions.RES_u3_HL.id).toBe('RES_u3_HL');
+      expect(typeof instructions.RES_u3_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'éteint le bit visé dans l\'octet pointé', u3: 7, byte: 0b1010_1010, expByte: 0b0010_1010 },
+      { cas: 'idempotent sur bit déjà éteint', u3: 0, byte: 0b1010_1010, expByte: 0b1010_1010 },
+    ].map((c) => ({ ...c, label: `RES_u3_HL(u3=${c.u3}, [0xC123]=${bin(c.byte)})` })))(
+      '$cas : $label',
+      ({ u3, byte, expByte, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn: 1 });
+        cpu.registers.F.setValue(0b1111_0000); // sentinelle
+        instructions.RES_u3_HL.run(cpu, u3);
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet modifié EN mémoire`).toBe(bin(expByte));
+        expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+        expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
