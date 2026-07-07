@@ -608,7 +608,18 @@ export default function() {
     });
     buildInstruction("PUSH_r16", 4, 1, function(cpu, r16) {
         cpu.stack.push(r16);
+    });
 
+    //------------------ RES -------------------------------
+
+    buildInstruction("RES_u3_r8", 3, 1, function(cpu, u3, r8) {
+        r8.setValue(byte.setBit(r8.getValue(), u3, 0));
+    });
+    buildInstruction("RES_u3_HL", 3, 1, function(cpu, u3) {
+        const hl = cpu.registers.HL.getValue();
+        const a = cpu.memory.read(hl);
+        const raw = byte.setBit(a, u3, 0);
+        cpu.memory.write(hl, raw);
     });
 
 
