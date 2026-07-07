@@ -542,5 +542,9 @@ export default function() {
         LOAD(cpu.registers.SP, cpu.registers.HL.getValue());
     });
 
+    //------------------ NOP -------------------------------
+
+    buildInstruction("NOP", 1, 1, function(cpu) {});
+
     return instructions;
 }
