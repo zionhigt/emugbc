@@ -637,5 +637,50 @@ export default function() {
         cpu.registers.PC.setValue(cpu.stack.pop());
     });
 
+    //------------------ RET -------------------------------
+
+    buildInstruction("RL_r8", 2, 2, function(cpu, r8) {
+        const c = cpu.registers.F.C;
+        let value = r8.getValue();
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, c);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    buildInstruction("RL_HL", 4, 2, function(cpu) {
+        const c = cpu.registers.F.C;
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, c);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("RLA", 1, 1, function(cpu) {
+        const r8 = cpu.registers.A;
+        const c = cpu.registers.F.C;
+        let value = r8.getValue();
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, c);
+        r8.setValue(value);
+        cpu.registers.F.Z = 0;
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
     return instructions;
 }
