@@ -1166,6 +1166,61 @@ describe('instructions', () => {
     });
   });
 
+  describe('RR_r8 / RRA : rotation droite À TRAVERS le carry (anneau de 9 bits, sens inverse)', () => {
+    // b0 sort dans C ; l'ANCIEN C rentre par le bit 7
+    it('expose RR_r8 et RRA', () => {
+      for (const id of ['RR_r8', 'RRA']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it.each([
+      { cas: 'décalage simple, rien ne sort ni ne rentre', val: 0b0011_0100, cIn: 0, expVal: 0b0001_1010, expC: 0, Z: 0 },
+      { cas: 'le carry entrant rentre par le bit 7', val: 0b0011_0100, cIn: 1, expVal: 0b1001_1010, expC: 0, Z: 0 },
+      { cas: 'le bit 0 est éjecté dans C — et le résultat nul lève Z', val: 0b0000_0001, cIn: 0, expVal: 0b0000_0000, expC: 1, Z: 1 },
+      { cas: 'anneau complet : b0 sort dans C, l\'ancien C rentre en b7', val: 0b0000_0001, cIn: 1, expVal: 0b1000_0000, expC: 1, Z: 0 },
+    ].map((c) => ({ ...c, label: `RR_r8(B=${bin(c.val)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ val, cIn, expVal, expC, Z, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 1; // forcés à 0
+        cpu.registers.F.H = 1;
+        cpu.registers.F.C = cIn;
+        instructions.RR_r8.run(cpu, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.B.getValue()), `${label} → B, ${dumpFlags(F)}`).toBe(bin(expVal));
+        expect(+!!F.C, `${label} → C = le bit éjecté (b0), ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      },
+    );
+
+    it('RRA : même anneau sur A, Z FORCÉ à 0 même quand A finit nul', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0b0000_0001);
+      cpu.registers.F.Z = 1; // doit être forcé, pas calculé
+      instructions.RRA.run(cpu);
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), dumpFlags(F)).toBe(bin(0b0000_0000));
+      expect(+!!F.C, `b0 éjecté, ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.Z, `A vaut 0 mais Z=0 quand même, ${dumpFlags(F)}`).toBe(0);
+    });
+
+    it('RRA : le carry entrant rentre par le bit 7 de A', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0b0000_0010);
+      cpu.registers.F.C = 1;
+      instructions.RRA.run(cpu);
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), dumpFlags(F)).toBe(bin(0b1000_0001));
+      expect(+!!F.C, `rien n'est sorti cette fois, ${dumpFlags(F)}`).toBe(0);
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();

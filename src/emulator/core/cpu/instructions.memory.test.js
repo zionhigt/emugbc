@@ -655,6 +655,30 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('RR_HL : rotation droite à travers le carry de l\'octet pointé, EN mémoire', () => {
+    it('expose RR_HL avec son id et une méthode run', () => {
+      expect(instructions.RR_HL, 'instructions.RR_HL est absent').toBeDefined();
+      expect(instructions.RR_HL.id).toBe('RR_HL');
+      expect(typeof instructions.RR_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'anneau complet via le pointeur (b0 sort, ancien C rentre en b7)', byte: 0b0000_0001, cIn: 1, expByte: 0b1000_0000, expC: 1, Z: 0 },
+      { cas: 'résultat nul en mémoire → Z levé (variante CB)', byte: 0b0000_0001, cIn: 0, expByte: 0b0000_0000, expC: 1, Z: 1 },
+    ].map((c) => ({ ...c, label: `RR_HL([0xC123]=${bin(c.byte)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ byte, cIn, expByte, expC, Z, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        instructions.RR_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet tourné EN mémoire, ${dumpFlags(F)}`).toBe(bin(expByte));
+        expect(+!!F.C, `${label} → C = bit éjecté (b0), ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+      },
+    );
+  });
+
   describe('RLC_HL : rotation gauche circulaire de l\'octet pointé, EN mémoire', () => {
     it('expose RLC_HL avec son id et une méthode run', () => {
       expect(instructions.RLC_HL, 'instructions.RLC_HL est absent').toBeDefined();
