@@ -5,7 +5,7 @@
  */
 export function getBit(byte, position) {
     const mask = 1 << position;
-    return byte & mask;
+    return (byte & mask) >> position;
 }
 
 export function getFlag(byte, position) {
