@@ -631,6 +631,30 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     });
   });
 
+  describe('RL_HL : rotation gauche à travers le carry de l\'octet pointé, EN mémoire', () => {
+    it('expose RL_HL avec son id et une méthode run', () => {
+      expect(instructions.RL_HL, 'instructions.RL_HL est absent').toBeDefined();
+      expect(instructions.RL_HL.id).toBe('RL_HL');
+      expect(typeof instructions.RL_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'anneau complet via le pointeur (b7 sort, ancien C rentre)', byte: 0b1000_0000, cIn: 1, expByte: 0b0000_0001, expC: 1, Z: 0 },
+      { cas: 'résultat nul en mémoire → Z levé (variante CB : Z se calcule)', byte: 0b1000_0000, cIn: 0, expByte: 0b0000_0000, expC: 1, Z: 1 },
+    ].map((c) => ({ ...c, label: `RL_HL([0xC123]=${bin(c.byte)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ byte, cIn, expByte, expC, Z, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        instructions.RL_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet tourné EN mémoire, ${dumpFlags(F)}`).toBe(bin(expByte));
+        expect(+!!F.C, `${label} → C = bit éjecté, ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+      },
+    );
+  });
+
   describe('CALL_n16 : pousse PC (adresse de retour) puis saute à n16', () => {
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
