@@ -637,7 +637,7 @@ export default function() {
         cpu.registers.PC.setValue(cpu.stack.pop());
     });
 
-    //------------------ RET -------------------------------
+    //------------------ RL -------------------------------
 
     buildInstruction("RL_r8", 2, 2, function(cpu, r8) {
         const c = cpu.registers.F.C;
@@ -676,6 +676,48 @@ export default function() {
         value <<= 1;
         value &= 0xff;
         value = byte.setBit(value, 0, c);
+        r8.setValue(value);
+        cpu.registers.F.Z = 0;
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    //------------------ RLC -------------------------------
+
+    buildInstruction("RLC_r8", 2, 2, function(cpu, r8) {
+        let value = r8.getValue();
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, b7);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    buildInstruction("RLC_HL", 4, 2, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, b7);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("RLCA", 1, 1, function(cpu) {
+        const r8 = cpu.registers.A;
+        let value = r8.getValue();
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, b7);
         r8.setValue(value);
         cpu.registers.F.Z = 0;
         cpu.registers.F.N = 0;
