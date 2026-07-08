@@ -1103,6 +1103,69 @@ describe('instructions', () => {
     });
   });
 
+  describe('RLC_r8 / RLCA : rotation gauche CIRCULAIRE (anneau à 8 bits, C spectateur)', () => {
+    // b7 reboucle directement en b0 ; C reçoit une COPIE de ce bit.
+    // L'ancien C n'entre JAMAIS dans l'anneau — il est simplement écrasé.
+    it('expose RLC_r8 et RLCA', () => {
+      for (const id of ['RLC_r8', 'RLCA']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it.each([
+      { cas: 'décalage simple, b7 éteint : rien ne fait le tour', val: 0b0011_0100, cIn: 0, expVal: 0b0110_1000, expC: 0, Z: 0 },
+      { cas: 'b7 reboucle en b0 ET sa copie tombe dans C', val: 0b1000_0001, cIn: 0, expVal: 0b0000_0011, expC: 1, Z: 0 },
+      { cas: 'le C entrant est SPECTATEUR : même entrée, même sortie (différence avec RL !)', val: 0b1000_0001, cIn: 1, expVal: 0b0000_0011, expC: 1, Z: 0 },
+      { cas: 'zéro tourne sur lui-même : Z levé, C éteint', val: 0b0000_0000, cIn: 1, expVal: 0b0000_0000, expC: 0, Z: 1 },
+    ].map((c) => ({ ...c, label: `RLC_r8(B=${bin(c.val)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ val, cIn, expVal, expC, Z, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 1; // forcés à 0
+        cpu.registers.F.H = 1;
+        cpu.registers.F.C = cIn;
+        instructions.RLC_r8.run(cpu, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.B.getValue()), `${label} → B, ${dumpFlags(F)}`).toBe(bin(expVal));
+        expect(+!!F.C, `${label} → C = copie du bit qui a fait le tour, ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      },
+    );
+
+    it('propriété de la rotation circulaire : après le tour, C == bit 0 du résultat', () => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(0b1010_0110);
+      instructions.RLC_r8.run(cpu, cpu.registers.B);
+      const bit0 = cpu.registers.B.getValue() & 1;
+      expect(+!!cpu.registers.F.C, 'le bit copié dans C est le même que celui arrivé en b0').toBe(bit0);
+    });
+
+    it('RLCA : même anneau sur A, mais Z FORCÉ à 0 — même quand A reste nul', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0b0000_0000);
+      cpu.registers.F.Z = 1; // doit être forcé à 0, pas calculé
+      instructions.RLCA.run(cpu);
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), dumpFlags(F)).toBe(bin(0b0000_0000));
+      expect(+!!F.Z, `A vaut 0 mais Z=0 quand même (forme courte), ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.C, dumpFlags(F)).toBe(0);
+    });
+
+    it('RLCA : b7 fait le tour et se copie dans C', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0b1000_0000);
+      instructions.RLCA.run(cpu);
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.A.getValue()), dumpFlags(F)).toBe(bin(0b0000_0001));
+      expect(+!!F.C, `copie du bit qui a tourné, ${dumpFlags(F)}`).toBe(1);
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
