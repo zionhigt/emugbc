@@ -655,6 +655,44 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('RST : un CALL compressé vers un vecteur fixe', () => {
+    it('expose RST avec son id et une méthode run', () => {
+      expect(instructions.RST_vec, 'instructions.RST_vec est absent').toBeDefined();
+      expect(instructions.RST_vec.id).toBe('RST_vec');
+      expect(typeof instructions.RST_vec.run).toBe('function');
+    });
+
+    it.each([
+      { vec: 0x00 },
+      { vec: 0x08 },
+      { vec: 0x28 },
+      { vec: 0x38 },
+    ].map((c) => ({ ...c, label: `RST(${hex(c.vec, 2)})` })))(
+      '$label : pousse le retour et saute au vecteur',
+      ({ vec, label }) => {
+        const cpu = new CPU(new Memory());
+        cpu.registers.PC.setValue(0xc001); // après le RST (1 octet)
+        cpu.registers.SP.setValue(0xfffe);
+        cpu.registers.F.setValue(0b1111_0000);
+        instructions.RST_vec.run(cpu, vec);
+        expect(hex(cpu.registers.PC.getValue()), `${label} → PC = le vecteur`).toBe(hex(vec));
+        expect(hex(cpu.registers.SP.getValue()), `${label} → retour empilé`).toBe(hex(0xfffc));
+        expect(hex(cpu.stack.pop()), `${label} → l'adresse de retour est le PC d'entrée`).toBe(hex(0xc001));
+        expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+      },
+    );
+
+    it('aller-retour : RST puis RET revient après le RST — comme un vrai CALL', () => {
+      const cpu = new CPU(new Memory());
+      cpu.registers.PC.setValue(0xc001);
+      cpu.registers.SP.setValue(0xfffe);
+      instructions.RST_vec.run(cpu, 0x08);
+      instructions.RET.run(cpu);
+      expect(hex(cpu.registers.PC.getValue()), 'retour au point de départ').toBe(hex(0xc001));
+      expect(hex(cpu.registers.SP.getValue()), 'SP au compte rond').toBe(hex(0xfffe));
+    });
+  });
+
   describe('RR_HL : rotation droite à travers le carry de l\'octet pointé, EN mémoire', () => {
     it('expose RR_HL avec son id et une méthode run', () => {
       expect(instructions.RR_HL, 'instructions.RR_HL est absent').toBeDefined();
@@ -673,6 +711,31 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
         const F = cpu.registers.F;
         expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet tourné EN mémoire, ${dumpFlags(F)}`).toBe(bin(expByte));
         expect(+!!F.C, `${label} → C = bit éjecté (b0), ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+      },
+    );
+  });
+
+  describe('RRC_HL : rotation droite circulaire de l\'octet pointé, EN mémoire', () => {
+    it('expose RRC_HL avec son id et une méthode run', () => {
+      expect(instructions.RRC_HL, 'instructions.RRC_HL est absent').toBeDefined();
+      expect(instructions.RRC_HL.id).toBe('RRC_HL');
+      expect(typeof instructions.RRC_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'b0 fait le tour via le pointeur, copie dans C', byte: 0b0000_0011, cIn: 0, expByte: 0b1000_0001, expC: 1, Z: 0 },
+      { cas: 'le C entrant ne change RIEN au résultat', byte: 0b0000_0011, cIn: 1, expByte: 0b1000_0001, expC: 1, Z: 0 },
+      { cas: 'zéro en mémoire : Z levé, C éteint', byte: 0b0000_0000, cIn: 1, expByte: 0b0000_0000, expC: 0, Z: 1 },
+    ].map((c) => ({ ...c, label: `RRC_HL([0xC123]=${bin(c.byte)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ byte, cIn, expByte, expC, Z, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn });
+        instructions.RRC_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet tourné EN mémoire, ${dumpFlags(F)}`).toBe(bin(expByte));
+        expect(+!!F.C, `${label} → C = copie du bit qui a tourné, ${dumpFlags(F)}`).toBe(expC);
         expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
         expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
       },
