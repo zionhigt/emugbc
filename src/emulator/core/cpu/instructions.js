@@ -768,6 +768,53 @@ export default function() {
         cpu.registers.F.N = 0;
         cpu.registers.F.H = 0;
     });
+    //------------------ RRC -------------------------------
+
+    buildInstruction("RRC_r8", 2, 2, function(cpu, r8) {
+        let value = r8.getValue();
+        const b0 = byte.getBit(value, 0);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, b0);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    buildInstruction("RRC_HL", 4, 2, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b0 = byte.getBit(value, 0);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, b0);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("RRCA", 1, 1, function(cpu) {
+        const r8 = cpu.registers.A;
+        let value = r8.getValue();
+        const b0 = byte.getBit(value, 0);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, b0);
+        r8.setValue(value);
+        cpu.registers.F.Z = 0;
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    //------------------ RST -------------------------------
+    buildInstruction("RST_vec", 6, 3, function(cpu, vec) {
+        cpu.stack.push(cpu.registers.PC.getValue());
+        cpu.registers.PC.setValue(vec);
+    });
 
     return instructions;
 }
