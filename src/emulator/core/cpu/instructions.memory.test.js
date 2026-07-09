@@ -760,6 +760,21 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       },
     );
 
+    it('SWAP_HL : échange les nibbles de l\'octet pointé, EN mémoire', () => {
+      const cpu = setup({ A: 0x42, byte: 0b1010_0110, cIn: 1 });
+      cpu.registers.F.N = 1;
+      cpu.registers.F.H = 1;
+      instructions.SWAP_HL.run(cpu);
+      const F = cpu.registers.F;
+      expect(bin(cpu.memory.read(0xc123)), `l'octet échangé EN mémoire, ${dumpFlags(F)}`).toBe(bin(0b0110_1010));
+      expect(+!!F.Z, dumpFlags(F)).toBe(0);
+      expect(+!!F.N, `N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.C, `C forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+    });
+  });
+
   describe('RST : un CALL compressé vers un vecteur fixe', () => {
     it('expose RST avec son id et une méthode run', () => {
       expect(instructions.RST_vec, 'instructions.RST_vec est absent').toBeDefined();

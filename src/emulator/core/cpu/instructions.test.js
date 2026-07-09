@@ -1532,6 +1532,44 @@ describe('instructions', () => {
     });
   });
 
+  describe('SWAP_r8 : échange les deux nibbles — N, H et C forcés à 0', () => {
+    it('expose SWAP_r8 avec son id et une méthode run', () => {
+      expect(instructions.SWAP_r8, 'instructions.SWAP_r8 est absent').toBeDefined();
+      expect(instructions.SWAP_r8.id).toBe('SWAP_r8');
+      expect(typeof instructions.SWAP_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'échange simple des deux moitiés', val: 0b1010_0110, expVal: 0b0110_1010, Z: 0 },
+      { cas: 'nibble bas seul → il monte', val: 0b0000_1111, expVal: 0b1111_0000, Z: 0 },
+      { cas: 'zéro échangé reste zéro → Z levé', val: 0b0000_0000, expVal: 0b0000_0000, Z: 1 },
+    ].map((c) => ({ ...c, label: `SWAP_r8(B=${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ val, expVal, Z, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.N = 1; // les trois forcés à 0
+        cpu.registers.F.H = 1;
+        cpu.registers.F.C = 1;
+        instructions.SWAP_r8.run(cpu, cpu.registers.B);
+        const F = cpu.registers.F;
+        expect(bin(cpu.registers.B.getValue()), `${label} → B, ${dumpFlags(F)}`).toBe(bin(expVal));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+        expect(+!!F.C, `${label} → C forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      },
+    );
+
+    it('est une involution : deux SWAP rendent la valeur intacte', () => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(0x3c);
+      instructions.SWAP_r8.run(cpu, cpu.registers.B);
+      instructions.SWAP_r8.run(cpu, cpu.registers.B);
+      expect(hex(cpu.registers.B.getValue(), 2), 'SWAP(SWAP(x)) = x').toBe('0x3C');
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
