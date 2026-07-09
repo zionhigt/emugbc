@@ -706,6 +706,33 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('SLA_HL / SRA_HL / SRL_HL : les décalages de l\'octet pointé, EN mémoire', () => {
+    it('expose SLA_HL, SRA_HL et SRL_HL', () => {
+      for (const id of ['SLA_HL', 'SRA_HL', 'SRL_HL']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it.each([
+      { instr: 'SLA_HL', cas: 'b7 tombe dans C, un 0 rentre en b0', byte: 0b1011_0100, expByte: 0b0110_1000, expC: 1, Z: 0 },
+      { instr: 'SRA_HL', cas: 'le signe se recopie en b7', byte: 0b1011_0100, expByte: 0b1101_1010, expC: 0, Z: 0 },
+      { instr: 'SRL_HL', cas: 'un 0 rentre en b7, b0 tombe dans C', byte: 0b0000_0001, expByte: 0b0000_0000, expC: 1, Z: 1 },
+    ].map((c) => ({ ...c, label: `${c.instr}([0xC123]=${bin(c.byte)})` })))(
+      '$cas : $label',
+      ({ instr, byte, expByte, expC, Z, label }) => {
+        const cpu = setup({ A: 0x42, byte, cIn: 0 });
+        instructions[instr].run(cpu);
+        const F = cpu.registers.F;
+        expect(bin(cpu.memory.read(0xc123)), `${label} → l'octet décalé EN mémoire, ${dumpFlags(F)}`).toBe(bin(expByte));
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(expC);
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(hex(cpu.registers.HL.getValue()), 'HL (pointeur) intact').toBe(hex(0xc123));
+      },
+    );
+  });
+
   describe('RST : un CALL compressé vers un vecteur fixe', () => {
     it('expose RST avec son id et une méthode run', () => {
       expect(instructions.RST_vec, 'instructions.RST_vec est absent').toBeDefined();

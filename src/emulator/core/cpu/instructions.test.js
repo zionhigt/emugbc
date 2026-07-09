@@ -1398,6 +1398,66 @@ describe('instructions', () => {
     );
   });
 
+  describe('SLA / SRA / SRL (r8) : les décalages — rien ne reboucle, C reçoit le bit du bord', () => {
+    it('expose SLA_r8, SRA_r8 et SRL_r8', () => {
+      for (const id of ['SLA_r8', 'SRA_r8', 'SRL_r8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    const runShift = (instr, val, cIn = 0) => {
+      const cpu = new CPU();
+      cpu.registers.B.setValue(val);
+      cpu.registers.F.N = 1; // forcés à 0
+      cpu.registers.F.H = 1;
+      cpu.registers.F.C = cIn;
+      instructions[instr].run(cpu, cpu.registers.B);
+      return cpu;
+    };
+
+    const expectShift = (cpu, label, { expVal, expC, Z }) => {
+      const F = cpu.registers.F;
+      expect(bin(cpu.registers.B.getValue()), `${label} → B, ${dumpFlags(F)}`).toBe(bin(expVal));
+      expect(+!!F.C, `${label} → C = bit tombé du bord, ${dumpFlags(F)}`).toBe(expC);
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N forcé à 0, ${dumpFlags(F)}`).toBe(0);
+      expect(+!!F.H, `${label} → H forcé à 0, ${dumpFlags(F)}`).toBe(0);
+    };
+
+    it.each([
+      { instr: 'SLA_r8', cas: 'multiplication par 2, b7 éteint', val: 0b0011_0100, expVal: 0b0110_1000, expC: 0, Z: 0 },
+      { instr: 'SLA_r8', cas: 'b7 tombe dans C, un 0 rentre en b0', val: 0b1011_0100, expVal: 0b0110_1000, expC: 1, Z: 0 },
+      { instr: 'SLA_r8', cas: 'résultat nul : Z et C ensemble', val: 0b1000_0000, expVal: 0b0000_0000, expC: 1, Z: 1 },
+      { instr: 'SRL_r8', cas: 'division par 2 non-signée : un 0 rentre en b7', val: 0b1011_0100, expVal: 0b0101_1010, expC: 0, Z: 0 },
+      { instr: 'SRL_r8', cas: 'b0 tombe dans C, résultat nul', val: 0b0000_0001, expVal: 0b0000_0000, expC: 1, Z: 1 },
+      { instr: 'SRA_r8', cas: 'positif : comme SRL (b7 éteint se recopie... en 0)', val: 0b0011_0100, expVal: 0b0001_1010, expC: 0, Z: 0 },
+      { instr: 'SRA_r8', cas: 'négatif : le SIGNE se recopie en b7 (division signée)', val: 0b1011_0100, expVal: 0b1101_1010, expC: 0, Z: 0 },
+      { instr: 'SRA_r8', cas: '0xFF reste 0xFF : -1 divisé par 2 vaut toujours -1', val: 0b1111_1111, expVal: 0b1111_1111, expC: 1, Z: 0 },
+      { instr: 'SRA_r8', cas: 'même entrée que SRL mais b7 survit — LE différenciateur', val: 0b1000_0000, expVal: 0b1100_0000, expC: 0, Z: 0 },
+    ].map((c) => ({ ...c, label: `${c.instr}(B=${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ instr, val, expVal, expC, Z, label }) => {
+        const cpu = runShift(instr, val);
+        expectShift(cpu, label, { expVal, expC, Z });
+      },
+    );
+
+    it('SRL de la même entrée 0b1000_0000 : le 0 rentre en b7 (contraste avec SRA)', () => {
+      const cpu = runShift('SRL_r8', 0b1000_0000);
+      expectShift(cpu, 'SRL_r8(B=0b10000000)', { expVal: 0b0100_0000, expC: 0, Z: 0 });
+    });
+
+    it('le C entrant est spectateur pour les trois décalages', () => {
+      for (const instr of ['SLA_r8', 'SRA_r8', 'SRL_r8']) {
+        const sans = runShift(instr, 0b0011_0100, 0).registers.B.getValue();
+        const avec = runShift(instr, 0b0011_0100, 1).registers.B.getValue();
+        expect(bin(avec), `${instr} : même résultat quel que soit le C entrant`).toBe(bin(sans));
+      }
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
