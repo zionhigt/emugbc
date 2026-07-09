@@ -865,5 +865,21 @@ export default function() {
         cpu.registers.PC.setValue(vec);
     });
 
+    //------------------ SET -------------------------------
+    buildInstruction("SCF", 1, 1, function(cpu) {
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+        cpu.registers.F.C = 1;
+    });
+    buildInstruction("SET_u3_r8", 2, 2, function(cpu, u3, r8) {
+        r8.setValue(byte.setBit(r8.getValue(), u3, 1));
+    });
+    buildInstruction("SET_u3_HL", 4, 2, function(cpu, u3) {
+        const hl = cpu.registers.HL.getValue();
+        const a = cpu.memory.read(hl);
+        const raw = byte.setBit(a, u3, 1);
+        cpu.memory.write(hl, raw);
+    });
+
     return instructions;
 }
