@@ -1457,6 +1457,7 @@ describe('instructions', () => {
       }
     });
   });
+
   describe('STOP : très basse consommation — état minimal, le reste au chapitre GBC', () => {
     it('expose STOP avec son id et une méthode run', () => {
       expect(instructions.STOP, 'instructions.STOP est absent').toBeDefined();
@@ -1471,6 +1472,63 @@ describe('instructions', () => {
       instructions.STOP.run(cpu);
       expect(cpu.stopped, 'le CPU doit être marqué arrêté').toBe(true);
       expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+  });
+
+  describe('SUB_A_r8 / SUB_A_n8 : A = A - opérande — SBC sans l\'emprunt entrant', () => {
+    it('expose SUB_A_r8 et SUB_A_n8', () => {
+      for (const id of ['SUB_A_r8', 'SUB_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    const subCases = [
+      { cas: 'soustraction simple', A: 0x05, val: 0x02, cIn: 0, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: 'IGNORE la retenue entrante (toute la différence avec SBC)', A: 0x05, val: 0x02, cIn: 1, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: 'égalité → zéro, Z levé', A: 0x42, val: 0x42, cIn: 0, expA: 0x00, Z: 1, H: 0, C: 0 },
+      { cas: 'emprunt de nibble seul (0x10-0x01)', A: 0x10, val: 0x01, cIn: 0, expA: 0x0f, Z: 0, H: 1, C: 0 },
+      { cas: 'emprunt complet : A wrappe (5-7)', A: 0x05, val: 0x07, cIn: 0, expA: 0xfe, Z: 0, H: 1, C: 1 },
+    ];
+
+    const expectSub = (cpu, label, { expA, Z, H, C }) => {
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N=1 (soustraction), ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+      expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(C);
+    };
+
+    it.each(
+      subCases.map((c) => ({ ...c, label: `SUB_A_r8(A=${hex(c.A, 2)}, r8=${hex(c.val, 2)}, C=${c.cIn})` })),
+    )('$cas : $label', ({ A, val, cIn, expA, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.B.setValue(val);
+      cpu.registers.F.N = 0;
+      cpu.registers.F.C = cIn;
+      instructions.SUB_A_r8.run(cpu, cpu.registers.B);
+      expectSub(cpu, label, { expA, Z, H, C });
+    });
+
+    it.each(
+      subCases.map((c) => ({ ...c, label: `SUB_A_n8(A=${hex(c.A, 2)}, n8=${hex(c.val, 2)}, C=${c.cIn})` })),
+    )('immédiat — $cas : $label', ({ A, val, cIn, expA, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 0;
+      cpu.registers.F.C = cIn;
+      instructions.SUB_A_n8.run(cpu, val);
+      expectSub(cpu, label, { expA, Z, H, C });
+    });
+
+    it('SUB A,A : remise à zéro avec flags posés (Z=1, N=1)', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x9c);
+      instructions.SUB_A_r8.run(cpu, cpu.registers.A);
+      expectSub(cpu, 'SUB_A_r8(A=0x9C, A)', { expA: 0x00, Z: 1, H: 0, C: 0 });
     });
   });
 

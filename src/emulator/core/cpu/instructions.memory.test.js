@@ -733,6 +733,33 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('SUB_A_HL / SWAP_HL : les dernières instructions mémoire de la table !', () => {
+    it('expose SUB_A_HL et SWAP_HL', () => {
+      for (const id of ['SUB_A_HL', 'SWAP_HL']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    it.each([
+      { cas: 'SUB via le pointeur, ignore la retenue entrante', A: 0x05, byte: 0x02, cIn: 1, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: 'SUB : emprunt complet, A wrappe', A: 0x05, byte: 0x07, cIn: 0, expA: 0xfe, Z: 0, H: 1, C: 1 },
+    ].map((c) => ({ ...c, label: `SUB_A_HL(A=${hex(c.A, 2)}, [0xC123]=${hex(c.byte, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ A, byte, cIn, expA, Z, H, C, label }) => {
+        const cpu = setup({ A, byte, cIn });
+        cpu.registers.F.N = 0;
+        instructions.SUB_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N=1, ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(C);
+      },
+    );
+
   describe('RST : un CALL compressé vers un vecteur fixe', () => {
     it('expose RST avec son id et une méthode run', () => {
       expect(instructions.RST_vec, 'instructions.RST_vec est absent').toBeDefined();
