@@ -75,19 +75,45 @@ function CPA(cpu, a, b) {
 }
 
 export default function() {
-    //------------------ ALU -------------------------------
+    //------------------ ARITHMETIQUE -------------------------------
+    function ADC(cpu, a, b, c, size) {
+        const raw = a + b + c;
+        cpu.registers.A.setValue(raw);
+        const value = cpu.registers.A.getValue();
+        const operation = {
+            size: size,
+            id: 0,
+            a: a,
+            b: b,
+            raw: raw,
+        }
+        cpu
+        .updateZeroFlag(value)
+        .updateNAndHFlags(operation, c)
+        .updateCarryFlag(operation);
+    }
+    function SBC(cpu, a, b, c, size) {
+        const raw = a - b - c;
+        cpu.registers.A.setValue(raw);
+        const value = cpu.registers.A.getValue();
+        const operation = {
+            size: size,
+            id: 1,
+            a: a,
+            b: b,
+            raw: raw,
+        }
+        cpu
+        .updateZeroFlag(value)
+        .updateNAndHFlags(operation, c)
+        .updateCarryFlag(operation);
+    }
     buildInstruction("ADC_A_r8", 1, 1, function(cpu, reg8) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
         const r8 = reg8.getValue();
         return ADC(cpu, a, r8, c, 8);
     });
-    buildInstruction("ADD_A_r8", 1, 1, function(cpu, reg8) {
-        const a = cpu.registers.A.getValue();
-        const r8 = reg8.getValue();
-        return ADC(cpu, a, r8, 0, 8);
-    });
-
     buildInstruction("ADC_A_HL", 2, 1, function(cpu) {
         const c = +!!(cpu.registers.F.C);
         const a = cpu.registers.A.getValue();
@@ -95,17 +121,40 @@ export default function() {
         const r8 = cpu.memory.read(hl);
         return ADC(cpu, a, r8, c, 8);
     });
+    buildInstruction("ADC_A_n8", 2, 2, function(cpu, n8) {
+        const c = +!!(cpu.registers.F.C);
+        const a = cpu.registers.A.getValue();
+        return ADC(cpu, a, n8, c, 8);
+    });
+    buildInstruction("SBC_A_r8", 1, 1, function(cpu, reg8) {
+        const c = +!!(cpu.registers.F.C);
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        return SBC(cpu, a, r8, c, 8);
+    });
+    buildInstruction("SBC_A_HL", 2, 1, function(cpu) {
+        const c = +!!(cpu.registers.F.C);
+        const a = cpu.registers.A.getValue();
+        const hl = cpu.registers.HL.getValue();
+        const r8 = cpu.memory.read(hl);
+        return SBC(cpu, a, r8, c, 8);
+    });
+    buildInstruction("SBC_A_n8", 2, 2, function(cpu, n8) {
+        const c = +!!(cpu.registers.F.C);
+        const a = cpu.registers.A.getValue();
+        return SBC(cpu, a, n8, c, 8);
+    });
+
+    buildInstruction("ADD_A_r8", 1, 1, function(cpu, reg8) {
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        return ADC(cpu, a, r8, 0, 8);
+    });
     buildInstruction("ADD_A_HL", 2, 1, function(cpu) {
         const a = cpu.registers.A.getValue();
         const hl = cpu.registers.HL.getValue();
         const r8 = cpu.memory.read(hl);
         return ADC(cpu, a, r8, 0, 8);
-    });
-
-    buildInstruction("ADC_A_n8", 2, 2, function(cpu, n8) {
-        const c = +!!(cpu.registers.F.C);
-        const a = cpu.registers.A.getValue();
-        return ADC(cpu, a, n8, c, 8);
     });
     buildInstruction("ADD_A_n8", 2, 2, function(cpu, n8) {
         const a = cpu.registers.A.getValue();
