@@ -860,12 +860,14 @@ export default function() {
     });
 
     //------------------ RST -------------------------------
+
     buildInstruction("RST_vec", 6, 3, function(cpu, vec) {
         cpu.stack.push(cpu.registers.PC.getValue());
         cpu.registers.PC.setValue(vec);
     });
 
     //------------------ SET -------------------------------
+
     buildInstruction("SCF", 1, 1, function(cpu) {
         cpu.registers.F.N = 0;
         cpu.registers.F.H = 0;
@@ -879,6 +881,92 @@ export default function() {
         const a = cpu.memory.read(hl);
         const raw = byte.setBit(a, u3, 1);
         cpu.memory.write(hl, raw);
+    });
+
+    //------------------ SHIFT -------------------------------
+
+    buildInstruction("SLA_r8", 2, 2, function(cpu, r8) {
+        const c = cpu.registers.F.C;
+        let value = r8.getValue();
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, 0);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    buildInstruction("SLA_HL", 4, 2, function(cpu) {
+        const c = cpu.registers.F.C;
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b7;
+        value <<= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, 0);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("SRA_r8", 2, 2, function(cpu, r8) {
+        const c = cpu.registers.F.C;
+        let value = r8.getValue();
+        const b0 = byte.getBit(value, 0);
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, b7);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("SRA_HL", 4, 2, function(cpu) {
+        const c = cpu.registers.F.C;
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b0 = byte.getBit(value, 0);
+        const b7 = byte.getBit(value, 7);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, b7);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+    buildInstruction("SRL_r8", 2, 2, function(cpu, r8) {
+        let value = r8.getValue();
+        const b0 = byte.getBit(value, 0);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 0, 0);
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+    });
+
+    buildInstruction("SRL_HL", 4, 2, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const b0 = byte.getBit(value, 0);
+        cpu.registers.F.C = b0;
+        value >>= 1;
+        value &= 0xff;
+        value = byte.setBit(value, 7, 0);
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
     });
 
     return instructions;
