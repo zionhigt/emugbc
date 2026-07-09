@@ -988,5 +988,31 @@ export default function() {
         cpu.registers.F.H = 0;
     });
 
+    //------------------ SWAP -------------------------------
+
+    buildInstruction("SWAP_r8", 2, 2, function(cpu, r8) {
+        let value = r8.getValue();
+        const high = (value & 0xf0) >> 4; 
+        const low = (value & 0x0f) << 4;
+        value = low | high;
+        r8.setValue(value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+        cpu.registers.F.C = 0;
+    });
+    buildInstruction("SWAP_HL", 4, 2, function(cpu) {
+        const hl = cpu.registers.HL.getValue();
+        let value = cpu.memory.read(hl);
+        const high = (value & 0xf0) >> 4; 
+        const low = (value & 0x0f) << 4;
+        value = low | high;
+        cpu.memory.write(hl, value);
+        cpu.updateZeroFlag(value);
+        cpu.registers.F.N = 0;
+        cpu.registers.F.H = 0;
+        cpu.registers.F.C = 0;
+    });
+
     return instructions;
 }
