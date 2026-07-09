@@ -1457,6 +1457,22 @@ describe('instructions', () => {
       }
     });
   });
+  describe('STOP : très basse consommation — état minimal, le reste au chapitre GBC', () => {
+    it('expose STOP avec son id et une méthode run', () => {
+      expect(instructions.STOP, 'instructions.STOP est absent').toBeDefined();
+      expect(instructions.STOP.id).toBe('STOP');
+      expect(typeof instructions.STOP.run).toBe('function');
+    });
+
+    it('marque le CPU arrêté (cpu.stopped), flags intacts', () => {
+      const cpu = new CPU();
+      expect(cpu.stopped, 'cpu.stopped doit exister et démarrer à false').toBe(false);
+      cpu.registers.F.setValue(0b1111_0000);
+      instructions.STOP.run(cpu);
+      expect(cpu.stopped, 'le CPU doit être marqué arrêté').toBe(true);
+      expect(bin(cpu.registers.F.getValue()), 'flags intacts').toBe(bin(0b1111_0000));
+    });
+  });
 
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
