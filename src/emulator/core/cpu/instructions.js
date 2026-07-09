@@ -145,6 +145,22 @@ export default function() {
         return SBC(cpu, a, n8, c, 8);
     });
 
+    buildInstruction("SUB_A_r8", 1, 1, function(cpu, reg8) {
+        const a = cpu.registers.A.getValue();
+        const r8 = reg8.getValue();
+        return SBC(cpu, a, r8, 0, 8);
+    });
+    buildInstruction("SUB_A_HL", 2, 1, function(cpu) {
+        const a = cpu.registers.A.getValue();
+        const hl = cpu.registers.HL.getValue();
+        const r8 = cpu.memory.read(hl);
+        return SBC(cpu, a, r8, 0, 8);
+    });
+    buildInstruction("SUB_A_n8", 2, 2, function(cpu, n8) {
+        const a = cpu.registers.A.getValue();
+        return SBC(cpu, a, n8, 0, 8);
+    });
+
     buildInstruction("ADD_A_r8", 1, 1, function(cpu, reg8) {
         const a = cpu.registers.A.getValue();
         const r8 = reg8.getValue();
