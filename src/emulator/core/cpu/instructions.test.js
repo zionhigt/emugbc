@@ -1350,6 +1350,54 @@ describe('instructions', () => {
     });
   });
 
+  describe('SCF : met le flag C à 1 (pas d\'inversion !) — N=0, H=0, Z préservé', () => {
+    it('expose SCF avec son id et une méthode run', () => {
+      expect(instructions.SCF, 'instructions.SCF est absent').toBeDefined();
+      expect(instructions.SCF.id).toBe('SCF');
+      expect(typeof instructions.SCF.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'C=0 devient 1', F: 0b0000_0000, expF: 0b0001_0000 },
+      { cas: 'C=1 RESTE 1 (différence avec CCF : pas d\'inversion)', F: 0b0001_0000, expF: 0b0001_0000 },
+      { cas: 'N et H sont forcés à 0 au passage', F: 0b0110_0000, expF: 0b0001_0000 },
+      { cas: 'Z est préservé', F: 0b1000_0000, expF: 0b1001_0000 },
+    ].map((c) => ({ ...c, label: `SCF avec F=${bin(c.F)}` })))(
+      '$cas : $label',
+      ({ F: flags, expF, label }) => {
+        const cpu = new CPU();
+        cpu.registers.F.setValue(flags);
+        instructions.SCF.run(cpu);
+        expect(bin(cpu.registers.F.getValue()), `${label} : ${dumpFlags(cpu.registers.F)}`).toBe(bin(expF));
+      },
+    );
+  });
+
+  describe('SET_u3_r8 : allume le bit u3 de r8 — AUCUN flag touché', () => {
+    it('expose SET_u3_r8 avec son id et une méthode run', () => {
+      expect(instructions.SET_u3_r8, 'instructions.SET_u3_r8 est absent').toBeDefined();
+      expect(instructions.SET_u3_r8.id).toBe('SET_u3_r8');
+      expect(typeof instructions.SET_u3_r8.run).toBe('function');
+    });
+
+    it.each([
+      { cas: 'allume le bit visé sans toucher aux autres', u3: 3, val: 0b0000_0000, expVal: 0b0000_1000 },
+      { cas: 'bit 7 (le plus à gauche)', u3: 7, val: 0b0010_1010, expVal: 0b1010_1010 },
+      { cas: 'bit 0 (le plus à droite)', u3: 0, val: 0b0000_0000, expVal: 0b0000_0001 },
+      { cas: 'idempotent : bit déjà allumé, rien ne bouge', u3: 5, val: 0b1011_0110, expVal: 0b1011_0110 },
+    ].map((c) => ({ ...c, label: `SET_u3_r8(u3=${c.u3}, B=${bin(c.val)})` })))(
+      '$cas : $label',
+      ({ u3, val, expVal, label }) => {
+        const cpu = new CPU();
+        cpu.registers.B.setValue(val);
+        cpu.registers.F.setValue(0b1111_0000); // sentinelle
+        instructions.SET_u3_r8.run(cpu, u3, cpu.registers.B);
+        expect(bin(cpu.registers.B.getValue()), `${label} → B`).toBe(bin(expVal));
+        expect(bin(cpu.registers.F.getValue()), `${label} → flags intacts`).toBe(bin(0b1111_0000));
+      },
+    );
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
