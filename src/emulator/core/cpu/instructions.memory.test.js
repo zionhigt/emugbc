@@ -655,6 +655,34 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
   });
 
+  describe('SBC_A_HL : A = A - [HL] - C — flags de SBC A,r8', () => {
+    it('expose SBC_A_HL avec son id et une méthode run', () => {
+      expect(instructions.SBC_A_HL, 'instructions.SBC_A_HL est absent').toBeDefined();
+      expect(instructions.SBC_A_HL.id).toBe('SBC_A_HL');
+      expect(typeof instructions.SBC_A_HL.run).toBe('function');
+    });
+
+    it.each([
+      { cas: "l'emprunt entrant participe via le pointeur", A: 0x05, byte: 0x02, cIn: 1, expA: 0x02, Z: 0, H: 0, C: 0 },
+      { cas: 'emprunt complet : A wrappe', A: 0x05, byte: 0x07, cIn: 0, expA: 0xfe, Z: 0, H: 1, C: 1 },
+      { cas: "l'emprunt entrant seul fait tout déborder (0-0-1)", A: 0x00, byte: 0x00, cIn: 1, expA: 0xff, Z: 0, H: 1, C: 1 },
+    ].map((c) => ({ ...c, label: `SBC_A_HL(A=${hex(c.A, 2)}, [0xC123]=${hex(c.byte, 2)}, C=${c.cIn})` })))(
+      '$cas : $label',
+      ({ A, byte, cIn, expA, Z, H, C, label }) => {
+        const cpu = setup({ A, byte, cIn });
+        cpu.registers.F.N = 0; // doit être forcé à 1
+        instructions.SBC_A_HL.run(cpu);
+        const F = cpu.registers.F;
+        expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+        expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+        expect(+!!F.N, `${label} → N=1 (soustraction), ${dumpFlags(F)}`).toBe(1);
+        expect(+!!F.H, `${label} → H, ${dumpFlags(F)}`).toBe(H);
+        expect(+!!F.C, `${label} → C, ${dumpFlags(F)}`).toBe(C);
+        expect(hex(cpu.memory.read(0xc123), 2), "l'octet pointé intact").toBe(hex(byte, 2));
+      },
+    );
+  });
+
   describe('RST : un CALL compressé vers un vecteur fixe', () => {
     it('expose RST avec son id et une méthode run', () => {
       expect(instructions.RST_vec, 'instructions.RST_vec est absent').toBeDefined();

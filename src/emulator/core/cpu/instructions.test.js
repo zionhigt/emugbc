@@ -1282,6 +1282,74 @@ describe('instructions', () => {
     });
   });
 
+  describe('SBC_A_r8 / SBC_A_n8 : A = A - opérande - C — le miroir d\'ADC', () => {
+    it('expose SBC_A_r8 et SBC_A_n8', () => {
+      for (const id of ['SBC_A_r8', 'SBC_A_n8']) {
+        expect(instructions[id], `instructions.${id} est absent`).toBeDefined();
+        expect(instructions[id].id).toBe(id);
+        expect(typeof instructions[id].run).toBe('function');
+      }
+    });
+
+    const sbcCases = [
+      { cas: 'soustraction simple, sans emprunt entrant', A: 0x05, val: 0x02, cIn: 0, expA: 0x03, Z: 0, H: 0, C: 0 },
+      { cas: "l'emprunt entrant participe (-1 de plus)", A: 0x05, val: 0x02, cIn: 1, expA: 0x02, Z: 0, H: 0, C: 0 },
+      { cas: "l'emprunt entrant amène pile à zéro", A: 0x03, val: 0x02, cIn: 1, expA: 0x00, Z: 1, H: 0, C: 0 },
+      { cas: 'charnière : le carry force l\'emprunt de nibble mais pas le global (0x10-0x0F-1)', A: 0x10, val: 0x0f, cIn: 1, expA: 0x00, Z: 1, H: 1, C: 0 },
+      { cas: 'emprunt complet : A wrappe (5-7)', A: 0x05, val: 0x07, cIn: 0, expA: 0xfe, Z: 0, H: 1, C: 1 },
+      { cas: "l'emprunt entrant provoque à lui seul le débordement (0-0-1)", A: 0x00, val: 0x00, cIn: 1, expA: 0xff, Z: 0, H: 1, C: 1 },
+    ];
+
+    const expectSbc = (cpu, label, { expA, Z, H, C }) => {
+      const F = cpu.registers.F;
+      expect(hex(cpu.registers.A.getValue(), 2), `${label} → A, ${dumpFlags(F)}`).toBe(hex(expA, 2));
+      expect(+!!F.Z, `${label} → Z, ${dumpFlags(F)}`).toBe(Z);
+      expect(+!!F.N, `${label} → N doit valoir 1 (soustraction), ${dumpFlags(F)}`).toBe(1);
+      expect(+!!F.H, `${label} → H (emprunt de nibble, carry compris), ${dumpFlags(F)}`).toBe(H);
+      expect(+!!F.C, `${label} → C (emprunt : val+carry > A), ${dumpFlags(F)}`).toBe(C);
+    };
+
+    it.each(
+      sbcCases.map((c) => ({ ...c, label: `SBC_A_r8(A=${hex(c.A, 2)}, r8=${hex(c.val, 2)}, C=${c.cIn})` })),
+    )('$cas : $label', ({ A, val, cIn, expA, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.B.setValue(val);
+      cpu.registers.F.N = 0; // doit être forcé à 1
+      cpu.registers.F.C = cIn;
+      instructions.SBC_A_r8.run(cpu, cpu.registers.B);
+      expectSbc(cpu, label, { expA, Z, H, C });
+      expect(hex(cpu.registers.B.getValue(), 2), `${label} → B intact`).toBe(hex(val, 2));
+    });
+
+    it.each(
+      sbcCases.map((c) => ({ ...c, label: `SBC_A_n8(A=${hex(c.A, 2)}, n8=${hex(c.val, 2)}, C=${c.cIn})` })),
+    )('immédiat — $cas : $label', ({ A, val, cIn, expA, Z, H, C, label }) => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(A);
+      cpu.registers.F.N = 0;
+      cpu.registers.F.C = cIn;
+      instructions.SBC_A_n8.run(cpu, val);
+      expectSbc(cpu, label, { expA, Z, H, C });
+    });
+
+    it('SBC A,A : sans emprunt entrant, toujours zéro (Z=1)', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x9c);
+      instructions.SBC_A_r8.run(cpu, cpu.registers.A);
+      expectSbc(cpu, 'SBC_A_r8(A=0x9C, A, C=0)', { expA: 0x00, Z: 1, H: 0, C: 0 });
+    });
+
+    it('SBC A,A : avec emprunt entrant, toujours 0xFF (l\'idiome « étale le carry »)', () => {
+      const cpu = new CPU();
+      cpu.registers.A.setValue(0x9c);
+      cpu.registers.F.C = 1;
+      instructions.SBC_A_r8.run(cpu, cpu.registers.A);
+      // A - A - 1 = -1 → 0xFF, tous les emprunts levés
+      expectSbc(cpu, 'SBC_A_r8(A=0x9C, A, C=1)', { expA: 0xff, Z: 0, H: 1, C: 1 });
+    });
+  });
+
   describe('CCF : inverse le flag C — N=0, H=0, Z préservé', () => {
     it('expose CCF avec son id et une méthode run', () => {
       expect(instructions.CCF, 'instructions.CCF est absent').toBeDefined();
