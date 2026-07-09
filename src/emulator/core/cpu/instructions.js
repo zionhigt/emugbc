@@ -477,6 +477,9 @@ export default function() {
     buildInstruction("HALT", 1, 1, function(cpu) {
         return cpu.halt();
     });
+    buildInstruction("STOP", -1, 2, function(cpu, n8) {
+        return cpu.stop(n8);
+    });
 
     //------------------ JUMP -------------------------------
     buildInstruction("JP_n16", 4, 3, function(cpu, n16) {

@@ -71,6 +71,7 @@ export default class CPU {
         this._ime = false;
         this._imeScheduled = false;
         this._halt = false;
+        this._stopped = false;
     }
 
     get ime() {
@@ -81,6 +82,9 @@ export default class CPU {
     }
     get halted() {
         return this._halt;
+    }
+    get stopped() {
+        return this._stopped;
     }
     di() {
         this._ime = false;
@@ -98,6 +102,11 @@ export default class CPU {
 
     halt() {
         this._halt = true;
+    }
+
+    stop(n8) {
+        
+        this._stopped = true;
     }
 
     updateZeroFlag(value) {
