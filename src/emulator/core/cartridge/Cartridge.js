@@ -109,8 +109,6 @@ class CartridgeHeader {
         this._raw_global_checksum = byte.buildU16(this.rom.read(0x14E), this.rom.read(0x14F));
 
         this._title = null;
-
-        console.log("Start : " + this.title);
     }
 
     getRange(start, end) {
