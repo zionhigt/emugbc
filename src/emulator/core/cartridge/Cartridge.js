@@ -54,7 +54,7 @@ const ROM_SIZE_CONFIG = {
 function byteArrayToText(bytes) {
     let s = "";
     for (let n of bytes) {
-        if (s.length && n === 0) break;
+        if (n === 0) break;
         s += String.fromCharCode(n)
     }
     return s.trim();
