@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 780" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#16a34a"/>
+    </marker>
+  </defs>
+
+  <!-- fond -->
+  <rect x="0" y="0" width="1150" height="780" fill="#ffffff"/>
+
+  <!-- titre -->
+  <text x="575" y="42" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">MBC1 — cartographie de la ROM et pilotage de la fenêtre</text>
+  <text x="575" y="66" text-anchor="middle" font-size="14" fill="#64748b">le CPU ne voit que 32 Ko (0x0000–0x7FFF) ; le mapper décide quelle banque physique remplit la moitié haute</text>
+
+  <!-- ═══════════ colonne gauche : canal de commande ═══════════ -->
+  <text x="40" y="104" font-size="15" font-weight="700" fill="#0f172a">CANAL DE COMMANDE</text>
+  <text x="40" y="122" font-size="12" fill="#64748b">les write(addr, valeur) détournés</text>
+
+  <!-- accolade grise : RAM enable -->
+  <path d="M 300 140 h -10 v 96 h 10" fill="none" stroke="#94a3b8" stroke-width="2"/>
+  <text x="278" y="180" text-anchor="end" font-size="13" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#64748b">write 0x0000–0x1FFF</text>
+  <text x="278" y="198" text-anchor="end" font-size="12" fill="#94a3b8">RAM enable — ignoré pour l'instant</text>
+
+  <!-- accolade rouge : choix de banque -->
+  <path d="M 300 244 h -10 v 96 h 10" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+  <text x="278" y="284" text-anchor="end" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#dc2626">write 0x2000–0x3FFF</text>
+  <text x="278" y="302" text-anchor="end" font-size="12" fill="#dc2626">écrire ici choisit la banque</text>
+
+  <!-- flèche rouge pointillée : commande vers le registre -->
+  <path d="M 292 348 C 292 620, 480 640, 616 560" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="7 5" marker-end="url(#arrRed)"/>
+  <text x="400" y="648" font-size="13" font-weight="600" fill="#dc2626">commande</text>
+
+  <!-- ═══════════ colonne CPU ═══════════ -->
+  <text x="435" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">VUE CPU</text>
+  <text x="435" y="122" text-anchor="middle" font-size="12" fill="#64748b">ce que cart.read(addr) présente</text>
+
+  <!-- moitié basse d'adresses = banque 0 -->
+  <rect x="310" y="135" width="250" height="220" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="4"/>
+  <text x="435" y="225" text-anchor="middle" font-size="16" font-weight="700" fill="#1e40af">BANQUE 0</text>
+  <text x="435" y="246" text-anchor="middle" font-size="12.5" fill="#1e40af">gravée — toujours la même</text>
+  <text x="320" y="153" font-size="12" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#1e40af">0x0000</text>
+  <text x="550" y="348" text-anchor="end" font-size="12" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#1e40af">0x3FFF</text>
+
+  <!-- moitié haute d'adresses = fenêtre -->
+  <rect x="310" y="358" width="250" height="220" fill="#fef3c7" stroke="#d97706" stroke-width="2" rx="4"/>
+  <text x="435" y="448" text-anchor="middle" font-size="16" font-weight="700" fill="#92400e">FENÊTRE MOBILE</text>
+  <text x="435" y="469" text-anchor="middle" font-size="12.5" fill="#92400e">banque N — N = registre BANK1</text>
+  <text x="320" y="376" font-size="12" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#92400e">0x4000</text>
+  <text x="550" y="571" text-anchor="end" font-size="12" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#92400e">0x7FFF</text>
+
+  <!-- ═══════════ colonne ROM physique ═══════════ -->
+  <text x="975" y="104" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">ROM PHYSIQUE</text>
+  <text x="975" y="122" text-anchor="middle" font-size="12" fill="#64748b">ex. 128 Ko = 8 banques × 16 Ko</text>
+
+  <!-- banque 0 (bleue, jamais fenêtrée) -->
+  <rect x="850" y="135" width="250" height="49" fill="#dbeafe" stroke="#2563eb" stroke-width="2" rx="3"/>
+  <text x="865" y="156" font-size="13" font-weight="700" fill="#1e40af">banque 0</text>
+  <text x="865" y="174" font-size="11" fill="#1e40af">jamais dans la fenêtre</text>
+  <text x="1090" y="165" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#1e40af">0x00000–0x03FFF</text>
+
+  <!-- banque 1 -->
+  <rect x="850" y="190" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="211" font-size="13" font-weight="600" fill="#475569">banque 1</text>
+  <text x="865" y="229" font-size="11" fill="#94a3b8">fenêtre par défaut au démarrage</text>
+  <text x="1090" y="220" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x04000–0x07FFF</text>
+
+  <!-- banque 2 (sélectionnée, ambre) -->
+  <rect x="850" y="245" width="250" height="49" fill="#fef3c7" stroke="#d97706" stroke-width="2.5" rx="3"/>
+  <text x="865" y="266" font-size="13" font-weight="700" fill="#92400e">banque 2</text>
+  <text x="865" y="284" font-size="11" fill="#92400e">← actuellement dans la fenêtre</text>
+  <text x="1090" y="275" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#92400e">0x08000–0x0BFFF</text>
+
+  <!-- banques 3 à 7 -->
+  <rect x="850" y="300" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="329" font-size="13" font-weight="600" fill="#475569">banque 3</text>
+  <text x="1090" y="329" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x0C000–0x0FFFF</text>
+
+  <rect x="850" y="355" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="384" font-size="13" font-weight="600" fill="#475569">banque 4</text>
+  <text x="1090" y="384" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x10000–0x13FFF</text>
+
+  <rect x="850" y="410" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="439" font-size="13" font-weight="600" fill="#475569">banque 5</text>
+  <text x="1090" y="439" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x14000–0x17FFF</text>
+
+  <rect x="850" y="465" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="494" font-size="13" font-weight="600" fill="#475569">banque 6</text>
+  <text x="1090" y="494" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x18000–0x1BFFF</text>
+
+  <rect x="850" y="520" width="250" height="49" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="3"/>
+  <text x="865" y="549" font-size="13" font-weight="600" fill="#475569">banque 7</text>
+  <text x="1090" y="549" text-anchor="end" font-size="11.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0x1C000–0x1FFFF</text>
+
+  <!-- ═══════════ flèches de mapping ═══════════ -->
+  <!-- mapping fixe : moitié basse -> banque 0 -->
+  <path d="M 562 245 C 660 245, 740 175, 846 160" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrBlue)"/>
+  <text x="700" y="192" text-anchor="middle" font-size="13" font-weight="600" fill="#2563eb">mapping gravé</text>
+
+  <!-- fenêtre mobile : moitié haute -> banque sélectionnée -->
+  <path d="M 562 468 C 670 468, 750 300, 846 272" fill="none" stroke="#d97706" stroke-width="3.5" marker-end="url(#arrAmber)"/>
+  <text x="672" y="415" text-anchor="middle" font-size="13" font-weight="600" fill="#d97706">fenêtre = banque BANK1</text>
+
+  <!-- ═══════════ registre BANK1 ═══════════ -->
+  <rect x="620" y="490" width="230" height="128" fill="#f0fdf4" stroke="#16a34a" stroke-width="2.5" rx="8"/>
+  <text x="735" y="516" text-anchor="middle" font-size="15" font-weight="700" fill="#166534">REGISTRE BANK1</text>
+  <text x="735" y="540" text-anchor="middle" font-size="12.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#166534">5 bits : valeur &amp; 0b11111</text>
+  <text x="735" y="560" text-anchor="middle" font-size="12.5" fill="#166534">0 est promu en 1</text>
+  <text x="735" y="586" text-anchor="middle" font-size="12.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#0f172a">write(0x2000, 0xE2)</text>
+  <text x="735" y="604" text-anchor="middle" font-size="12.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#0f172a">BANK1 = 0b00010 = 2</text>
+
+  <!-- flèche verte : le registre pilote la fenêtre -->
+  <path d="M 700 488 C 690 460, 685 448, 678 434" fill="none" stroke="#16a34a" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+  <text x="640" y="452" text-anchor="end" font-size="12.5" font-weight="600" fill="#16a34a">pilote</text>
+
+  <!-- ═══════════ bandeau formule ═══════════ -->
+  <rect x="150" y="682" width="850" height="72" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" rx="8"/>
+  <text x="575" y="712" text-anchor="middle" font-size="15" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#0f172a">addr &lt; 0x4000 : physique = addr&#160;&#160;&#160;|&#160;&#160;&#160;sinon : physique = BANK1 × 0x4000 + (addr − 0x4000)</text>
+  <text x="575" y="738" text-anchor="middle" font-size="12.5" fill="#64748b">la ROM ne s'écrit jamais : tout write sur 0x0000–0x7FFF est intercepté par le mapper comme une commande</text>
+</svg>

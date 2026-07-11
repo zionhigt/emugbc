@@ -1,3 +1,7 @@
+/**
+ * 
+ * @returns Default raw memory
+ */
 export default function() {
     class Memory {
         constructor() {

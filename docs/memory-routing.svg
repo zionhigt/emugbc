@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 720" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif">
+  <defs>
+    <marker id="arrAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="arrViolet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <!-- fond -->
+  <rect x="0" y="0" width="1150" height="720" fill="#ffffff"/>
+
+  <!-- titre -->
+  <text x="575" y="40" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">CPUMemory — le routeur du bus 16 bits</text>
+  <text x="575" y="64" text-anchor="middle" font-size="14" fill="#64748b">le CPU ne voit qu'un contrat read/write ; chaque plage d'adresses a son locataire</text>
+
+  <!-- ═══════════ CPU ═══════════ -->
+  <rect x="40" y="280" width="200" height="150" fill="#ede9fe" stroke="#7c3aed" stroke-width="2.5" rx="8"/>
+  <text x="140" y="318" text-anchor="middle" font-size="18" font-weight="700" fill="#5b21b6">CPU (SM83)</text>
+  <text x="140" y="345" text-anchor="middle" font-size="12" fill="#5b21b6">ne connaît que :</text>
+  <text x="140" y="370" text-anchor="middle" font-size="12.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#0f172a">memory.read(addr)</text>
+  <text x="140" y="390" text-anchor="middle" font-size="12.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#0f172a">memory.write(addr, v)</text>
+
+  <!-- flèche CPU -> routeur -->
+  <path d="M 242 355 L 326 355" fill="none" stroke="#7c3aed" stroke-width="3" marker-end="url(#arrViolet)"/>
+
+  <!-- ═══════════ routeur ═══════════ -->
+  <rect x="330" y="112" width="310" height="478" fill="#f8fafc" stroke="#475569" stroke-width="2.5" rx="10"/>
+  <text x="485" y="145" text-anchor="middle" font-size="16" font-weight="700" fill="#0f172a">CPUMemory</text>
+
+  <!-- plage 1 : ROM cartouche -->
+  <rect x="345" y="170" width="280" height="58" fill="#fef3c7" stroke="#d97706" stroke-width="2" rx="5"/>
+  <text x="358" y="194" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#92400e">0x0000–0x7FFF</text>
+  <text x="358" y="214" font-size="12" fill="#92400e">ROM cartouche (banque 0 + fenêtre)</text>
+
+  <!-- plage 2 : VRAM -->
+  <rect x="345" y="238" width="280" height="58" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="5"/>
+  <text x="358" y="262" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#475569">0x8000–0x9FFF</text>
+  <text x="358" y="282" font-size="12" fill="#64748b">VRAM — la mémoire vidéo</text>
+
+  <!-- plage 3 : RAM cartouche -->
+  <rect x="345" y="306" width="280" height="58" fill="#fffbeb" stroke="#d97706" stroke-width="1.5" stroke-dasharray="6 4" rx="5"/>
+  <text x="358" y="330" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#b45309">0xA000–0xBFFF</text>
+  <text x="358" y="350" font-size="12" fill="#b45309">RAM cartouche — plus tard</text>
+
+  <!-- plage 4 : WRAM -->
+  <rect x="345" y="374" width="280" height="58" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="5"/>
+  <text x="358" y="398" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#475569">0xC000–0xDFFF</text>
+  <text x="358" y="418" font-size="12" fill="#64748b">WRAM — la RAM interne de la console</text>
+
+  <!-- plage 5 : OAM + I/O -->
+  <rect x="345" y="442" width="280" height="58" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="5"/>
+  <text x="358" y="466" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#475569">0xFE00–0xFF7F</text>
+  <text x="358" y="486" font-size="12" fill="#64748b">OAM + registres I/O (0xFF01/02 : série)</text>
+
+  <!-- plage 6 : HRAM -->
+  <rect x="345" y="510" width="280" height="58" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="5"/>
+  <text x="358" y="534" font-size="13" font-weight="700" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#475569">0xFF80–0xFFFE</text>
+  <text x="358" y="554" font-size="12" fill="#64748b">HRAM — la petite RAM rapide</text>
+
+  <!-- ═══════════ destination : cartouche ═══════════ -->
+  <rect x="760" y="130" width="350" height="200" fill="#fffdf5" stroke="#d97706" stroke-width="2.5" rx="10"/>
+  <text x="935" y="160" text-anchor="middle" font-size="15" font-weight="700" fill="#92400e">CARTOUCHE — injectée dans le bus</text>
+
+  <rect x="785" y="180" width="90" height="52" fill="#fef3c7" stroke="#d97706" stroke-width="2" rx="6"/>
+  <text x="830" y="211" text-anchor="middle" font-size="14" font-weight="700" fill="#92400e">MBC</text>
+  <path d="M 877 206 L 918 206" fill="none" stroke="#d97706" stroke-width="2.5" marker-end="url(#arrAmber)"/>
+  <rect x="922" y="180" width="163" height="52" fill="#fef3c7" stroke="#d97706" stroke-width="2" rx="6"/>
+  <text x="1003" y="202" text-anchor="middle" font-size="13" font-weight="700" fill="#92400e">ROM</text>
+  <text x="1003" y="220" text-anchor="middle" font-size="11.5" fill="#92400e">banques de 16 Ko</text>
+
+  <rect x="785" y="252" width="300" height="52" fill="#fffbeb" stroke="#d97706" stroke-width="1.5" stroke-dasharray="6 4" rx="6"/>
+  <text x="935" y="274" text-anchor="middle" font-size="12.5" font-weight="600" fill="#b45309">RAM cartouche — plus tard</text>
+  <text x="935" y="292" text-anchor="middle" font-size="11.5" fill="#b45309">déverrouillée par la commande « RAM enable »</text>
+
+  <!-- ═══════════ destination : interne ═══════════ -->
+  <rect x="760" y="368" width="350" height="222" fill="#fbfcfd" stroke="#94a3b8" stroke-width="2.5" rx="10"/>
+  <text x="935" y="398" text-anchor="middle" font-size="15" font-weight="700" fill="#475569">INTERNE — le Uint8Array plat</text>
+
+  <rect x="785" y="418" width="145" height="48" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="857" y="447" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">VRAM</text>
+  <rect x="945" y="418" width="140" height="48" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="1015" y="447" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">WRAM</text>
+
+  <rect x="785" y="478" width="145" height="48" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="857" y="500" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">OAM + I/O</text>
+  <text x="857" y="516" text-anchor="middle" font-size="10.5" font-family="'Consolas','DejaVu Sans Mono',monospace" fill="#94a3b8">0xFF01/02 série</text>
+  <rect x="945" y="478" width="140" height="48" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.5" rx="6"/>
+  <text x="1015" y="507" text-anchor="middle" font-size="13" font-weight="600" fill="#475569">HRAM</text>
+
+  <!-- ═══════════ flèches de routage ═══════════ -->
+  <!-- ROM cartouche -->
+  <path d="M 627 199 C 700 199, 700 205, 754 208" fill="none" stroke="#d97706" stroke-width="3" marker-end="url(#arrAmber)"/>
+  <!-- RAM cartouche (pointillée) -->
+  <path d="M 627 335 C 710 335, 700 285, 754 278" fill="none" stroke="#d97706" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrAmber)"/>
+  <!-- VRAM -->
+  <path d="M 627 267 C 720 267, 700 435, 754 440" fill="none" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrGray)"/>
+  <!-- WRAM -->
+  <path d="M 627 403 C 720 403, 880 403, 1010 414" fill="none" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrGray)"/>
+  <!-- OAM + I/O -->
+  <path d="M 627 471 C 700 471, 700 500, 780 501" fill="none" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrGray)"/>
+  <!-- HRAM -->
+  <path d="M 627 539 C 720 539, 850 530, 940 507" fill="none" stroke="#94a3b8" stroke-width="2.5" marker-end="url(#arrGray)"/>
+
+  <!-- ═══════════ bandeau DIP ═══════════ -->
+  <rect x="80" y="625" width="990" height="72" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" rx="8"/>
+  <text x="575" y="654" text-anchor="middle" font-size="14" font-weight="700" fill="#0f172a">Inversion de dépendance : le CPU dépend du contrat, jamais des locataires — la cartouche est injectée dans le bus.</text>
+  <text x="575" y="680" text-anchor="middle" font-size="12.5" fill="#64748b">Sans cartouche branchée, le routeur retombe sur son tableau plat : les 507 tests d'instructions restent verts.</text>
+</svg>
