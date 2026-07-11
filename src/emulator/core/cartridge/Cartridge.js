@@ -1,4 +1,5 @@
 import byte from "../../lib/byte.js";
+import MBC from "./mbc/index.js";
 
 const ROM_SIZE_CONFIG = {
     0x00: {
@@ -181,6 +182,7 @@ export default function() {
             this._raw = bytes;
             this.rom = new Rom(bytes);
             this._header = new CartridgeHeader(this.rom); //this._raw.slice(0x0100, 0x014F + 1));
+            this.mbc = MBC(this._header.type, this.rom);
         }
         get header() {
             return this._header;
