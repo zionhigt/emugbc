@@ -161,7 +161,7 @@ describe("Cartridge (bootstrap) : parsing d'en-tête et lecture plate", () => {
     });
   });
 
-  describe('lecture / écriture (sans MBC pour l\'instant)', () => {
+  describe('lecture / écriture — type 0x00 : pas de MBC, la ROM plate', () => {
     it("read(addr) rend l'octet de la ROM à cette adresse", () => {
       const rom = buildRom();
       rom[0x0000] = 0x3c;
@@ -179,6 +179,43 @@ describe("Cartridge (bootstrap) : parsing d'en-tête et lecture plate", () => {
       const cart = new Cartridge(rom);
       cart.write(0x1234, 0x99);
       expect(hex(cart.read(0x1234), 2), "l'octet ne doit pas avoir bougé").toBe('0x42');
+    });
+  });
+
+  describe('cart.mbc : le contrôleur que la cartouche présente au bus', () => {
+    // Une ROM 128 Ko (8 banques, code 0x02) : chaque banque est tatouée
+    // à son premier octet de fenêtre avec 0xA0 + numéro.
+    const buildBankedCartRom = () => {
+      const rom = new Uint8Array(8 * 0x4000);
+      rom[0x0147] = 0x01; // MBC1 — c'est CE byte qui doit choisir le mapper
+      rom[0x0148] = 0x02; // 128 Ko
+      for (let b = 1; b < 8; b++) rom[b * 0x4000] = 0xa0 + b;
+      return rom;
+    };
+
+    it('cart.mbc existe TOUJOURS, même sans mapper (type 0x00) — le bus doit avoir quelque chose à binder', () => {
+      const cart = new Cartridge(buildRom({ type: 0x00 }));
+      expect(cart.mbc, 'type 0x00 doit équiper un NoMBC, pas un trou').toBeDefined();
+      expect(typeof cart.mbc.read, 'le contrat read').toBe('function');
+      expect(typeof cart.mbc.write, 'le contrat write').toBe('function');
+    });
+
+    it("c'est header.type qui arme le mapper : write sur cart.mbc déplace la fenêtre", () => {
+      const cart = new Cartridge(buildBankedCartRom());
+      expect(hex(cart.mbc.read(0x4000), 2), 'fenêtre au démarrage = banque 1').toBe('0xA1');
+
+      cart.mbc.write(0x2000, 0x03);
+      expect(
+        hex(cart.mbc.read(0x4000), 2),
+        'la cartouche doit s’être auto-équipée d’un MBC1 d’après son en-tête',
+      ).toBe('0xA3');
+    });
+
+    it('la banque 0 reste servie en 0x0000-0x3FFF après un switch', () => {
+      const cart = new Cartridge(buildBankedCartRom());
+      cart.mbc.write(0x2000, 0x05);
+      expect(hex(cart.mbc.read(0x0147), 2), "l'en-tête vit en banque 0, toujours lisible").toBe('0x01');
+      expect(hex(cart.mbc.read(0x4000), 2), 'et la fenêtre est bien partie sur la 5').toBe('0xA5');
     });
   });
 });
