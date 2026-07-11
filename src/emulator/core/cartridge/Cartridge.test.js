@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import buildCartridge from './Cartridge';
+
+// La ROM-étalon : Blargg cpu_instrs 06-ld r,r.gb (repo retrio/gb-test-roms).
+// Le test d'intégration s'active dès que le fichier est déposé ici :
+const GOLD_ROM_PATH = resolve(process.cwd(), 'src/test/fixtures/06-ld r,r.gb');
+const goldRomAvailable = existsSync(GOLD_ROM_PATH);
 
 const hex = (n, width = 4) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(width, '0');
 
@@ -132,6 +139,25 @@ describe("Cartridge (bootstrap) : parsing d'en-tête et lecture plate", () => {
           'octets échangés = checksum invalide (une lecture little-endian validerait à tort)',
         ).toBe(false);
       }
+    });
+  });
+
+  describe('intégration : la ROM-étalon Blargg (06-ld r,r.gb) — valeurs relevées au xxd', () => {
+    it.skipIf(!goldRomAvailable)("l'en-tête réel est parsé et validé de bout en bout", () => {
+      const bytes = new Uint8Array(readFileSync(GOLD_ROM_PATH));
+      expect(bytes.length, 'une ROM 32 KiB plate').toBe(0x8000);
+
+      const cart = new Cartridge(bytes);
+      expect(cart.header.title, 'Blargg a laissé le titre VIDE (tout zéros)').toBe('');
+      expect(cart.header.type, 'déclare MBC1 même en 32 Ko !').toBe(0x01);
+      expect(cart.header.romSize).toBe(0x8000);
+      expect(cart.header.logoValid, 'le vrai logo Nintendo').toBe(true);
+      expect(cart.header.headerChecksumValid, 'checksum rgbfix (0x66)').toBe(true);
+      expect(cart.header.globalChecksumValid, 'checksum global (0x7C28, big-endian)').toBe(true);
+
+      // le point d'entrée relevé au dump : NOP puis JP 0x0213
+      expect(hex(cart.read(0x0100), 2), 'NOP').toBe('0x00');
+      expect(hex(cart.read(0x0101), 2), "l'opcode JP").toBe('0xC3');
     });
   });
 
