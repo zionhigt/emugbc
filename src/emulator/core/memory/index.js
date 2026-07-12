@@ -83,7 +83,38 @@ function FactoryMBCSection(mbc) {
     return MBCSection;
 }
 
-export default function(cartridge) {
+function FactorySerialSection(serial) {
+    class SerialSection extends Section {
+        constructor(memory) {
+            super(memory);
+            this.serial = serial;
+            this._buffer = "";
+        }
+    
+        write(addr, value) {
+            super.write(addr, value);
+            if (addr === 0xFF02 && value === 0x81) {
+                this._buffer += String.fromCharCode(
+                    this.memory.read(0xFF01)
+                );
+                this.echo();
+            } 
+            return this.serial.write(addr, value);
+        }
+
+        read(addr) {
+            this.serial.read(addr);
+            return super.read(addr);
+        }
+
+        echo() {
+            this.serial.echo(this._buffer);
+        }
+    }
+    return SerialSection;
+}
+
+export default function(cartridge, serialbus) {
     const memory = new Memory();
     let overflowStart = 0;
     if (cartridge?.mbc) {
@@ -92,6 +123,9 @@ export default function(cartridge) {
         memory.bindRange("MBC", 0, 0x7FFF, mbc);
     }
     // TODO: Explods for each sections
-    memory.bindRange("overflow", overflowStart, 0xFFFF, Section);
+    memory.bindRange("overflow0", overflowStart, 0xFF00, Section);
+    serialbus = FactorySerialSection(serialbus);
+    memory.bindRange("serial", 0xFF01, 0xFF02, serialbus);
+    memory.bindRange("overflow1", 0xFF03, 0xFFFF, Section);
     return memory;
 }
