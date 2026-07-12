@@ -1,9 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 import CPU from './CPU';
-import buildMemory from './CPUMemory';
+import buildMemory from '../memory';
 
-const Memory = buildMemory();
 
 // Formatage lisible pour le debug : binaire et hexa plutôt que décimal
 const bin = (n, width = 8) => '0b' + (n >>> 0).toString(2).padStart(width, '0');
@@ -274,7 +273,7 @@ describe('CPU', () => {
 
   describe('cpu.stack : push(reg16) / pop() → valeur 16 bits', () => {
     const makeCpu = (sp) => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.SP.setValue(sp);
       return cpu;
     };

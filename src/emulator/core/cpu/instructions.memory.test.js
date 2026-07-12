@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
 import CPU from './CPU';
-import buildMemory from './CPUMemory';
+import buildMemory from '../memory';
 import buildInstructions from './instructions';
 
 // Formatage lisible pour le debug : binaire et hexa plutôt que décimal
@@ -14,11 +14,10 @@ const dumpFlags = (F) =>
   ')';
 
 const instructions = buildInstructions();
-const Memory = buildMemory();
 
 describe('CPU + mémoire', () => {
   it('expose la mémoire injectée : new CPU(memory) → cpu.memory', () => {
-    const memory = new Memory();
+    const memory = buildMemory();
     const cpu = new CPU(memory);
     // comparaison en booléen : ne JAMAIS passer l'objet mémoire à expect(),
     // sinon vitest sérialise les 64 Ko de RAM dans le message d'échec
@@ -29,7 +28,7 @@ describe('CPU + mémoire', () => {
 describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () => {
   // HL contient une adresse ; l'opérande est l'octet en mémoire à cette adresse.
   const setup = ({ A, at = 0xc123, byte, cIn }) => {
-    const cpu = new CPU(new Memory());
+    const cpu = new CPU(buildMemory());
     cpu.registers.A.setValue(A);
     cpu.registers.HL.setValue(at);
     cpu.memory.write(at, byte);
@@ -246,7 +245,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
 
   describe('famille LD (côté mémoire) : copies via pointeurs — aucun flag', () => {
     const makeCpu = () => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.F.setValue(0b1111_0000); // sentinelle : aucune LD ne doit y toucher
       return cpu;
     };
@@ -426,7 +425,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
 
   describe('PUSH / POP : la pile a ses instructions officielles', () => {
     const makeCpu = (sp = 0xfffe) => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.SP.setValue(sp);
       return cpu;
     };
@@ -562,7 +561,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
   describe('RET / RET_cc / RETI : les retours — un POP dans PC', () => {
     // pile préparée avec une adresse de retour 0xC003 (little-endian)
     const makeCpuReady = () => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.PC.setValue(0x1234); // on est "dans la fonction"
       cpu.registers.SP.setValue(0xfffc);
       cpu.memory.write(0xfffc, 0x03); // low du retour
@@ -588,7 +587,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     });
 
     it('intégration : CALL puis RET — le cycle de fonction complet revient au point de départ', () => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.PC.setValue(0xc003); // après le CALL (convention décodeur)
       cpu.registers.SP.setValue(0xfffe);
       instructions.CALL_n16.run(cpu, 0x1234); // on part dans la fonction
@@ -790,7 +789,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     ].map((c) => ({ ...c, label: `RST(${hex(c.vec, 2)})` })))(
       '$label : pousse le retour et saute au vecteur',
       ({ vec, label }) => {
-        const cpu = new CPU(new Memory());
+        const cpu = new CPU(buildMemory());
         cpu.registers.PC.setValue(0xc001); // après le RST (1 octet)
         cpu.registers.SP.setValue(0xfffe);
         cpu.registers.F.setValue(0b1111_0000);
@@ -803,7 +802,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     );
 
     it('aller-retour : RST puis RET revient après le RST — comme un vrai CALL', () => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.PC.setValue(0xc001);
       cpu.registers.SP.setValue(0xfffe);
       instructions.RST_vec.run(cpu, 0x08);
@@ -891,7 +890,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     // Convention : à l'entrée de run, PC pointe DÉJÀ sur l'instruction suivante
     // (le décodeur aura consommé opcode + opérandes avant d'exécuter).
     const setupCall = ({ pc, sp }) => {
-      const cpu = new CPU(new Memory());
+      const cpu = new CPU(buildMemory());
       cpu.registers.PC.setValue(pc);
       cpu.registers.SP.setValue(sp);
       return cpu;
@@ -983,14 +982,14 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     });
 
     it('CALL_cc pris crédite +3, pas pris ne crédite rien', () => {
-      const pris = new CPU(new Memory());
+      const pris = new CPU(buildMemory());
       pris.registers.PC.setValue(0xc003);
       pris.registers.SP.setValue(0xfffe);
       pris.registers.F.setValue(0b1000_0000); // Z levé
       instructions.CALL_cc_n16.run(pris, 'Z', 0x1234);
       expect(pris.cycles, 'branche prise = +extraCycle').toBe(3);
 
-      const pasPris = new CPU(new Memory());
+      const pasPris = new CPU(buildMemory());
       pasPris.registers.PC.setValue(0xc003);
       pasPris.registers.SP.setValue(0xfffe);
       pasPris.registers.F.setValue(0b0000_0000);
@@ -1000,7 +999,7 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
 
     it('RET_cc pris crédite +3, pas pris ne crédite rien', () => {
       const makeCpu = (flags) => {
-        const cpu = new CPU(new Memory());
+        const cpu = new CPU(buildMemory());
         cpu.registers.PC.setValue(0x1234);
         cpu.registers.SP.setValue(0xfffc);
         cpu.memory.write(0xfffc, 0x03);
