@@ -1,4 +1,5 @@
 import { Register } from "../../lib/register";
+import byte from "../../lib/byte";
 
 class LYregister extends Register(8) {
     
@@ -31,7 +32,13 @@ export default function(machine) {
             this.WY = new (Register(8));
             this.WX = new (Register(8));
 
-            this.dateAlarme = 16416;
+            this.dateAlarme = 0;
+
+            this.screen = new Uint8Array(160 * 144);
+        }
+
+        get bus() {
+            return this.machine.cpu.memory;
         }
 
         get innerCycles() {
@@ -59,10 +66,36 @@ export default function(machine) {
             }
         }
 
+        renderLine(line) {
+            if (!byte.getFlag(this.LCDC.getValue(), 0)) return this.screen.fill(0, line * 160, line * 160 + 160);
+
+            for (let x = 0; x <= 159; x++) {
+                const dx = (x + this.SCX.getValue()) & 0xFF;
+                const dy = (line + this.SCY.getValue()) & 0xFF;
+                const card = byte.getFlag(this.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
+                const addr = card + (dy >> 3) * 32 + (dx >> 3);
+                const id = this.bus.read(addr);
+                const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
+                    0x8000 + id * 16 :
+                    0x9000 + byte.sign8(id) * 16;
+                const low = this.bus.read(tile + (dy % 8) * 2);
+                const high = this.bus.read(tile + (dy % 8) * 2 + 1); 
+                const bit = 7 - (dx % 8);
+                const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+                this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
+            }
+        }
+
         check() {
             while (this.totalMachineCycles >= this.dateAlarme) {
-                this.machine.IF |= 0b00001;
-                this.dateAlarme += 17556;
+                const line = Math.floor(this.dateAlarme / 114) % 154
+                if (line === 144) {
+                    this.machine.IF |= 0b00001;
+
+                } else if (line < 144) {
+                    this.renderLine(line);
+                }
+                this.dateAlarme += 114;
             }
         }
 
