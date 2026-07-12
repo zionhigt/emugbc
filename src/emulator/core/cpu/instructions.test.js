@@ -1436,6 +1436,13 @@ describe('instructions', () => {
       { instr: 'SRA_r8', cas: 'négatif : le SIGNE se recopie en b7 (division signée)', val: 0b1011_0100, expVal: 0b1101_1010, expC: 0, Z: 0 },
       { instr: 'SRA_r8', cas: '0xFF reste 0xFF : -1 divisé par 2 vaut toujours -1', val: 0b1111_1111, expVal: 0b1111_1111, expC: 1, Z: 0 },
       { instr: 'SRA_r8', cas: 'même entrée que SRL mais b7 survit — LE différenciateur', val: 0b1000_0000, expVal: 0b1100_0000, expC: 0, Z: 0 },
+      // RÉGRESSION (trouvée par Blargg 09-op r,r) : un SRL copié de SLA gelait
+      // le bit 0 au lieu du bit 7. Invisible sur tout résultat à b0 nul —
+      // les cas discriminants sont ceux où le bit 1 d'entrée est levé.
+      { instr: 'SRL_r8', cas: 'RÉGRESSION : b1 devient b0 et doit SURVIVRE (un gel de b0 le tuerait)', val: 0b0000_0110, expVal: 0b0000_0011, expC: 0, Z: 0 },
+      { instr: 'SRL_r8', cas: 'RÉGRESSION : 0xFF = 0x7F — b7 gelé à 0, tous les autres survivent', val: 0b1111_1111, expVal: 0b0111_1111, expC: 1, Z: 0 },
+      { instr: 'SRA_r8', cas: 'RÉGRESSION : même vigilance pour le frère SRA (b0 du résultat levé)', val: 0b0000_0110, expVal: 0b0000_0011, expC: 0, Z: 0 },
+      { instr: 'SLA_r8', cas: 'RÉGRESSION : symétrique — b6 devient b7 et doit survivre', val: 0b0110_0000, expVal: 0b1100_0000, expC: 0, Z: 0 },
     ].map((c) => ({ ...c, label: `${c.instr}(B=${bin(c.val)})` })))(
       '$cas : $label',
       ({ instr, val, expVal, expC, Z, label }) => {

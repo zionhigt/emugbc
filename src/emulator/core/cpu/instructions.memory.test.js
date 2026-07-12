@@ -1017,4 +1017,56 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       expect(pasPris.cycles, 'branche non prise = compteur intact').toBe(0);
     });
   });
+
+  describe('les jumeaux r8 / [HL] : mêmes entrées, mêmes sorties — le filet anti copie-miroir', () => {
+    // RÉGRESSION (Blargg 09 vs 11) : SRL_r8 gelait le bit 0 (résidu de copie
+    // de SLA) pendant que SRL_HL était juste. Deux implémentations sœurs ne
+    // doivent JAMAIS diverger : on les confronte sur un jeu de valeurs sondes,
+    // avec les deux états possibles du C entrant (RL/RR en dépendent).
+    const TWINS = [
+      ['RLC_r8', 'RLC_HL'],
+      ['RRC_r8', 'RRC_HL'],
+      ['RL_r8', 'RL_HL'],
+      ['RR_r8', 'RR_HL'],
+      ['SLA_r8', 'SLA_HL'],
+      ['SRA_r8', 'SRA_HL'],
+      ['SRL_r8', 'SRL_HL'],
+      ['SWAP_r8', 'SWAP_HL'],
+      ['INC_r8', 'INC_HL'],
+      ['DEC_r8', 'DEC_HL'],
+    ];
+    // les sondes couvrent : zéro, bits de bord seuls, alternances, plein
+    const PROBES = [0x00, 0x01, 0x02, 0x55, 0x80, 0xaa, 0xf7, 0xff];
+    const HL_ADDR = 0xc123;
+
+    it.each(TWINS.map(([r8, hl]) => ({ r8, hl })))(
+      '$r8 et $hl sont indiscernables sur toutes les sondes',
+      ({ r8, hl }) => {
+        for (const val of PROBES) {
+          for (const cIn of [0, 1]) {
+            const cpuR8 = new CPU(buildMemory());
+            cpuR8.registers.B.setValue(val);
+            cpuR8.registers.F.C = cIn;
+            instructions[r8].run(cpuR8, cpuR8.registers.B);
+
+            const cpuHL = new CPU(buildMemory());
+            cpuHL.registers.HL.setValue(HL_ADDR);
+            cpuHL.memory.write(HL_ADDR, val);
+            cpuHL.registers.F.C = cIn;
+            instructions[hl].run(cpuHL);
+
+            const label = `${r8}/${hl}(${bin(val)}, C entrant=${cIn})`;
+            expect(
+              bin(cpuHL.memory.read(HL_ADDR)),
+              `${label} → les jumeaux divergent sur la VALEUR ! r8 dit ${bin(cpuR8.registers.B.getValue())}`,
+            ).toBe(bin(cpuR8.registers.B.getValue()));
+            expect(
+              bin(cpuHL.registers.F.getValue()),
+              `${label} → les jumeaux divergent sur les FLAGS ! r8 dit ${dumpFlags(cpuR8.registers.F)}`,
+            ).toBe(bin(cpuR8.registers.F.getValue()));
+          }
+        }
+      },
+    );
+  });
 });
