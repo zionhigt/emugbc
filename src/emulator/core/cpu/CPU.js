@@ -72,6 +72,7 @@ export default class CPU {
         this._imeScheduled = false;
         this._halt = false;
         this._stopped = false;
+        this.cycles = 0;
     }
 
     get ime() {
@@ -85,6 +86,9 @@ export default class CPU {
     }
     get stopped() {
         return this._stopped;
+    }
+    resetCycles() {
+        this.cycles = 0;
     }
     di() {
         this._ime = false;
