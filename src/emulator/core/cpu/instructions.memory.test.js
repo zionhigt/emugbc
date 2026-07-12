@@ -975,4 +975,47 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
       );
     });
   });
+
+  describe('facturation des branches : CALL_cc et RET_cc créditent cpu.cycles', () => {
+    it('les suppléments déclarés : +3 chacun quand pris', () => {
+      expect(instructions.CALL_cc_n16.extraCycle, 'CALL_cc : [6,3]').toBe(3);
+      expect(instructions.RET_cc.extraCycle, 'RET_cc : [5,2]').toBe(3);
+    });
+
+    it('CALL_cc pris crédite +3, pas pris ne crédite rien', () => {
+      const pris = new CPU(new Memory());
+      pris.registers.PC.setValue(0xc003);
+      pris.registers.SP.setValue(0xfffe);
+      pris.registers.F.setValue(0b1000_0000); // Z levé
+      instructions.CALL_cc_n16.run(pris, 'Z', 0x1234);
+      expect(pris.cycles, 'branche prise = +extraCycle').toBe(3);
+
+      const pasPris = new CPU(new Memory());
+      pasPris.registers.PC.setValue(0xc003);
+      pasPris.registers.SP.setValue(0xfffe);
+      pasPris.registers.F.setValue(0b0000_0000);
+      instructions.CALL_cc_n16.run(pasPris, 'Z', 0x1234);
+      expect(pasPris.cycles, 'branche non prise = compteur intact').toBe(0);
+    });
+
+    it('RET_cc pris crédite +3, pas pris ne crédite rien', () => {
+      const makeCpu = (flags) => {
+        const cpu = new CPU(new Memory());
+        cpu.registers.PC.setValue(0x1234);
+        cpu.registers.SP.setValue(0xfffc);
+        cpu.memory.write(0xfffc, 0x03);
+        cpu.memory.write(0xfffd, 0xc0);
+        cpu.registers.F.setValue(flags);
+        return cpu;
+      };
+
+      const pris = makeCpu(0b1000_0000); // Z levé
+      instructions.RET_cc.run(pris, 'Z');
+      expect(pris.cycles, 'branche prise = +extraCycle').toBe(3);
+
+      const pasPris = makeCpu(0b0000_0000);
+      instructions.RET_cc.run(pasPris, 'Z');
+      expect(pasPris.cycles, 'branche non prise = compteur intact').toBe(0);
+    });
+  });
 });
