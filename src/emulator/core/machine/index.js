@@ -1,5 +1,6 @@
 import MemoryBuilder from "../memory/index.js";
 import Timer from "../timer/index.js";
+import PPU from "../ppu/index.js"
 
 const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
@@ -15,8 +16,11 @@ export default function(cpu, decoder, clock, serial) {
             this.interruptsAcc = 1;
             this.clock.onTick(this.handleTick.bind(this));
             this.totalCycles = 0;
-
             this._observersPostStep = [];
+            this.ppu = new (PPU(this));
+            this.subscribePostStep(function() {
+                this.ppu.check();
+            }.bind(this))
         }
 
         get IE() {
@@ -115,7 +119,12 @@ export default function(cpu, decoder, clock, serial) {
             this.subscribePostStep(function(machine) {
                 timer.check();
             })
-            const newMemory = MemoryBuilder(cartridge, serial, timer);
+            const newMemory = MemoryBuilder(
+                cartridge,
+                serial,
+                timer,
+                this.ppu
+            );
             this.cpu.initMemory(newMemory);
             cpu.postBoot();
         }

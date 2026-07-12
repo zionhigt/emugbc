@@ -105,6 +105,24 @@ function FactoryTimerSection(timer) {
     }
     return TimerSection;
 }
+function FactoryPPUSection(ppu) {
+    class PPUSection extends Section {
+        constructor(memory) {
+            super(memory);
+            this.ppu = ppu;
+        }
+    
+        write(addr, value) {
+            super.write(addr, value);
+            return this.ppu.write(addr, value);
+        }
+
+        read(addr) {
+            return this.ppu.read(addr);
+        }
+    }
+    return PPUSection;
+}
 
 function FactorySerialSection(serial) {
     class SerialSection extends Section {
@@ -137,7 +155,7 @@ function FactorySerialSection(serial) {
     return SerialSection;
 }
 
-export default function(cartridge, serialbus, timer) {
+export default function(cartridge, serialbus, timer, ppu) {
     const memory = new Memory();
     let overflowStart = 0;
     if (cartridge?.mbc) {
@@ -149,9 +167,12 @@ export default function(cartridge, serialbus, timer) {
     memory.bindRange("overflow0", overflowStart, 0xFF00, Section);
     serialbus = FactorySerialSection(serialbus);
     timer = FactoryTimerSection(timer);
+    ppu = FactoryPPUSection(ppu);
     memory.bindRange("serial", 0xFF01, 0xFF02, serialbus);
     memory.bindRange("overflow1", 0xFF03, 0xFF03, Section);
     memory.bindRange("timer", 0xFF04, 0xFF07, timer);
-    memory.bindRange("overflow2", 0xFF08, 0xFFFF, Section);
+    memory.bindRange("overflow2", 0xFF08, 0xFF3F, Section);
+    memory.bindRange("ppu", 0xFF40, 0xFF4B, ppu);
+    memory.bindRange("overflow3", 0xFF4C, 0xFFFF, Section);
     return memory;
 }
