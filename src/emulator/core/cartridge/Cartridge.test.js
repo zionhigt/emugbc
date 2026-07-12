@@ -6,7 +6,7 @@ import buildCartridge from './Cartridge';
 
 // La ROM-étalon : Blargg cpu_instrs 06-ld r,r.gb (repo retrio/gb-test-roms).
 // Le test d'intégration s'active dès que le fichier est déposé ici :
-const GOLD_ROM_PATH = resolve(process.cwd(), 'src/test/fixtures/06-ld r,r.gb');
+const GOLD_ROM_PATH = resolve(process.cwd(), 'src/test/fixtures/individual/06-ld r,r.gb');
 const goldRomAvailable = existsSync(GOLD_ROM_PATH);
 
 const hex = (n, width = 4) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(width, '0');
