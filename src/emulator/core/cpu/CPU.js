@@ -87,6 +87,15 @@ export default class CPU {
         return this._stopped;
     }
 
+    postBoot() {
+        this.registers.PC.setValue(0x100);
+        this.registers.SP.setValue(0xFFFE);
+        this.registers.AF.setValue(0x1B0);
+        this.registers.BC.setValue(0x13);
+        this.registers.DE.setValue(0xD8);
+        this.registers.HL.setValue(0x14D);
+    }
+
     initMemory(memory) {
         this.memory = memory;
         this.stack = new Stack(this.memory, this.registers.SP);
