@@ -333,6 +333,7 @@ export default function() {
         if (matchCC(cpu, cc)) {
             cpu.stack.push(cpu.registers.PC.getValue());
             cpu.registers.PC.setValue(n16);
+            cpu.cycles += this.extraCycle;
         }
     });
     //------------------ CARRY -------------------------------
@@ -357,7 +358,7 @@ export default function() {
         const r8 = cpu.memory.read(hl);
         return CPA(cpu, a, r8);
     });
-    buildInstruction("CP_A_n8", 2, 1, function(cpu, n8) {
+    buildInstruction("CP_A_n8", 2, 2, function(cpu, n8) {
         const a = cpu.registers.A.getValue();
         return CPA(cpu, a, n8);
     });
@@ -504,6 +505,7 @@ export default function() {
     buildInstruction("JP_cc_n16", [4, 3], 3, function(cpu, cc, n16) {
         if (matchCC(cpu, cc)) {
             cpu.registers.PC.setValue(n16);
+            cpu.cycles += this.extraCycle;
         }
     });
     buildInstruction("JP_HL", 1, 1, function(cpu) {
@@ -520,6 +522,7 @@ export default function() {
             const pc = cpu.registers.PC.getValue();
             n16 = pc + byte.sign8(n16);
             cpu.registers.PC.setValue(n16);
+            cpu.cycles += this.extraCycle;
         }
     });
 
@@ -698,11 +701,13 @@ export default function() {
     buildInstruction("RET_cc", [5, 2], 1, function(cpu, cc) {
         if (matchCC(cpu, cc)) {
             cpu.registers.PC.setValue(cpu.stack.pop());
+            cpu.cycles += this.extraCycle;
         }
     });
     buildInstruction("RETI", 4, 1, function(cpu) {
         cpu.start();
         cpu.registers.PC.setValue(cpu.stack.pop());
+        cpu.cycles += this.extraCycle;
     });
 
     //------------------ RL -------------------------------
@@ -880,7 +885,7 @@ export default function() {
 
     //------------------ RST -------------------------------
 
-    buildInstruction("RST_vec", 6, 3, function(cpu, vec) {
+    buildInstruction("RST_vec", 4, 1, function(cpu, vec) {
         cpu.stack.push(cpu.registers.PC.getValue());
         cpu.registers.PC.setValue(vec);
     });
