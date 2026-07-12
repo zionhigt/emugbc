@@ -292,6 +292,83 @@ describe('Machine : le chef d\'orchestre', () => {
     });
   });
 
+  describe('HALT : le CPU dort, le monde continue — le dernier sous-test de Blargg', () => {
+    // Programme en WRAM : HALT puis LD A,0x42 puis la boucle finale JR -2.
+    // Selon IE/IF/IME, le réveil et le service racontent des histoires différentes.
+    const armHalt = ({ ie = 0, iF = 0, ime = false } = {}) => {
+      const all = buildAll();
+      const { cpu } = all;
+      [0x76, 0x3e, 0x42, 0x18, 0xfe].forEach((b, i) => cpu.memory.write(0xc000 + i, b));
+      cpu.registers.PC.setValue(0xc000);
+      cpu.registers.SP.setValue(0xfffe);
+      if (ime) cpu.start();
+      cpu.memory.write(0xffff, ie);
+      cpu.memory.write(0xff0f, iF);
+      return all;
+    };
+
+    it('garé sans réveil possible : PC gèle juste après le HALT, la trame se termine quand même', () => {
+      const { cpu, clock } = armHalt(); // IE=0, IF=0 : personne ne viendra
+      clock.tick(); // la boucle doit consommer son budget en cycles de sommeil, PAS pendre
+      expect(cpu.halted, 'toujours garé en fin de trame').toBe(true);
+      expect(
+        hex(cpu.registers.PC.getValue()),
+        'PC figé sur l\'instruction suivant le HALT — rien ne s\'exécute',
+      ).toBe(hex(0xc001));
+      expect(cpu.registers.A.getValue(), 'le LD A,0x42 n\'a PAS tourné').toBe(0);
+    });
+
+    it('le temps avance pendant le sommeil : totalCycles encaisse la trame entière', () => {
+      const { clock, machine } = armHalt();
+      clock.tick();
+      expect(
+        machine.totalCycles,
+        'dormir coûte des cycles — sinon le timer qui doit réveiller ne battrait plus',
+      ).toBeGreaterThanOrEqual(BUDGET);
+    });
+
+    it('réveil SANS service (IME éteint) : l\'exécution reprend après le HALT, IF intact', () => {
+      const { cpu, clock } = armHalt({ ie: 0b00100, iF: 0b00100, ime: false });
+      clock.tick();
+      expect(cpu.halted, 'réveillé : IE & IF suffit, IME n\'a pas son mot à dire').toBe(false);
+      expect(hex(cpu.registers.A.getValue(), 2), 'le LD A,0x42 a tourné').toBe('0x42');
+      expect(
+        cpu.memory.read(0xff0f),
+        'PAS de service : IF non acquitté, la frappe attend toujours',
+      ).toBe(0b00100);
+    });
+
+    it('réveil AVEC service (IME allumé) : la frappe arrive PENDANT le sommeil, retour empilé après le HALT', () => {
+      // Phase 1 : le CPU s'endort — IE et IME armés, mais personne ne frappe encore.
+      const { cpu, clock } = armHalt({ ie: 0b00100, iF: 0, ime: true });
+      clock.tick();
+      expect(cpu.halted, 'endormi, la trame s\'est écoulée sans frappe').toBe(true);
+
+      // Phase 2 : la frappe tombe pendant le sommeil, la trame suivante réveille ET sert.
+      cpu.memory.write(0xff0f, 0b00100);
+      clock.tick();
+      expect(cpu.ime, 'IME coupé : le service a eu lieu').toBe(false);
+      expect(cpu.memory.read(0xff0f) & 0b00100, 'IF acquitté').toBe(0);
+      const retour = (cpu.memory.read(0xfffd) << 8) | cpu.memory.read(0xfffc);
+      expect(
+        hex(retour),
+        'l\'adresse empilée pointe APRÈS le HALT (0xC001) — le réveil a précédé le service',
+      ).toBe(hex(0xc001));
+    });
+
+    it('frappe déjà en attente au moment du HALT (IME allumé) : service immédiat, AVANT le HALT', () => {
+      // Le contre-cas, celui du vrai matériel : l\'interruption part sur-le-champ,
+      // le HALT n\'est même pas atteint — retour 0xC000.
+      const { cpu, clock } = armHalt({ ie: 0b00100, iF: 0b00100, ime: true });
+      clock.tick();
+      const retour = (cpu.memory.read(0xfffd) << 8) | cpu.memory.read(0xfffc);
+      expect(
+        hex(retour),
+        'le dispatch précède le step : le HALT n\'a jamais eu son tour',
+      ).toBe(hex(0xc000));
+    });
+  });
+
   describe('intégration : la première cartouche qui tourne', () => {
     it('LD A,0x42 puis JR -2 : après un tick, A est chargé et PC gare sur sa boucle', () => {
       const { cpu, clock, machine } = buildAll();

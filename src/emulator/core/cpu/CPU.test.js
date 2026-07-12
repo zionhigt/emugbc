@@ -344,6 +344,23 @@ describe('CPU', () => {
     });
   });
 
+  describe('halt / wake : la porte du garage, dans les deux sens', () => {
+    it('halt() gare le CPU, wake() le réveille', () => {
+      const cpu = new CPU();
+      expect(cpu.halted, 'éveillé à la naissance').toBe(false);
+      cpu.halt();
+      expect(cpu.halted, 'garé').toBe(true);
+      cpu.wake();
+      expect(cpu.halted, 'réveillé').toBe(false);
+    });
+
+    it('wake() sur un CPU éveillé est inoffensif', () => {
+      const cpu = new CPU();
+      expect(() => cpu.wake()).not.toThrow();
+      expect(cpu.halted).toBe(false);
+    });
+  });
+
   describe('cycles : la propriété nue où les branches prises déposent leur supplément', () => {
     // Contrat : les instructions font cpu.cycles += this.extraCycle en direct
     // (pas de méthode d'ajout). Le décodeur lit la propriété puis appelle
