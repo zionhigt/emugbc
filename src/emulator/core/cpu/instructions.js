@@ -972,7 +972,7 @@ export default function() {
         cpu.registers.F.C = b0;
         value >>= 1;
         value &= 0xff;
-        value = byte.setBit(value, 0, 0);
+        value = byte.setBit(value, 7, 0);
         r8.setValue(value);
         cpu.updateZeroFlag(value);
         cpu.registers.F.N = 0;
