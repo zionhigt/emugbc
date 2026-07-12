@@ -116,6 +116,157 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('les pixels : le décor, tuile par tuile', () => {
+    // Le gréement : une vraie ram de 64 Ko derrière un bus minimal, la
+    // machine factice par-dessus — le PPU lit la VRAM par le bus, comme convenu.
+    const makeRig = () => {
+      const ram = new Uint8Array(0x10000);
+      const knocks = [];
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { knocks.push(v); this._if = v; },
+        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+      };
+      const PPU = buildPPU(machine);
+      const ppu = new PPU();
+      // réglage de base : BG allumé, adressage 0x8000 (bit 4), carte 0x9800
+      ppu.write(0xff40, 0b0001_0001);
+      ppu.write(0xff47, 0b1110_0100); // BGP identité : 0=0, 1=1, 2=2, 3=3
+      return { ram, machine, knocks, ppu };
+    };
+
+    // Encode 8 rangées de 8 teintes (0-3) au format 2bpp : par rangée,
+    // l'octet des bits FAIBLES puis l'octet des bits FORTS.
+    const poseTuile = (ram, id, rows, base = 0x8000) => {
+      rows.forEach((row, r) => {
+        let lo = 0;
+        let hi = 0;
+        row.forEach((c, x) => {
+          lo |= (c & 1) << (7 - x);
+          hi |= ((c >> 1) & 1) << (7 - x);
+        });
+        ram[base + id * 16 + r * 2] = lo;
+        ram[base + id * 16 + r * 2 + 1] = hi;
+      });
+    };
+
+    const RAMPE = [0, 1, 2, 3, 0, 1, 2, 3]; // la rangée-témoin
+    const tuileRampe = Array(8).fill(RAMPE);
+
+    it('ppu.screen : 160 × 144 teintes, blanc (0) à la naissance', () => {
+      const { ppu } = makeRig();
+      expect(ppu.screen.length, 'un pixel par point d\'écran').toBe(160 * 144);
+      expect(ppu.screen.every((p) => p === 0), 'écran vierge').toBe(true);
+    });
+
+    it('décodage 2bpp : la tuile 0 en case (0,0), renderLine(0) déroule ses teintes', () => {
+      const { ram, ppu } = makeRig();
+      poseTuile(ram, 0, tuileRampe);
+      ram[0x9800] = 0; // case (0,0) = tuile 0
+      ppu.renderLine(0);
+      expect(
+        Array.from(ppu.screen.slice(0, 8)),
+        'bits faibles + bits forts recombinés, pixel par pixel',
+      ).toEqual(RAMPE);
+    });
+
+    it('chaque ligne lit SA rangée : rangée 1 distincte, renderLine(1) la retrouve', () => {
+      const { ram, ppu } = makeRig();
+      const rows = Array(8).fill([0, 0, 0, 0, 0, 0, 0, 0]);
+      rows[1] = [3, 3, 0, 0, 1, 1, 2, 2];
+      poseTuile(ram, 0, rows);
+      ppu.renderLine(1);
+      expect(Array.from(ppu.screen.slice(160, 168)), 'la rangée 1 de la tuile').toEqual(rows[1]);
+    });
+
+    it('BGP traduit : palette inversée, les teintes se retournent', () => {
+      const { ram, ppu } = makeRig();
+      poseTuile(ram, 0, tuileRampe);
+      ppu.write(0xff47, 0b0001_1011); // 0→3, 1→2, 2→1, 3→0
+      ppu.renderLine(0);
+      expect(
+        Array.from(ppu.screen.slice(0, 8)),
+        'teinte finale = (BGP >> teinte×2) & 3',
+      ).toEqual([3, 2, 1, 0, 3, 2, 1, 0]);
+    });
+
+    it('la carte : case (1,0) = autre tuile → pixels 8-15 ; ligne 8 = rangée suivante de la carte', () => {
+      const { ram, ppu } = makeRig();
+      poseTuile(ram, 1, Array(8).fill([1, 1, 1, 1, 1, 1, 1, 1]));
+      poseTuile(ram, 2, Array(8).fill([2, 2, 2, 2, 2, 2, 2, 2]));
+      ram[0x9800 + 1] = 1; // case (1,0)
+      ram[0x9800 + 32] = 2; // case (0,1) — la carte fait 32 cases de large
+      ppu.renderLine(0);
+      expect(Array.from(ppu.screen.slice(8, 16)), 'la deuxième case de la première rangée').toEqual(Array(8).fill(1));
+      ppu.renderLine(8);
+      expect(Array.from(ppu.screen.slice(8 * 160, 8 * 160 + 8)), 'la ligne 8 tombe sur la rangée 1 de la carte').toEqual(Array(8).fill(2));
+    });
+
+    it('SCX décale l\'échantillonnage : scroll de 3, l\'écran commence au pixel 3 de la tuile', () => {
+      const { ram, ppu } = makeRig();
+      poseTuile(ram, 0, tuileRampe);
+      ppu.write(0xff42 + 1, 3); // SCX (0xFF43)
+      ppu.renderLine(0);
+      expect(
+        Array.from(ppu.screen.slice(0, 5)),
+        'la rampe décalée de 3 : on lit (x + SCX) dans le décor',
+      ).toEqual([3, 0, 1, 2, 3]);
+    });
+
+    it('SCY décale les lignes : scroll de 9, la ligne 0 lit la rangée 1 de la carte, rangée 1 de la tuile', () => {
+      const { ram, ppu } = makeRig();
+      const rows = Array(8).fill([0, 0, 0, 0, 0, 0, 0, 0]);
+      rows[1] = [2, 2, 2, 2, 2, 2, 2, 2]; // 9 mod 8 = rangée 1
+      poseTuile(ram, 5, rows);
+      ram[0x9800 + 32] = 5; // 9 ÷ 8 = rangée 1 de la carte
+      ppu.write(0xff42, 9); // SCY
+      ppu.renderLine(0);
+      expect(Array.from(ppu.screen.slice(0, 8)), '(y + SCY) : carte ET rangée décalées').toEqual(rows[1]);
+    });
+
+    it('adressage SIGNÉ (LCDC bit 4 = 0) : l\'id 0xFF pointe 0x9000 − 16 = 0x8FF0', () => {
+      const { ram, ppu } = makeRig();
+      ppu.write(0xff40, 0b0000_0001); // bit 4 éteint : mode signé
+      // la tuile vit à 0x9000 + sign8(0xFF) × 16 = 0x8FF0
+      const rows = Array(8).fill([3, 0, 3, 0, 3, 0, 3, 0]);
+      rows.forEach((row, r) => {
+        let lo = 0; let hi = 0;
+        row.forEach((c, x) => { lo |= (c & 1) << (7 - x); hi |= ((c >> 1) & 1) << (7 - x); });
+        ram[0x8ff0 + r * 2] = lo;
+        ram[0x8ff0 + r * 2 + 1] = hi;
+      });
+      ram[0x9800] = 0xff;
+      ppu.renderLine(0);
+      expect(
+        Array.from(ppu.screen.slice(0, 8)),
+        'sign8(0xFF) = −1 : la moitié haute des ids vit SOUS 0x9000 — le piège classique',
+      ).toEqual(rows[0]);
+    });
+
+    it('BG éteint (LCDC bit 0 = 0) : la ligne se peint en blanc', () => {
+      const { ram, ppu } = makeRig();
+      poseTuile(ram, 0, tuileRampe);
+      ppu.renderLine(0); // d'abord peinte...
+      ppu.write(0xff40, 0b0001_0000); // ...puis BG coupé
+      ppu.renderLine(0);
+      expect(ppu.screen.slice(0, 8).every((p) => p === 0), 'décor coupé = blanc').toBe(true);
+    });
+
+    it('check() par ligne : l\'horloge à la ligne 3 a peint les lignes 0-2, pas la 3', () => {
+      const { ram, machine, ppu } = makeRig();
+      poseTuile(ram, 0, Array(8).fill(Array(8).fill(3)));
+      ram[0x9800] = 0;
+      machine.totalCycles = 114 * 2 + 10; // en plein milieu de la ligne 2
+      ppu.check();
+      expect(ppu.screen[0], 'ligne 0 peinte').toBe(3);
+      expect(ppu.screen[160], 'ligne 1 peinte').toBe(3);
+      expect(ppu.screen[2 * 160], 'ligne 2 peinte (entamée = peinte à son entrée)').toBe(3);
+      expect(ppu.screen[3 * 160], 'ligne 3 pas encore').toBe(0);
+    });
+  });
+
   describe('intégration : le cœur de l\'écran réveille un jeu endormi', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
