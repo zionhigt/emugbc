@@ -66,8 +66,7 @@ class CPURegister {
 export default class CPU {
     constructor(memory) {
         this.registers = new CPURegister();
-        this.memory = memory;
-        this.stack = new Stack(this.memory, this.registers.SP);
+        this.initMemory(memory);
         this._ime = false;
         this._imeScheduled = false;
         this._halt = false;
@@ -87,9 +86,16 @@ export default class CPU {
     get stopped() {
         return this._stopped;
     }
+
+    initMemory(memory) {
+        this.memory = memory;
+        this.stack = new Stack(this.memory, this.registers.SP);
+    }
+
     resetCycles() {
         this.cycles = 0;
     }
+
     di() {
         this._ime = false;
         this._imeScheduled = false;
