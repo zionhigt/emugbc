@@ -33,14 +33,25 @@ const buildFakeCartridge = (program = []) => {
   return { mbc: { read: (addr) => rom[addr], write: () => {} } };
 };
 
+// Le contrôleur série maître : un organe de la console, injecté à la factory.
+const buildFakeSerial = () => ({
+  reads: [],
+  writes: [],
+  echos: [],
+  read(addr) { this.reads.push(addr); },
+  write(addr, value) { this.writes.push([addr, value]); },
+  echo(buffer) { this.echos.push(buffer); },
+});
+
 const buildAll = () => {
-  const cpu = new CPU(buildMemory());
+  const serial = buildFakeSerial();
+  const cpu = new CPU(buildMemory(undefined, serial));
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();
-  const Machine = buildMachine(cpu, decoder, clock);
+  const Machine = buildMachine(cpu, decoder, clock, serial);
   const machine = new Machine();
-  return { cpu, decoder, clock, machine };
+  return { cpu, decoder, clock, serial, machine };
 };
 
 describe('Machine : le chef d\'orchestre', () => {
@@ -131,6 +142,23 @@ describe('Machine : le chef d\'orchestre', () => {
         hex(cpu.registers.PC.getValue()),
         'PC garé sur le JR -2 (0x0102) — la boucle finale canonique',
       ).toBe(hex(0x0102));
+    });
+
+    it('la console PARLE : un programme écrit "P" sur le port série, le maître l\'entend', () => {
+      const { clock, serial, machine } = buildAll();
+      // LD A,'P' ; LDH [0xFF01],A ; LD A,0x81 ; LDH [0xFF02],A ; JR -2
+      machine.plugCartridge(buildFakeCartridge([
+        0x3e, 0x50, // LD A, 'P'
+        0xe0, 0x01, // LDH [0xFF01], A — la lettre dans la boîte
+        0x3e, 0x81, // LD A, 0x81
+        0xe0, 0x02, // LDH [0xFF02], A — la sonnette
+        0x18, 0xfe, // JR -2 — garé pour toujours
+      ]));
+      clock.tick();
+      expect(
+        serial.echos.at(-1),
+        'le protocole complet a traversé cartouche = bus = cpu = décodeur = section = maître',
+      ).toBe('P');
     });
   });
 });

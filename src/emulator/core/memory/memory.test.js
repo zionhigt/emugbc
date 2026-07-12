@@ -110,3 +110,77 @@ describe('Memory avec MBC : la plage 0x0000-0x7FFF appartient à la cartouche', 
     expect(hex(memory.read(0xffff), 2), 'IE aussi, cartouche branchée').toBe('0x01');
   });
 });
+
+describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maître écoute', () => {
+  // Le contrôleur maître : contrat read/write (reçus, jamais indispensables)
+  // + echo(buffer), appelé PAR la section à chaque sonnette. Le buffer
+  // transmis est CUMULATIF : la section renvoie tout ce qu'elle a vu.
+  const buildFakeSerial = () => ({
+    reads: [],
+    writes: [],
+    echos: [],
+    read(addr) { this.reads.push(addr); },
+    write(addr, value) { this.writes.push([addr, value]); },
+    echo(buffer) { this.echos.push(buffer); },
+  });
+
+  const P = 'P'.charCodeAt(0); // 0x50
+
+  it('la sonnette : écrire le caractère en 0xFF01 puis 0x81 en 0xFF02 déclenche echo', () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    memory.write(0xff01, P);
+    expect(serial.echos, 'pas encore : la lettre attend dans la boîte').toEqual([]);
+    memory.write(0xff02, 0x81);
+    expect(serial.echos, 'sonnette ! le maître reçoit le buffer').toEqual(['P']);
+  });
+
+  it('le buffer est cumulatif : chaque sonnette renvoie TOUT le message', () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    for (const c of 'Pas') {
+      memory.write(0xff01, c.charCodeAt(0));
+      memory.write(0xff02, 0x81);
+    }
+    expect(serial.echos, 'des instantanés qui grandissent').toEqual(['P', 'Pa', 'Pas']);
+  });
+
+  it("écrire autre chose que 0x81 en 0xFF02 ne sonne pas", () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    memory.write(0xff01, P);
+    memory.write(0xff02, 0x00);
+    memory.write(0xff02, 0x80);
+    expect(serial.echos, 'aucune sonnette sans 0x81').toEqual([]);
+  });
+
+  it('le maître reçoit aussi les write bruts (sans obligation de s\'en servir)', () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    memory.write(0xff01, P);
+    memory.write(0xff02, 0x81);
+    expect(serial.writes, 'le trafic brut, adresse et valeur').toEqual([
+      [0xff01, P],
+      [0xff02, 0x81],
+    ]);
+  });
+
+  it('lire 0xFF01 rend le latch (write-through vers la ram) et notifie le maître', () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    memory.write(0xff01, P);
+    expect(hex(memory.read(0xff01), 2), 'la lettre en attente est relisible').toBe('0x50');
+    expect(serial.reads, 'le maître a vu passer la lecture').toEqual([0xff01]);
+  });
+
+  it('la section est récupérable par son tag "serial", et cohabite avec la cartouche', () => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(buildFakeCartridge(), serial);
+    expect(memory.getSectionByTag('serial'), 'le tag doit exister').toBeDefined();
+    // les voisins ne débordent pas : 0xFF00 (joypad) et 0xFF03 restent de la ram plate
+    memory.write(0xff00, 0x30);
+    memory.write(0xff03, 0x42);
+    expect(serial.writes, 'aucun trafic série pour les adresses voisines').toEqual([]);
+    expect(hex(memory.read(0x0100), 2), 'et la cartouche répond toujours').toBe('0x42');
+  });
+});
