@@ -4,8 +4,13 @@ import opecodes from "../cpu/opcodes.js"
 export default function(cpu, instructions) {
     class Decoder {
         constructor() {
-            this.memory = cpu.memory;
+            this.cpu = cpu;
         }
+
+        get memory() {
+            return this.cpu.memory;
+        }
+
         fetch() {
             const value = this.memory.read(cpu.registers.PC.getValue());
             cpu.registers.PC.increment();
@@ -35,7 +40,7 @@ export default function(cpu, instructions) {
                     )
                 } else if (typeof arg === "string" && arg.startsWith("cc:")) {
                     args.push(arg.slice(3, arg.length));
-                } else if(!Number.isNaN(Number.parseInt(arg))) {
+                } else if(typeof arg === "number") {
                     args.push(arg);
                 } else {
                     args.push(cpu.registers[arg]);
