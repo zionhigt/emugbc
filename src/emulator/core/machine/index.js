@@ -1,5 +1,5 @@
 import MemoryBuilder from "../memory/index.js";
-
+import Timer from "../timer/index.js";
 
 const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
@@ -12,8 +12,24 @@ export default function(cpu, decoder, clock, serial) {
             this.cpu = cpu;
             this.decoder = decoder;
             this.clock = clock;
-
+            this.interruptsAcc = 1;
             this.clock.onTick(this.handleTick.bind(this));
+            this.totalCycles = 0;
+
+            this._observersPostStep = [];
+        }
+
+        get IE() {
+            return this.cpu.memory.read(0xFFFF);
+        }
+        get IF() {
+            return this.cpu.memory.read(0xFF0F);
+        }
+        set IE(value) {
+            return this.cpu.memory.write(0xFFFF, value);
+        }
+        set IF(value) {
+            return this.cpu.memory.write(0xFF0F, value);
         }
 
         start() {
@@ -23,15 +39,75 @@ export default function(cpu, decoder, clock, serial) {
             clock.stop();
         }
 
-        handleTick(event) {
-            let budget = DEFAULT_BUDGET;
-            while (budget > 0) {
-                budget -= this.decoder.step();
+        /**
+         * 
+         * @param {*} byte 
+         * @returns a byte like a 0x1 << n-first
+         */
+        getFisrtLowBit(byte) {
+            return byte & -byte;
+        }
+
+        dispatch() {
+            /** choisir la source : le bit levé le plus bas gagne (VBlank bit 0 = priorité maximale, Joypad bit 4 = minimale) ;
+                couper ime ;
+                acquitter : éteindre ce bit-là dans IF (les autres continuent d'attendre) ;
+                empiler PC, sauter au vecteur de la source — 0x40, 0x48, 0x50, 0x58, 0x60 (bit × 8 + 0x40 : des cousins de RST) ;
+                facturer 5 cycles. */
+            if (this.cpu.ime && this.IE & this.IF) {
+                const source = this.getFisrtLowBit(this.IE & this.IF);
+                const mask = 0xFF ^ source;
+                this.cpu.di();
+                this.IF = this.IF & mask;
+                this.cpu.stack.push(this.cpu.registers.PC.getValue());
+                const address = Math.log2(source) * 8 + 0x40;
+                this.cpu.registers.PC.setValue(address);
+                return 5;
+            }
+            return 0;
+        }
+
+        subscribePostStep(cb) {
+            this._observersPostStep.push(cb);
+        }
+
+        postStep() {
+            for (let o of this._observersPostStep) {
+                o.call(null, this);
+            }
+            const isScheduled = this.cpu.imeScheduled;
+            if (!isScheduled) {
+                // this.interruptsAcc = 1;
+                return;
+            };
+            switch (this.interruptsAcc) {
+                case 0:
+                    this.interruptsAcc = 1;
+                    this.cpu.start();
+                    break;
+                case 1:
+                    this.interruptsAcc = 0;
+                    break;
             }
         }
 
+        handleTick(event) {
+            let budget = DEFAULT_BUDGET;
+            while (budget > 0) {
+                const cost = this.dispatch() + this.decoder.step();
+                budget -= cost;
+                this.totalCycles += cost;
+                this.postStep();
+            }
+
+        }
+
         plugCartridge(cartridge) {
-            const newMemory = MemoryBuilder(cartridge, serial);
+            const timer = new (Timer(this));
+            this.subscribePostStep(function(machine) {
+                timer.check();
+            })
+            const newMemory = MemoryBuilder(cartridge, serial, timer);
             this.cpu.initMemory(newMemory);
             cpu.postBoot();
         }

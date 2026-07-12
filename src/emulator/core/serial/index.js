@@ -9,4 +9,6 @@ export default function(logger) {
             logger.log(value);
         }
     }
+
+    return SerialBus;
 }

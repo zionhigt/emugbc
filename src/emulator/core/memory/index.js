@@ -83,6 +83,29 @@ function FactoryMBCSection(mbc) {
     return MBCSection;
 }
 
+function FactoryTimerSection(timer) {
+    class TimerSection extends Section {
+        constructor(memory) {
+            super(memory);
+            this.timer = timer;
+        }
+    
+        write(addr, value) {
+            if (addr !== 0xFF04) {
+                super.write(addr, value);
+            } else {
+                value = 0;
+            }
+            return this.timer.write(addr, value);
+        }
+
+        read(addr) {
+            return this.timer.read(addr);
+        }
+    }
+    return TimerSection;
+}
+
 function FactorySerialSection(serial) {
     class SerialSection extends Section {
         constructor(memory) {
@@ -114,7 +137,7 @@ function FactorySerialSection(serial) {
     return SerialSection;
 }
 
-export default function(cartridge, serialbus) {
+export default function(cartridge, serialbus, timer) {
     const memory = new Memory();
     let overflowStart = 0;
     if (cartridge?.mbc) {
@@ -125,7 +148,10 @@ export default function(cartridge, serialbus) {
     // TODO: Explods for each sections
     memory.bindRange("overflow0", overflowStart, 0xFF00, Section);
     serialbus = FactorySerialSection(serialbus);
+    timer = FactoryTimerSection(timer);
     memory.bindRange("serial", 0xFF01, 0xFF02, serialbus);
-    memory.bindRange("overflow1", 0xFF03, 0xFFFF, Section);
+    memory.bindRange("overflow1", 0xFF03, 0xFF03, Section);
+    memory.bindRange("timer", 0xFF04, 0xFF07, timer);
+    memory.bindRange("overflow2", 0xFF08, 0xFFFF, Section);
     return memory;
 }
