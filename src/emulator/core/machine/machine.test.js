@@ -50,10 +50,18 @@ const buildFakeTimer = () => ({
   write: () => {},
 });
 
+// Un PPU factice pour la mémoire initiale (celle d'avant plugCartridge) :
+// même contrat, mêmes réponses neutres.
+const buildFakePPU = () => ({
+  read: () => 0,
+  write: () => {},
+  check: () => {},
+});
+
 const buildAll = () => {
   const serial = buildFakeSerial();
   const timer = buildFakeTimer();
-  const cpu = new CPU(buildMemory(undefined, serial, timer));
+  const cpu = new CPU(buildMemory(undefined, serial, timer, buildFakePPU()));
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();
@@ -273,7 +281,10 @@ describe('Machine : le chef d\'orchestre', () => {
     it('EI puis NOP : le service attend la fin du NOP (retour = 0xC002, pas 0xC001)', () => {
       const { cpu, clock } = armProgram([0xfb, 0x00]); // EI ; NOP
       clock.tick();
-      expect(cpu.memory.read(0xff0f), 'l\'interruption a bien été servie dans la trame').toBe(0);
+      expect(
+        cpu.memory.read(0xff0f) & 0b00100,
+        'l\'interruption TIMER a bien été servie dans la trame (le bit VBlank du PPU vit sa vie)',
+      ).toBe(0);
       const retour = (cpu.memory.read(0xfffd) << 8) | cpu.memory.read(0xfffc);
       expect(
         hex(retour),
@@ -286,8 +297,8 @@ describe('Machine : le chef d\'orchestre', () => {
       clock.tick();
       expect(cpu.ime, 'IME jamais allumé').toBe(false);
       expect(
-        cpu.memory.read(0xff0f),
-        'IF jamais acquitté : la frappe attend toujours, personne n\'a ouvert',
+        cpu.memory.read(0xff0f) & 0b00100,
+        'IF jamais acquitté : la frappe timer attend toujours, personne n\'a ouvert',
       ).toBe(0b00100);
     });
   });
@@ -333,8 +344,8 @@ describe('Machine : le chef d\'orchestre', () => {
       expect(cpu.halted, 'réveillé : IE & IF suffit, IME n\'a pas son mot à dire').toBe(false);
       expect(hex(cpu.registers.A.getValue(), 2), 'le LD A,0x42 a tourné').toBe('0x42');
       expect(
-        cpu.memory.read(0xff0f),
-        'PAS de service : IF non acquitté, la frappe attend toujours',
+        cpu.memory.read(0xff0f) & 0b00100,
+        'PAS de service : IF non acquitté, la frappe timer attend toujours',
       ).toBe(0b00100);
     });
 

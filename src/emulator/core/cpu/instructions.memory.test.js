@@ -324,8 +324,10 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     it('LDH_n16_A / LDH_A_n16 : la page haute 0xFF00 — l\'octet reçu est le bas de l\'adresse', () => {
       const cpu = makeCpu();
       cpu.registers.A.setValue(0x42);
-      instructions.LDH_n16_A.run(cpu, 0x44); // → 0xFF44
-      expect(hex(cpu.memory.read(0xff44), 2), 'A écrit à 0xFF00 | 0x44').toBe('0x42');
+      // 0x80 → 0xFF80 (HRAM) : une adresse NEUTRE — 0xFF44 est devenu LY,
+      // territoire du PPU, plus une case de ram ordinaire !
+      instructions.LDH_n16_A.run(cpu, 0x80);
+      expect(hex(cpu.memory.read(0xff80), 2), 'A écrit à 0xFF00 | 0x80').toBe('0x42');
 
       cpu.memory.write(0xff85, 0x90);
       instructions.LDH_A_n16.run(cpu, 0x85);
@@ -336,11 +338,11 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
     it('LDH_C_A / LDH_A_C : adresse 0xFF00 + registre C (le REGISTRE C, pas le flag !)', () => {
       const cpu = makeCpu();
       cpu.registers.A.setValue(0x42);
-      cpu.registers.C.setValue(0x44);
+      cpu.registers.C.setValue(0x80); // 0xFF80 : HRAM neutre (0xFF44 est devenu LY !)
       instructions.LDH_C_A.run(cpu);
-      expect(hex(cpu.memory.read(0xff44), 2), 'A écrit à 0xFF00 + C').toBe('0x42');
+      expect(hex(cpu.memory.read(0xff80), 2), 'A écrit à 0xFF00 + C').toBe('0x42');
 
-      cpu.memory.write(0xff44, 0x90);
+      cpu.memory.write(0xff80, 0x90);
       instructions.LDH_A_C.run(cpu);
       expect(hex(cpu.registers.A.getValue(), 2), 'A lu depuis 0xFF00 + C').toBe('0x90');
       expectFlagsIntact(cpu, 'LDH_C_A / LDH_A_C');
