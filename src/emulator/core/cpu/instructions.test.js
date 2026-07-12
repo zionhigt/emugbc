@@ -1642,4 +1642,42 @@ describe('instructions', () => {
       expect(hex(cpu.registers.A.getValue(), 2), 'A ne doit pas bouger').toBe('0x42');
     });
   });
+
+  describe('facturation des branches : une branche PRISE crédite cpu.cycles', () => {
+    // Contrat : run fait cpu.cycles += this.extraCycle — le this est
+    // l'instruction elle-même (run appelé en méthode), qui connaît son
+    // propre supplément. Branche non prise = zéro crédit.
+    it('les suppléments déclarés : JP_cc et JR_cc coûtent +1 quand pris', () => {
+      expect(instructions.JP_cc_n16.extraCycle, 'JP_cc : [4,3]').toBe(1);
+      expect(instructions.JR_cc_n16.extraCycle, 'JR_cc : [3,2]').toBe(1);
+    });
+
+    it.each([
+      { id: 'JP_cc_n16', args: ['Z', 0x1234], F: 0b1000_0000, taken: true },
+      { id: 'JP_cc_n16', args: ['Z', 0x1234], F: 0b0000_0000, taken: false },
+      { id: 'JR_cc_n16', args: ['NZ', 0x05], F: 0b0000_0000, taken: true },
+      { id: 'JR_cc_n16', args: ['NZ', 0x05], F: 0b1000_0000, taken: false },
+    ].map((c) => ({
+      ...c,
+      label: `${c.id}("${c.args[0]}") avec F=${bin(c.F)}`,
+      attendu: c.taken ? 'prise = +extraCycle' : 'pas prise = rien',
+    })))('$attendu : $label', ({ id, args, F: flags, taken, label }) => {
+      const cpu = new CPU();
+      cpu.registers.PC.setValue(0xc002);
+      cpu.registers.F.setValue(flags);
+      instructions[id].run(cpu, ...args);
+      expect(
+        cpu.cycles,
+        `${label} → cpu.cycles doit valoir ${taken ? 'extraCycle' : '0'}`,
+      ).toBe(taken ? instructions[id].extraCycle : 0);
+    });
+
+    it('deux branches prises sans reset s\'accumulent (le décodeur videra)', () => {
+      const cpu = new CPU();
+      cpu.registers.F.setValue(0b1000_0000); // Z levé
+      instructions.JP_cc_n16.run(cpu, 'Z', 0x1234);
+      instructions.JR_cc_n16.run(cpu, 'Z', 0x05);
+      expect(cpu.cycles, '1 + 1 : personne n\'a reset entre les deux').toBe(2);
+    });
+  });
 });
