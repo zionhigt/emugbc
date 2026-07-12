@@ -43,15 +43,23 @@ const buildFakeSerial = () => ({
   echo(buffer) { this.echos.push(buffer); },
 });
 
+// Un timer factice : le contrat read/write du contrôleur, réponses neutres
+// (un octet, TOUJOURS — le bus ne tolère pas les locataires muets).
+const buildFakeTimer = () => ({
+  read: () => 0,
+  write: () => {},
+});
+
 const buildAll = () => {
   const serial = buildFakeSerial();
-  const cpu = new CPU(buildMemory(undefined, serial));
+  const timer = buildFakeTimer();
+  const cpu = new CPU(buildMemory(undefined, serial, timer));
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();
-  const Machine = buildMachine(cpu, decoder, clock, serial);
+  const Machine = buildMachine(cpu, decoder, clock, serial, timer);
   const machine = new Machine();
-  return { cpu, decoder, clock, serial, machine };
+  return { cpu, decoder, clock, serial, timer, machine };
 };
 
 describe('Machine : le chef d\'orchestre', () => {
@@ -129,6 +137,158 @@ describe('Machine : le chef d\'orchestre', () => {
         'octet haut empilé — si tu lis 0x00, la Stack écrit encore dans la mémoire ORPHELINE',
       ).toBe('0x12');
       expect(hex(cpu.memory.read(0xfffc), 2), 'octet bas empilé').toBe('0x34');
+    });
+  });
+
+  describe('getFisrtLowBit : l\'arbitre de priorité — rend le MASQUE isolé du bit levé le plus bas', () => {
+    // Contrat figé : pas l'indice n, mais 1 << n — directement utilisable
+    // pour l'acquittement (IF & ~masque). 0 = personne ne sonne.
+    it.each([
+      { n: 0b00001, exp: 0b00001, cas: 'bit 0 seul' },
+      { n: 0b00010, exp: 0b00010, cas: 'bit 1 seul' },
+      { n: 0b10000, exp: 0b10000, cas: 'bit 4 seul' },
+      { n: 0b00101, exp: 0b00001, cas: 'bits 0 et 2 : le 0 est prioritaire' },
+      { n: 0b00110, exp: 0b00010, cas: 'bits 1 et 2 : le 1 passe devant' },
+      { n: 0b11000, exp: 0b01000, cas: 'bits 3 et 4 : le 3 gagne' },
+      { n: 0b11111, exp: 0b00001, cas: 'tous levés : le 0 écrase tout le monde' },
+    ].map((c) => ({
+      ...c,
+      label: `getFisrtLowBit(0b${c.n.toString(2).padStart(5, '0')})`,
+      expLabel: `0b${c.exp.toString(2).padStart(5, '0')}`,
+    })))(
+      '$cas : $label = $expLabel',
+      ({ n, exp, label }) => {
+        const { machine } = buildAll();
+        expect(machine.getFisrtLowBit(n), label).toBe(exp);
+      },
+    );
+
+    it('0 : aucun bit levé, rien à servir — rend 0 (falsy)', () => {
+      const { machine } = buildAll();
+      expect(machine.getFisrtLowBit(0), 'la valeur « personne ne sonne »').toBe(0);
+    });
+  });
+
+  describe('dispatch : le standardiste des interruptions', () => {
+    // État de base : IME allumé (porte immédiate), PC et SP posés,
+    // IE/IF écrits par le bus comme le ferait un programme.
+    const armCpu = ({ ie = 0, iF = 0, ime = true } = {}) => {
+      const all = buildAll();
+      const { cpu } = all;
+      cpu.registers.PC.setValue(0xc234);
+      cpu.registers.SP.setValue(0xfffe);
+      if (ime) cpu.start();
+      cpu.memory.write(0xffff, ie);
+      cpu.memory.write(0xff0f, iF);
+      return all;
+    };
+
+    it('personne ne sonne (IE=0, IF=0) : 0 cycle, rien ne bouge', () => {
+      const { cpu, machine } = armCpu();
+      expect(machine.dispatch(), 'aucun coût').toBe(0);
+      expect(hex(cpu.registers.PC.getValue()), 'PC intact').toBe(hex(0xc234));
+      expect(cpu.ime, 'IME toujours allumé').toBe(true);
+    });
+
+    it('IME éteint : le disjoncteur coupe TOUT, même une frappe autorisée', () => {
+      const { cpu, machine } = armCpu({ ie: 0b00100, iF: 0b00100, ime: false });
+      expect(machine.dispatch(), 'aucun service disjoncteur baissé').toBe(0);
+      expect(hex(cpu.registers.PC.getValue()), 'PC intact').toBe(hex(0xc234));
+      expect(cpu.memory.read(0xff0f), 'IF NON acquitté : la frappe attend').toBe(0b00100);
+    });
+
+    it("frappe sans autorisation (IF levé, IE muet) : on n'ouvre pas", () => {
+      const { cpu, machine } = armCpu({ ie: 0b00000, iF: 0b00100 });
+      expect(machine.dispatch()).toBe(0);
+      expect(cpu.memory.read(0xff0f), 'la frappe reste en attente dans IF').toBe(0b00100);
+    });
+
+    it('service complet du Timer : 5 cycles, PC=0x50, IME coupé, IF acquitté, retour empilé', () => {
+      const { cpu, machine } = armCpu({ ie: 0b00100, iF: 0b00100 });
+      expect(machine.dispatch(), 'le coût du saut').toBe(5);
+      expect(hex(cpu.registers.PC.getValue()), 'PC au vecteur Timer').toBe(hex(0x0050));
+      expect(cpu.ime, 'IME coupé dans le même souffle').toBe(false);
+      expect(cpu.memory.read(0xff0f), 'IF acquitté : le bit servi est éteint').toBe(0);
+      expect(cpu.memory.read(0xffff), 'IE JAMAIS modifié par le dispatch').toBe(0b00100);
+      expect(hex(cpu.memory.read(0xfffd), 2), 'retour empilé, octet haut').toBe('0xC2');
+      expect(hex(cpu.memory.read(0xfffc), 2), 'retour empilé, octet bas').toBe('0x34');
+      expect(hex(cpu.registers.SP.getValue()), 'SP descendu de 2').toBe(hex(0xfffc));
+    });
+
+    it('priorité : VBlank (bit 0) passe devant le Timer (bit 2), qui RESTE en attente', () => {
+      const { cpu, machine } = armCpu({ ie: 0b11111, iF: 0b00101 });
+      machine.dispatch();
+      expect(hex(cpu.registers.PC.getValue()), 'servi : VBlank, 0x40').toBe(hex(0x0040));
+      expect(
+        cpu.memory.read(0xff0f),
+        'le Timer frappe toujours — SEUL le bit servi est acquitté',
+      ).toBe(0b00100);
+    });
+
+    it.each([
+      { mask: 0b00001, vecteur: 0x40, source: 'VBlank', label: '0x40' },
+      { mask: 0b00010, vecteur: 0x48, source: 'LCD STAT', label: '0x48' },
+      { mask: 0b00100, vecteur: 0x50, source: 'Timer', label: '0x50' },
+      { mask: 0b01000, vecteur: 0x58, source: 'Serial', label: '0x58' },
+      { mask: 0b10000, vecteur: 0x60, source: 'Joypad', label: '0x60' },
+    ])('le vecteur de $source : masque $mask = PC $label', ({ mask, vecteur }) => {
+      const { cpu, machine } = armCpu({ ie: 0b11111, iF: mask });
+      machine.dispatch();
+      expect(hex(cpu.registers.PC.getValue()), 'le bon guichet').toBe(hex(vecteur));
+    });
+  });
+
+  describe('totalCycles : l\'horloge du monde — cumulée par la boucle, jamais remise à zéro', () => {
+    it('démarre à 0 et encaisse exactement le budget d\'une trame de NOP', () => {
+      const { cpu, clock, machine } = buildAll();
+      expect(machine.totalCycles, 'au réveil').toBe(0);
+      cpu.registers.PC.setValue(0x0000); // NOP slide
+      clock.tick();
+      expect(machine.totalCycles, 'une trame de NOP à 1 cycle pièce').toBe(BUDGET);
+    });
+
+    it('survit à la frontière de trame : deux ticks cumulent, rien ne remet à zéro', () => {
+      const { cpu, clock, machine } = buildAll();
+      cpu.registers.PC.setValue(0x0000);
+      clock.tick();
+      clock.tick();
+      expect(machine.totalCycles, 'le double exact — c\'est l\'horloge que le timer lira').toBe(BUDGET * 2);
+    });
+  });
+
+  describe('la promotion d\'EI : IME s\'allume APRÈS l\'instruction suivante — le sous-test #2 de Blargg', () => {
+    // Programme posé en WRAM, interruption Timer déjà en attente (IE et IF
+    // armés). Le moment du service se lit sur l'ADRESSE DE RETOUR empilée.
+    const armProgram = (program) => {
+      const all = buildAll();
+      const { cpu } = all;
+      program.forEach((b, i) => cpu.memory.write(0xc000 + i, b));
+      cpu.registers.PC.setValue(0xc000);
+      cpu.registers.SP.setValue(0xfffe);
+      cpu.memory.write(0xffff, 0b00100); // IE : Timer autorisé
+      cpu.memory.write(0xff0f, 0b00100); // IF : Timer frappe déjà
+      return all;
+    };
+
+    it('EI puis NOP : le service attend la fin du NOP (retour = 0xC002, pas 0xC001)', () => {
+      const { cpu, clock } = armProgram([0xfb, 0x00]); // EI ; NOP
+      clock.tick();
+      expect(cpu.memory.read(0xff0f), 'l\'interruption a bien été servie dans la trame').toBe(0);
+      const retour = (cpu.memory.read(0xfffd) << 8) | cpu.memory.read(0xfffc);
+      expect(
+        hex(retour),
+        'retour empilé : APRÈS le NOP qui suit EI — un service dès la fin d\'EI (0xC001) est trop tôt',
+      ).toBe(hex(0xc002));
+    });
+
+    it('EI puis DI : l\'allumage programmé est ANNULÉ, aucune interruption ne part', () => {
+      const { cpu, clock } = armProgram([0xfb, 0xf3]); // EI ; DI
+      clock.tick();
+      expect(cpu.ime, 'IME jamais allumé').toBe(false);
+      expect(
+        cpu.memory.read(0xff0f),
+        'IF jamais acquitté : la frappe attend toujours, personne n\'a ouvert',
+      ).toBe(0b00100);
     });
   });
 
