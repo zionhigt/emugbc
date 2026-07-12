@@ -344,4 +344,28 @@ describe('CPU', () => {
       expect(bin(cpu.registers.F.getValue()), dumpFlags(cpu.registers.F)).toBe(bin(0b1111_0000));
     });
   });
+
+  describe('cycles : la propriété nue où les branches prises déposent leur supplément', () => {
+    // Contrat : les instructions font cpu.cycles += this.extraCycle en direct
+    // (pas de méthode d'ajout). Le décodeur lit la propriété puis appelle
+    // resetCycles() — la seule interface — pour repartir à zéro.
+    it('démarre à zéro (sinon le premier += donnerait NaN)', () => {
+      const cpu = new CPU();
+      expect(cpu.cycles, 'initialisé dans le constructeur').toBe(0);
+    });
+
+    it("c'est une propriété nue : += accumule directement", () => {
+      const cpu = new CPU();
+      cpu.cycles += 3;
+      cpu.cycles += 1;
+      expect(cpu.cycles, "3 + 1 : l'accumulation, pas l'écrasement").toBe(4);
+    });
+
+    it('resetCycles() remet à zéro', () => {
+      const cpu = new CPU();
+      cpu.cycles += 3;
+      cpu.resetCycles();
+      expect(cpu.cycles, 'vidé pour l\'instruction suivante').toBe(0);
+    });
+  });
 });
