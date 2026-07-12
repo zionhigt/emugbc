@@ -5,7 +5,7 @@ const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
 const DEFAULT_BUDGET = Number.parseInt(MACHINE_FREQUENCE / MACHINE_FRAMES_PER_SECONDES);
 
-export default function(cpu, decoder, clock) {
+export default function(cpu, decoder, clock, serial) {
     class Machine {
         constructor() {
             // Assume that, decoder.cpu == cpu
@@ -31,7 +31,7 @@ export default function(cpu, decoder, clock) {
         }
 
         plugCartridge(cartridge) {
-            const newMemory = MemoryBuilder(cartridge);
+            const newMemory = MemoryBuilder(cartridge, serial);
             this.cpu.initMemory(newMemory);
             cpu.postBoot();
         }
