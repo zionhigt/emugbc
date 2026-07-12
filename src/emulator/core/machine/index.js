@@ -48,7 +48,7 @@ export default function(cpu, decoder, clock, serial) {
             return byte & -byte;
         }
 
-        dispatch() {
+        dispatch(isService=true) {
             /** choisir la source : le bit levé le plus bas gagne (VBlank bit 0 = priorité maximale, Joypad bit 4 = minimale) ;
                 couper ime ;
                 acquitter : éteindre ce bit-là dans IF (les autres continuent d'attendre) ;
@@ -94,7 +94,15 @@ export default function(cpu, decoder, clock, serial) {
         handleTick(event) {
             let budget = DEFAULT_BUDGET;
             while (budget > 0) {
-                const cost = this.dispatch() + this.decoder.step();
+                if (this.cpu.halted && (this.IE & this.IF) !== 0) {
+                    cpu.wake();
+                }
+                let cost = this.dispatch();
+                if (this.cpu.halted) {
+                    cost += 1;
+                } else {
+                    cost += this.decoder.step();
+                }
                 budget -= cost;
                 this.totalCycles += cost;
                 this.postStep();

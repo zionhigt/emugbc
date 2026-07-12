@@ -122,6 +122,9 @@ export default class CPU {
     halt() {
         this._halt = true;
     }
+    wake() {
+        this._halt = false;
+    }
 
     stop(n8) {
         
