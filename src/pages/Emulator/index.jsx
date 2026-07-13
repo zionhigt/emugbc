@@ -23,7 +23,28 @@ const readBytes = (file) =>
 class Emulator extends React.Component {
   // `screen` : le tampon de teintes que le Canvas peint. Le rendu se
   // rafraîchit à chaque changement d'identité de cet état.
-  state = { screen: null };
+  // `dockOpen` : le volet cartouche (mobile) — replié au-dessus de l'écran,
+  // il descend par le haut, comme la fente de la vraie console.
+  state = { screen: null, dockOpen: false };
+
+  componentDidMount() {
+    // l'immersion : tant que la console est à l'écran, le Layout s'efface
+    // (la nav est masquée par CSS via cette classe, en mobile seulement)
+    document.body.classList.add('emu-immersion');
+  }
+
+  componentWillUnmount() {
+    document.body.classList.remove('emu-immersion');
+  }
+
+  toggleDock = () => {
+    this.setState((s) => ({ dockOpen: !s.dockOpen }));
+  };
+
+  // l'enseigne EMUGBC — six lettres, six couleurs (via CSS nth-child)
+  renderLogo() {
+    return 'EMUGBC'.split('').map((lettre, i) => <span key={i}>{lettre}</span>);
+  }
 
   handleFileChange = async (event) => {
     const file = event.target.files[0];
@@ -42,6 +63,7 @@ class Emulator extends React.Component {
     this.machine.start();
 
     this.props.cartridgeLoaded({ fileName: file.name, size: bytes.length });
+    this.setState({ dockOpen: false }); // cartouche insérée, le volet se referme
   };
 
   render() {
@@ -50,9 +72,7 @@ class Emulator extends React.Component {
       <div className="emu-page">
         <header className="emu-page__header">
           <h1 className="emu-page__title" aria-label="emugbc">
-            {'EMUGBC'.split('').map((lettre, i) => (
-              <span key={i}>{lettre}</span>
-            ))}
+            {this.renderLogo()}
           </h1>
           <p className="emu-page__tagline">console faite main · certifiée Blargg 11/11</p>
         </header>
@@ -62,7 +82,21 @@ class Emulator extends React.Component {
             <Canvas screen={this.state.screen} />
           </Console>
 
-          <aside className="emu-page__dock">
+          <aside
+            className={`emu-page__dock${this.state.dockOpen ? ' emu-page__dock--open' : ''}`}
+          >
+            <button
+              type="button"
+              className="emu-page__dock-tab"
+              onClick={this.toggleDock}
+              aria-expanded={this.state.dockOpen}
+            >
+              CARTOUCHE {this.state.dockOpen ? '▲' : '▼'}
+            </button>
+
+            <div className="emu-page__title emu-page__dock-logo" aria-hidden="true">
+              {this.renderLogo()}
+            </div>
             <label className="emu-cart">
               <span className="emu-cart__ridges" aria-hidden="true"></span>
               <span className="emu-cart__label">

@@ -16,7 +16,7 @@
   --gbc-console-0: #2583af;
 
   /* La dalle fait 160×144 pixels logiques ; ce facteur l'agrandit à l'écran. */
-  --gbc-scale: 2;
+  --gbc-scale: 1.8;
   box-sizing: border-box;
   display: inline-block;
   border: 2px solid black;
@@ -80,9 +80,9 @@
 .gbc-console__buttons--container {
   display: flex;
   flex-wrap: nowrap;
-  justify-content: center;
+  justify-content: space-between;
   width: 100%;
-  gap: 200px;
+  gap: 250px;
 }
 .gbc-console__buttons--cross {
   display: flex;
@@ -203,22 +203,7 @@
     0 1px 0 rgba(255, 255, 255, 0.28);           /* fine arête claire au bord bas */
 }
 
-/* la LED POWER, à gauche de la dalle */
-.gbc-console__screen::before {
-  content: "POWER";
-  position: absolute;
-  left: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  padding-top: 15px;
-  font: 700 8px/1 sans-serif;
-  letter-spacing: 1.5px;
-  color: #8d99a6;
-  background: radial-gradient(circle at 50% 4px,
-    #ff5147 0 3px,
-    rgba(255, 81, 71, 0.45) 4px,
-    transparent 7px) no-repeat;
-}
+/* (la LED POWER a été retirée — dalle plus nette) */
 
 /* le wordmark sous la dalle — « COLOR » file vers l'arc-en-ciel */
 .gbc-console__screen::after {
@@ -285,4 +270,85 @@
     0 3px 0 rgba(0, 0, 0, 0.45),
     0 5px 8px rgba(0, 0, 0, 0.35),
     inset 0 1px 1px rgba(255, 255, 255, 0.16);
+}
+
+/* ── responsive : la console remplit l'écran ──────────────────────────
+   Tablette : échelle 1.5. Mobile : échelle 1, la coque prend toute la
+   largeur, les commandes se resserrent pour tenir dedans. */
+
+@media (max-width: 1100px) {
+  .gbc-console {
+    --gbc-scale: 1.5;
+  }
+}
+
+/* ── IMMERSION mobile : le téléphone DEVIENT la Game Boy ──────────────
+   Plus de coque posée sur une page : la coque EST la page. Pleine
+   largeur, pleine hauteur, angles disparus, commandes réparties. */
+@media (max-width: 700px) {
+  .gbc-console {
+    --gbc-scale: 1.75;
+    width: 100vw;
+    min-height: 100vh;
+    min-height: 100dvh; /* la vraie hauteur visible, barres du navigateur déduites */
+    height: auto;
+    padding: 20px 12px 28px;
+    border: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+  }
+
+  .gbc-console__buttons {
+    margin-top: 24px;
+  }
+
+  .gbc-console__buttons--container {
+    gap: 24px;
+  }
+
+  .gbc-console__buttons--cross button,
+  .gbc-console__buttons--cross .gbc-console__buttons--cross-center,
+  .gbc-console__buttons--ab button {
+    width: 52px;
+    height: 52px;
+    font-size: 22px;
+  }
+
+  .gbc-console__buttons--cross .gbc-console__buttons--horizontal {
+    gap: 36px;
+  }
+
+  /* le centre de la croix, recalé : rangée = 52 + 36 + 52 = 140 ;
+     centre 58 → left = (140 − 58) / 2 = 41 */
+  .gbc-console__buttons--cross .gbc-console__buttons--cross-center {
+    width: 58px;
+    height: 58px;
+    left: 41px;
+  }
+
+  .gbc-console__buttons--b {
+    top: 26px;
+  }
+
+  .gbc-console__buttons--ab {
+    width: 120px;
+  }
+
+  .gbc-console__buttons--actions {
+    margin-top: 24px;
+  }
+
+  .gbc-console__buttons--actions button {
+    width: 64px;
+    height: 20px;
+  }
+
+  .gbc-console::before {
+    right: 16px;
+    bottom: 12px;
+    width: 72px;
+    height: 50px;
+  }
 }
