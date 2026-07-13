@@ -157,6 +157,10 @@ function FactorySerialSection(serial) {
 
 export default function(cartridge, serialbus, timer, ppu) {
     const memory = new Memory();
+    if (arguments.length === 0) {
+        memory.bindRange("flat", 0x000, 0xFFFF, Section);
+        return memory;
+    }
     let overflowStart = 0;
     if (cartridge?.mbc) {
         overflowStart = 0x8000;

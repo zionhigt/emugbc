@@ -20,7 +20,9 @@ export default function(cpu, decoder, clock, serial) {
             this.ppu = new (PPU(this));
             this.subscribePostStep(function() {
                 this.ppu.check();
-            }.bind(this))
+            }.bind(this));
+
+            this._tickObservers = [];
         }
 
         get IE() {
@@ -95,6 +97,16 @@ export default function(cpu, decoder, clock, serial) {
             }
         }
 
+        onTick(cb) {
+            this._tickObservers.push(cb);
+        }
+
+        emitTick() {
+            for (let o of this._tickObservers) {
+                o.call(null, this);
+            }
+        }
+
         handleTick(event) {
             let budget = DEFAULT_BUDGET;
             while (budget > 0) {
@@ -111,6 +123,7 @@ export default function(cpu, decoder, clock, serial) {
                 this.totalCycles += cost;
                 this.postStep();
             }
+            this.emitTick();
 
         }
 

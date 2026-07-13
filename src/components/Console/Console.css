@@ -1,0 +1,288 @@
+/* Console (DMG) — squelette structurel.
+ *
+ * Ce fichier ne pose QUE les contraintes qui ne se négocient pas :
+ * les dimensions de l'écran (160×144, ratio 10:9) et le rendu pixelisé.
+ * Tout le reste — couleurs, coque, boutons, ombres — est à toi.
+ */
+
+.gbc-console {
+  /* Les 4 teintes DMG, prêtes à être reliées aux valeurs 0-3 de ppu.screen.
+     Ajuste-les à ta guise (vert d'origine, gris, etc.). */
+  --gbc-shade-0: #e0f0e0; /* teinte 0 — la plus claire */
+  --gbc-shade-1: #a8c0a0;
+  --gbc-shade-2: #607048;
+  --gbc-shade-3: #202810; /* teinte 3 — la plus foncée */
+  --gbc-shade-4: #111111;
+  --gbc-console-0: #2583af;
+
+  /* La dalle fait 160×144 pixels logiques ; ce facteur l'agrandit à l'écran. */
+  --gbc-scale: 2;
+  box-sizing: border-box;
+  display: inline-block;
+  border: 2px solid black;
+  border-radius: 10px;
+  padding: 32px;
+  width: calc(calc(142px * 2.333) * var(--gbc-scale));
+  height: calc(calc(144px * 3.375) * var(--gbc-scale));
+  background: var(--gbc-console-0);
+  position: relative;
+}
+
+.gbc-console::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.80;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.05' numOctaves='2' stitchTiles='stitch' result='noise'/><feColorMatrix in='noise' type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.5 0.5 0.5 0 0' result='alphaNoise'/><feFlood flood-color='%232583af' result='color'/><feComposite in='color' in2='alphaNoise' operator='in'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  background-size: 100px 100px;
+  mix-blend-mode: overlay;
+}
+
+.gbc-console__screen {
+  width: 100%;
+  height: calc(calc(144px * 1.666) * var(--gbc-scale));
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: var(--gbc-shade-4);
+  border-radius: 20px;
+  position: relative;
+
+}
+
+.gbc-console__screen--frame {
+  width: calc(160px * var(--gbc-scale));
+  height: calc(144px * var(--gbc-scale));
+  /* Le contenu (canvas 160×144) sera agrandi sans lissage : des pixels francs,
+     pas un flou bilinéaire. */
+  image-rendering: pixelated;
+
+  /* fond par défaut = écran éteint ; à remplacer par ton rendu */
+  background: var(--gbc-shade-3);
+  position: relative;
+  z-index: 200;
+}
+
+/* Le canvas de rendu, quand tu l'ajouteras : qu'il remplisse la dalle
+   à l'identique, toujours sans lissage. */
+.gbc-console__screen canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.gbc-console__buttons {
+  margin-top: 64px;
+}
+
+.gbc-console__buttons--container {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  width: 100%;
+  gap: 200px;
+}
+.gbc-console__buttons--cross {
+  display: flex;
+  flex-flow: column nowrap;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+.gbc-console__buttons--cross .gbc-console__buttons--horizontal {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  gap: 56px;
+  position: relative;
+}
+.gbc-console__buttons--cross button,
+.gbc-console__buttons--cross .gbc-console__buttons--cross-center,
+.gbc-console__buttons--ab button {
+  width: 64px;
+  height: 64px;
+  background-color: var(--gbc-shade-4);
+  color: #838282;
+  font-size: 28px;
+  position: relative;
+  text-align: center;
+  position: relative;
+  z-index: 150;
+}
+
+.gbc-console__buttons--cross .gbc-console__buttons--cross-center {
+  width: 72px;
+  height: 72px;
+  position: absolute;
+  left: 56px;
+  z-index: 149;
+}
+
+.gbc-console__buttons--ab button {
+  border-radius: 50%;
+}
+.gbc-console__buttons--cross button {
+  border-radius: 8px;
+}
+
+.gbc-console__buttons--b {
+  top: 32px;
+}
+
+.gbc-console__buttons--ab {
+  width: 148px;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+}
+.gbc-console__buttons--actions {
+  margin-top: 50px;
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  width: 100%;
+  gap: 16px;
+}
+
+.gbc-console__buttons--actions button {
+  width: 72px;
+  height: 22px;
+  border-radius: 50px;
+  background-color: var(--gbc-shade-4);
+  color: #838282;
+  position: relative;
+  text-align: center;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   VOLUME & FINITIONS — ajouts par-dessus, ta structure est intacte.
+   (lumière qui vient d'en haut à gauche, ombres portées, reliefs)
+   ════════════════════════════════════════════════════════════════════ */
+
+.gbc-console {
+  border-radius: 22px 22px 40px 40px; /* la silhouette GBC : bas plus rond */
+  border-color: rgba(0, 0, 0, 0.55);
+  background-image:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 30%),
+    linear-gradient(330deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0) 32%);
+  box-shadow:
+    inset 0 2px 2px rgba(255, 255, 255, 0.35),  /* arête haute qui accroche la lumière */
+    inset 0 -4px 8px rgba(0, 0, 0, 0.35),        /* le ventre s'assombrit */
+    inset 4px 0 6px rgba(255, 255, 255, 0.10),
+    inset -4px 0 8px rgba(0, 0, 0, 0.22),
+    0 22px 40px rgba(0, 0, 0, 0.45),             /* la console flotte au-dessus de la page */
+    0 6px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* la grille du haut-parleur, en bas à droite (fentes obliques) */
+.gbc-console::before {
+  content: "";
+  position: absolute;
+  right: 36px;
+  bottom: 30px;
+  width: 110px;
+  height: 78px;
+  background: repeating-linear-gradient(
+    115deg,
+    rgba(0, 0, 0, 0.50) 0 7px,
+    transparent 7px 24px
+  );
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+/* la visière : encastrée, légèrement bombée */
+.gbc-console__screen {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(0, 0, 0, 0.30));
+  box-shadow:
+    inset 0 6px 14px rgba(0, 0, 0, 0.70),        /* creusée dans la coque */
+    inset 0 -1px 2px rgba(255, 255, 255, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.28);           /* fine arête claire au bord bas */
+}
+
+/* la LED POWER, à gauche de la dalle */
+.gbc-console__screen::before {
+  content: "POWER";
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding-top: 15px;
+  font: 700 8px/1 sans-serif;
+  letter-spacing: 1.5px;
+  color: #8d99a6;
+  background: radial-gradient(circle at 50% 4px,
+    #ff5147 0 3px,
+    rgba(255, 81, 71, 0.45) 4px,
+    transparent 7px) no-repeat;
+}
+
+/* le wordmark sous la dalle — « COLOR » file vers l'arc-en-ciel */
+.gbc-console__screen::after {
+  content: "GAME BOY COLOR";
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: italic 800 13px/1 sans-serif;
+  letter-spacing: 2px;
+  white-space: nowrap;
+  background: linear-gradient(90deg,
+    #dfe6ec 0 58%,
+    #8757c9 64%, #ec4586 72%, #f59a23 80%, #f5d61b 87%, #4cb748 94%, #35aadc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* la vitre de la dalle : un reflet diagonal discret par-dessus le canvas */
+.gbc-console__screen--frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.03) 24%,
+    transparent 40%);
+}
+
+/* les boutons prennent du corps : posés sur la coque, enfoncés au clic */
+.gbc-console__buttons--cross button,
+.gbc-console__buttons--ab button,
+.gbc-console__buttons--actions button {
+  border: none;
+  cursor: pointer;
+  background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.30));
+  box-shadow:
+    0 5px 0 rgba(0, 0, 0, 0.45),                 /* l'épaisseur du bouton */
+    0 8px 12px rgba(0, 0, 0, 0.35),              /* son ombre sur la coque */
+    inset 0 1px 1px rgba(255, 255, 255, 0.16);
+  transition: transform 60ms ease, box-shadow 60ms ease;
+}
+
+.gbc-console__buttons--cross button:active,
+.gbc-console__buttons--ab button:active,
+.gbc-console__buttons--actions button:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.45),
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.10);
+}
+
+/* le centre de la croix reste soudé aux branches, sans relief propre */
+.gbc-console__buttons--cross .gbc-console__buttons--cross-center {
+  box-shadow: none;
+}
+
+/* les pilules select/start, plus fines : moins d'épaisseur */
+.gbc-console__buttons--actions button {
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.45),
+    0 5px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.16);
+}

@@ -1,0 +1,189 @@
+/* La page autour de la console : une chambre de 1998, version écran.
+ * Fond sombre quadrillé, halo au-dessus de la machine, scanlines par-dessus
+ * tout — et une cartouche grise qui sert de bouton « choisir un fichier ».
+ */
+
+.emu-page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  margin: -8px; /* avale la marge par défaut du body */
+  padding: 40px 24px 80px;
+  position: relative;
+  color: #e8edf2;
+  font-family: 'Courier New', ui-monospace, 'Cascadia Mono', monospace;
+  background:
+    radial-gradient(1100px 560px at 50% -5%, rgba(37, 131, 175, 0.28), transparent 65%),
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #141821;
+  background-size: auto, 26px 26px, 26px 26px, auto;
+}
+
+/* les scanlines : un voile CRT sur toute la page, intouchable à la souris */
+.emu-page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.18) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+/* ── l'enseigne ── */
+
+.emu-page__header {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.emu-page__title {
+  margin: 0;
+  font-size: clamp(42px, 7vw, 76px);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  user-select: none;
+}
+
+/* six lettres, les six couleurs du wordmark COLOR */
+.emu-page__title span {
+  text-shadow: 4px 4px 0 rgba(0, 0, 0, 0.85), 8px 8px 0 rgba(0, 0, 0, 0.30);
+}
+.emu-page__title span:nth-child(1) { color: #8757c9; }
+.emu-page__title span:nth-child(2) { color: #ec4586; }
+.emu-page__title span:nth-child(3) { color: #f59a23; }
+.emu-page__title span:nth-child(4) { color: #f5d61b; }
+.emu-page__title span:nth-child(5) { color: #4cb748; }
+.emu-page__title span:nth-child(6) { color: #35aadc; }
+
+.emu-page__tagline {
+  margin: 10px 0 0;
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #7f8ea0;
+}
+
+/* ── la scène : console + dock cartouche ── */
+
+.emu-page__stage {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 56px;
+  flex-wrap: wrap;
+}
+
+.emu-page__dock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+  padding-top: 48px;
+}
+
+/* ── la cartouche-bouton ── */
+
+.emu-cart {
+  position: relative;
+  display: block;
+  width: 230px;
+  padding: 16px 16px 26px;
+  border-radius: 6px 6px 12px 12px;
+  background: linear-gradient(165deg, #525f70, #333c49);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.35),
+    0 12px 22px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.emu-cart:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -3px 6px rgba(0, 0, 0, 0.35),
+    0 18px 30px rgba(0, 0, 0, 0.55);
+}
+
+/* les stries de préhension, en haut de la cartouche */
+.emu-cart__ridges {
+  display: block;
+  height: 12px;
+  margin-bottom: 12px;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.35) 0 6px,
+    transparent 6px 14px
+  );
+}
+
+/* l'étiquette collée sur la coque */
+.emu-cart__label {
+  display: block;
+  padding: 12px 10px 14px;
+  border-radius: 5px;
+  text-align: center;
+  color: #1c222b;
+  background: linear-gradient(180deg, #d9e0e7, #aeb8c2);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.18);
+}
+
+.emu-cart__title {
+  display: block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.emu-cart__game {
+  display: block;
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+}
+
+/* l'input réel : invisible mais partout — toute la cartouche est cliquable */
+.emu-cart__input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ── les à-côtés ── */
+
+.emu-page__status {
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #9fe8b0;
+  background: rgba(76, 183, 72, 0.12);
+  border: 1px solid rgba(76, 183, 72, 0.35);
+}
+
+.emu-page__hint {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  color: #7f8ea0;
+  animation: emu-blink 1.2s steps(1) infinite;
+  user-select: none;
+}
+
+@keyframes emu-blink {
+  50% { opacity: 0; }
+}
