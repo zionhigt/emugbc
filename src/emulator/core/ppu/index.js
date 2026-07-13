@@ -43,7 +43,7 @@ class DMAregister extends Register(8) {
     }
 
     get bus() {
-        return this.parent.machine.cpu.memory;
+        return this.parent.bus;
     }
 
     setValue(value) {
@@ -118,6 +118,67 @@ export default function(machine) {
             }
         }
 
+        renderSprites(line) {
+            const h = byte.getFlag(this.LCDC.getValue(), 2) ? 16 : 8;
+
+            let visibles = [];
+
+            for (let i = 0; i < 40 && visibles.length < 10; i++) {
+                const addr = 0xFE00 + i * 4;
+                const y = this.bus.read(addr) - 16;
+
+                if (line >= y && line < y + h) {
+                    visibles.push({
+                        y,
+                        x: this.bus.read(addr+1)-8,
+                        index:i,
+                        tile: this.bus.read(addr+2),
+                        attrs: this.bus.read(addr+3)
+                    })
+                }
+            }
+
+            visibles = visibles.sort(
+                function(a, b) {
+                    return (b.x - a.x) || (b.index - a.index);
+                }
+            )
+
+            for (let sprite of visibles) {
+                let row = line - sprite.y;
+                if (byte.getFlag(sprite.attrs, 6)) {
+                    row = h - 1 - row
+                }
+
+                let tile = sprite.tile;
+                if (h === 16) {
+                    tile = (sprite.tile & 0xFE) + +(row >= 8);
+                    row = row & 7;
+                }
+
+                const adr = 0x8000 + tile * 16;
+                const low = this.bus.read(adr + row * 2);
+                const high = this.bus.read(adr + row * 2 + 1);
+                const palette = byte.getFlag(sprite.attrs, 4) ?
+                    this.OBP1 :
+                    this.OBP0;
+                
+                for (let col = 0; col < 8; col++) {
+                    const bit = byte.getFlag(sprite.attrs, 5) ? col : 7 - col;
+                    const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+                    if (teinte === 0) continue;
+                    const ex = sprite.x + col;
+
+                    if (ex < 0 || ex >= 160) continue;
+                    if (byte.getFlag(sprite.attrs, 7) && this.screen[line * 160 + ex] != 0) continue;
+                    this.screen[line * 160 + ex] = (palette.getValue() >> (teinte * 2)) & 0b11;
+                }
+            
+            }
+
+
+        }
+
         renderLine(line) {
             if (!byte.getFlag(this.LCDC.getValue(), 0)) return this.screen.fill(0, line * 160, line * 160 + 160);
 
@@ -136,6 +197,8 @@ export default function(machine) {
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
+
+            if (byte.getFlag(this.LCDC.getValue(), 1)) this.renderSprites(line);
         }
 
         check() {
