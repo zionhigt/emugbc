@@ -336,6 +336,59 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('DMA (0xFF46) : le bouton-copie qui remplit l\'OAM en un geste', () => {
+    // Un PPU adossé à une VRAI ram de 64 Ko (le DMA lit la source et écrit
+    // l'OAM, les deux par le bus).
+    const makeDMA = () => {
+      const ram = new Uint8Array(0x10000);
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { this._if = v; },
+        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+      };
+      const PPU = buildPPU(machine);
+      return { ram, ppu: new PPU() };
+    };
+
+    it('écrire 0xC0 copie 0xC000-0xC09F vers l\'OAM 0xFE00-0xFE9F (160 octets)', () => {
+      const { ram, ppu } = makeDMA();
+      // on tatoue la source : chaque octet = son rang
+      for (let i = 0; i < 0xa0; i++) ram[0xc000 + i] = i;
+      ppu.write(0xff46, 0xc0); // « appuie » sur le DMA
+
+      expect(hex(ram[0xfe00], 2), 'premier octet de l\'OAM').toBe('0x00');
+      expect(hex(ram[0xfe9f], 2), 'dernier octet (le 160e) — gare à la borne !').toBe('0x9F');
+    });
+
+    it('la valeur écrite est l\'octet HAUT de la source : 0xD0 copie depuis 0xD000', () => {
+      const { ram, ppu } = makeDMA();
+      ram[0xd000] = 0x42;
+      ram[0xd09f] = 0x99;
+      ppu.write(0xff46, 0xd0);
+      expect(hex(ram[0xfe00], 2), 'source 0xD000').toBe('0x42');
+      expect(hex(ram[0xfe9f], 2), 'source 0xD09F').toBe('0x99');
+    });
+
+    it('EXACTEMENT 160 octets : 0xFEA0 n\'est jamais touché (fin exclusive)', () => {
+      const { ram, ppu } = makeDMA();
+      ram[0xfea0] = 0x55; // un témoin juste après l'OAM
+      for (let i = 0; i < 0xb0; i++) ram[0xc000 + i] = 0xff; // la source déborde exprès
+      ppu.write(0xff46, 0xc0);
+      expect(
+        hex(ram[0xfea0], 2),
+        '0xA0 octets = indices 0x00 à 0x9F ; 0xFEA0 est HORS OAM, il doit survivre',
+      ).toBe('0x55');
+    });
+
+    it('le registre est relisible : read(0xFF46) rend la dernière valeur écrite', () => {
+      const { ppu } = makeDMA();
+      ppu.write(0xff46, 0xc0);
+      expect(hex(ppu.read(0xff46), 2), 'DMA garde sa valeur').toBe('0xC0');
+    });
+  });
+
   describe('intégration : le cœur de l\'écran réveille un jeu endormi', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
