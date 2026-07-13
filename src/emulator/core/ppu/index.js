@@ -9,8 +9,31 @@ class LYregister extends Register(8) {
     }
 
     getValue() {
-        const value = Math.floor(this.parent.totalMachineCycles / 114) % 154;
+        if (!this.parent.LCDC.isOn) return 0;
+        const value = Math.floor((this.parent.totalMachineCycles - this.parent.anchor) / 114) % 154;
         return value;
+    }
+}
+
+class LCDCregister extends Register(8) {
+    constructor(parent) {
+        super();
+        super.setValue(0x91);
+        this.parent = parent;
+    }
+
+    get isOn() {
+        return byte.getFlag(this.getValue(), 7);
+    }
+
+    setValue(value) {
+        const a = this.isOn;
+        const b = byte.getFlag(value, 7);
+        super.setValue(value);
+        if (a !== b) {
+            if (b) return this.parent.wake();
+            return this.parent.sleep();
+        }
     }
 }
 
@@ -20,7 +43,7 @@ export default function(machine) {
             this.machine = machine;
             this._innerCycles = this.totalMachineCycles; // Almost a bad boy. Whatcha gonna do !!
             this.LY = new LYregister(this);
-            this.LCDC = new (Register(8));
+            this.LCDC = new LCDCregister(this);
             this.STAT = new (Register(8));
             this.SCY = new (Register(8));
             this.SCX = new (Register(8));
@@ -33,8 +56,18 @@ export default function(machine) {
             this.WX = new (Register(8));
 
             this.dateAlarme = 0;
-
+            this.anchor = this.totalMachineCycles;
             this.screen = new Uint8Array(160 * 144);
+        }
+
+        sleep() {
+            this.dateAlarme = Infinity;
+            this.screen.fill(0);
+        }
+
+        wake() {
+            this.anchor = this.totalMachineCycles;
+            this.dateAlarme = this.anchor;
         }
 
         get bus() {
@@ -88,7 +121,7 @@ export default function(machine) {
 
         check() {
             while (this.totalMachineCycles >= this.dateAlarme) {
-                const line = Math.floor(this.dateAlarme / 114) % 154
+                const line = Math.floor((this.dateAlarme - this.anchor) / 114) % 154
                 if (line === 144) {
                     this.machine.IF |= 0b00001;
 
