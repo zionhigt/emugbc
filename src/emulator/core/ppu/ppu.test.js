@@ -389,6 +389,233 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('les sprites : l\'OAM se superpose au décor', () => {
+    // Gréement : une vraie ram (VRAM en 0x8000, OAM en 0xFE00), lue par le bus.
+    // LCDC de base : écran + BG + SPRITES + adressage 0x8000 (bit 4). Palettes
+    // en identité — teinte lue = teinte affichée, pour des tests limpides.
+    const makeRig = (lcdc = 0b1001_0011) => {
+      const ram = new Uint8Array(0x10000);
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { this._if = v; },
+        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+      };
+      const PPU = buildPPU(machine);
+      const ppu = new PPU();
+      ppu.write(0xff40, lcdc);
+      ppu.write(0xff47, 0b1110_0100); // BGP identité
+      ppu.write(0xff48, 0b1110_0100); // OBP0 identité
+      ppu.write(0xff49, 0b1110_0100); // OBP1 identité
+      return { ram, ppu };
+    };
+
+    // 8 rangées de 8 teintes → 16 octets 2bpp à 0x8000 + id*16
+    const poseTuile = (ram, id, rows, base = 0x8000) => {
+      rows.forEach((row, r) => {
+        let lo = 0;
+        let hi = 0;
+        row.forEach((c, x) => {
+          lo |= (c & 1) << (7 - x);
+          hi |= ((c >> 1) & 1) << (7 - x);
+        });
+        ram[base + id * 16 + r * 2] = lo;
+        ram[base + id * 16 + r * 2 + 1] = hi;
+      });
+    };
+
+    // un sprite = 4 octets à 0xFE00 + index*4
+    const poseSprite = (ram, index, { y, x, tile, attrs = 0 }) => {
+      const o = 0xfe00 + index * 4;
+      ram[o] = y;
+      ram[o + 1] = x;
+      ram[o + 2] = tile;
+      ram[o + 3] = attrs;
+    };
+
+    const plein = (t) => Array(8).fill(Array(8).fill(t));
+    const row = (ppu, line) => Array.from(ppu.screen.slice(line * 160, line * 160 + 160));
+
+    describe('① un sprite opaque sur le décor', () => {
+      it('Y+16, X+8 : le sprite en (0,0) écran occupe les pixels 0-7 de la ligne 0', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(2));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 }); // Y=16 → écran 0 ; X=8 → écran 0
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l.slice(0, 8), 'les 8 pixels du sprite').toEqual(Array(8).fill(2));
+        expect(l[8], 'juste après le sprite : le décor (0)').toBe(0);
+      });
+
+      it('la position Y sélectionne la ligne : Y=32 apparaît en ligne 16, pas en ligne 0', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(3));
+        poseSprite(ram, 0, { y: 32, x: 8, tile: 1 }); // Y=32 → écran 16
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'ligne 0 : le sprite n\'est pas là').toBe(0);
+        ppu.renderLine(16);
+        expect(row(ppu, 16)[0], 'ligne 16 : le voilà').toBe(3);
+      });
+
+      it('LCDC bit 1 éteint : aucun sprite n\'est dessiné', () => {
+        const { ram, ppu } = makeRig(0b1001_0001); // bit 1 (sprites) éteint
+        poseTuile(ram, 1, plein(3));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 });
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'sprites désactivés').toBe(0);
+      });
+
+      it('X clipping : un sprite en X=4 déborde à gauche, seule sa moitié droite entre', () => {
+        const { ram, ppu } = makeRig();
+        // cols 4,5,6 = teintes 1,2,3 ; le reste 0 (transparent)
+        poseTuile(ram, 1, Array(8).fill([0, 0, 0, 0, 1, 2, 3, 0]));
+        poseSprite(ram, 0, { y: 16, x: 4, tile: 1 }); // X=4 → écran -4 : cols 0-3 hors champ
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect([l[0], l[1], l[2]], 'les cols 4,5,6 atterrissent en écran 0,1,2').toEqual([1, 2, 3]);
+      });
+    });
+
+    describe('② la couleur 0 est transparente — le décor transparaît', () => {
+      it('les pixels de teinte 0 du sprite laissent voir le BG dessous', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 0, plein(1)); // le décor : tuile 0 = teinte 1 partout
+        // sprite : moitié gauche transparente (0), moitié droite teinte 3
+        poseTuile(ram, 1, Array(8).fill([0, 0, 0, 0, 3, 3, 3, 3]));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 });
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l.slice(0, 4), 'teinte 0 = transparent = le décor (1)').toEqual(Array(4).fill(1));
+        expect(l.slice(4, 8), 'teinte 3 = opaque').toEqual(Array(4).fill(3));
+      });
+
+      it('la couleur 0 reste transparente MÊME si la palette la mappe non-nulle', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 0, plein(2)); // décor teinte 2
+        poseTuile(ram, 1, plein(0)); // sprite : tout en teinte 0
+        ppu.write(0xff48, 0b1110_0111); // OBP0 : index 0 → 3 (mais ça ne doit RIEN changer)
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 });
+        ppu.renderLine(0);
+        expect(
+          row(ppu, 0).slice(0, 8),
+          'la teinte 0 des sprites est transparente AVANT la palette',
+        ).toEqual(Array(8).fill(2));
+      });
+    });
+
+    describe('③ les flips', () => {
+      it('flip X (bit 5) : la rangée est lue à l\'envers', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, Array(8).fill([3, 0, 0, 0, 0, 0, 0, 1]));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1, attrs: 0b0010_0000 });
+        const l = (ppu.renderLine(0), row(ppu, 0));
+        expect(l[0], 'écran 0 lit la col 7 (=1)').toBe(1);
+        expect(l[7], 'écran 7 lit la col 0 (=3)').toBe(3);
+      });
+
+      it('flip Y (bit 6) : les rangées sont empilées à l\'envers', () => {
+        const { ram, ppu } = makeRig();
+        const rows = Array.from({ length: 8 }, () => [0, 0, 0, 0, 0, 0, 0, 0]);
+        rows[0] = Array(8).fill(1);
+        rows[7] = Array(8).fill(3);
+        poseTuile(ram, 1, rows);
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1, attrs: 0b0100_0000 });
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'ligne 0 lit la rangée 7 (=3) à cause du flip Y').toBe(3);
+      });
+    });
+
+    describe('④ les palettes OBP0 / OBP1', () => {
+      it('bit 4 choisit la palette : deux sprites de même teinte, deux couleurs', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(1)); // teinte 1
+        ppu.write(0xff48, 0b0000_1100); // OBP0 : index 1 → 3
+        ppu.write(0xff49, 0b0000_0100); // OBP1 : index 1 → 1
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1, attrs: 0b0000_0000 }); // OBP0
+        poseSprite(ram, 1, { y: 16, x: 16, tile: 1, attrs: 0b0001_0000 }); // OBP1
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l[0], 'sprite 0 via OBP0 : teinte 1 → 3').toBe(3);
+        expect(l[8], 'sprite 1 via OBP1 : teinte 1 → 1').toBe(1);
+      });
+    });
+
+    describe('⑤ la priorité entre sprites', () => {
+      it('X le plus petit gagne le pixel partagé', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(1)); // sprite A = teinte 1
+        poseTuile(ram, 2, plein(3)); // sprite B = teinte 3
+        poseSprite(ram, 0, { y: 16, x: 12, tile: 1 }); // A : écran 4-11
+        poseSprite(ram, 1, { y: 16, x: 8, tile: 2 });  // B : écran 0-7 (X plus petit)
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[5], 'zone partagée : B gagne (X=8 < X=12)').toBe(3);
+      });
+
+      it('X égal : l\'index OAM le plus BAS gagne', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(1));
+        poseTuile(ram, 2, plein(3));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 }); // index 0
+        poseSprite(ram, 1, { y: 16, x: 8, tile: 2 }); // index 1, même X
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'égalité tranchée par l\'index : le 0 gagne (teinte 1)').toBe(1);
+      });
+    });
+
+    describe('⑥ la limite de 10 sprites par ligne', () => {
+      it('11 sprites sur la même ligne : le 11e (ordre OAM) est ABANDONNÉ', () => {
+        const { ram, ppu } = makeRig();
+        poseTuile(ram, 1, plein(3));
+        // 11 sprites côte à côte, index 0..10, chacun ses 8 colonnes
+        for (let i = 0; i <= 10; i++) {
+          poseSprite(ram, i, { y: 16, x: 8 + i * 8, tile: 1 });
+        }
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l[0], 'sprite 0 : dessiné').toBe(3);
+        expect(l[72], 'sprite 9 : dessiné (le 10e)').toBe(3);
+        expect(l[80], 'sprite 10 : le 11e en ordre OAM, laissé de côté').toBe(0);
+      });
+    });
+
+    describe('⑦ la priorité sur le décor (bit 7)', () => {
+      it('bit 7 : le sprite passe DERRIÈRE les couleurs BG 1-3, mais devant la couleur 0', () => {
+        const { ram, ppu } = makeRig();
+        // décor : moitié gauche teinte 2 (non-nulle), moitié droite teinte 0
+        poseTuile(ram, 0, Array(8).fill([2, 2, 2, 2, 0, 0, 0, 0]));
+        poseTuile(ram, 1, plein(3)); // sprite teinte 3
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1, attrs: 0b1000_0000 }); // priorité BG
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l.slice(0, 4), 'BG non-nul (2) → le sprite est caché').toEqual(Array(4).fill(2));
+        expect(l.slice(4, 8), 'BG nul (0) → le sprite ressort (3)').toEqual(Array(4).fill(3));
+      });
+    });
+
+    describe('⑧ le mode 8×16 (LCDC bit 2)', () => {
+      it('un sprite de 16 de haut : tuile haute puis tuile basse (id&0xFE / id|1)', () => {
+        const { ram, ppu } = makeRig(0b1001_0111); // + bit 2 : sprites 8×16
+        poseTuile(ram, 0, plein(1)); // tuile HAUTE = teinte 1
+        poseTuile(ram, 1, plein(3)); // tuile BASSE = teinte 3
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 0 }); // couvre les lignes 0..15
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'ligne 0 = rangée 0 de la tuile HAUTE (1)').toBe(1);
+        ppu.renderLine(8);
+        expect(row(ppu, 8)[0], 'ligne 8 = rangée 0 de la tuile BASSE (3)').toBe(3);
+      });
+
+      it('en 8×16, le bit 0 du n° de tuile est ignoré : tile 1 = tile 0 pour le haut', () => {
+        const { ram, ppu } = makeRig(0b1001_0111);
+        poseTuile(ram, 0, plein(1));
+        poseTuile(ram, 1, plein(3));
+        poseSprite(ram, 0, { y: 16, x: 8, tile: 1 }); // 1 & 0xFE = 0 pour le haut
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'la tuile haute est 0, pas 1').toBe(1);
+      });
+    });
+  });
+
   describe('intégration : le cœur de l\'écran réveille un jeu endormi', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
