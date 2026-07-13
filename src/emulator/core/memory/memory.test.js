@@ -111,6 +111,29 @@ describe('Memory avec MBC : la plage 0x0000-0x7FFF appartient à la cartouche', 
   });
 });
 
+describe('Memory + joypad : 0xFF00, la logique INVERSÉE — le silence vaut 0xFF', () => {
+  // Les boutons sont actifs à l'état BAS : un bit à 0 = pressé. Une ram
+  // vierge qui lit 0x00 dit « TOUT est enfoncé » — dont A+B+Start+Select,
+  // le combo de soft-reset de Tetris et de tant d'autres. Reset infini,
+  // écran blanc éternel. Personne ne presse rien = tous les bits à 1.
+  it('lire 0xFF00 sans manette branchée rend 0xFF, jamais 0x00', () => {
+    const memory = buildMemory(undefined, { read() {}, write() {}, echo() {} });
+    expect(
+      hex(memory.read(0xff00), 2),
+      '0x00 ici = tous les boutons pressés = le soft-reset en boucle',
+    ).toBe('0xFF');
+  });
+
+  it('même après une écriture (la sélection de colonne), les bits de boutons restent hauts', () => {
+    const memory = buildMemory(undefined, { read() {}, write() {}, echo() {} });
+    memory.write(0xff00, 0x20); // le jeu sélectionne une colonne de la matrice
+    expect(
+      memory.read(0xff00) & 0x0f,
+      'le nibble bas (les boutons) reste muet : 0b1111',
+    ).toBe(0x0f);
+  });
+});
+
 describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maître écoute', () => {
   // Le contrôleur maître : contrat read/write (reçus, jamais indispensables)
   // + echo(buffer), appelé PAR la section à chaque sonnette. Le buffer

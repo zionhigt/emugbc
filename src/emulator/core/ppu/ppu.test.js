@@ -26,6 +26,8 @@ const makePPU = () => {
     _if: 0,
     get IF() { return this._if; },
     set IF(v) { knocks.push(v); this._if = v; },
+    // un bus muet : check() peint des lignes en passant, il lui faut une VRAM
+    cpu: { memory: { read: () => 0, write: () => {} } },
   };
   const PPU = buildPPU(machine);
   return { machine, knocks, ppu: new PPU() };
@@ -116,6 +118,73 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('LCDC bit 7 : l\'interrupteur de l\'écran — le temps du PPU se gèle et renaît', () => {
+    const ON = 0b1001_0001; // le LCDC post-boot : écran + BG + adressage 0x8000
+    const OFF = 0b0001_0001; // les mêmes réglages, écran coupé
+
+    it('LCDC naît à 0x91 : la boot ROM laisse l\'écran ALLUMÉ derrière elle', () => {
+      const { ppu } = makePPU();
+      expect(ppu.read(0xff40), 'l\'état post-boot, comme les registres du CPU').toBe(0x91);
+    });
+
+    it('éteint : LY gèle à 0, quel que soit le temps qui passe', () => {
+      const { machine, ppu } = makePPU();
+      ppu.write(0xff40, OFF);
+      machine.totalCycles = 114 * 50;
+      expect(ppu.read(LY), 'le faisceau est physiquement arrêté').toBe(0);
+    });
+
+    it('éteint : le VBlank se tait — aucune frappe, même après des trames entières', () => {
+      const { machine, knocks, ppu } = makePPU();
+      ppu.write(0xff40, OFF);
+      machine.totalCycles = TRAME * 3;
+      ppu.check();
+      expect(knocks, 'un écran éteint n\'a pas de battement').toEqual([]);
+    });
+
+    it('éteindre efface la dalle en blanc (teinte 0) — pas de fossiles de la dernière image', () => {
+      const { ppu } = makePPU();
+      ppu.screen.fill(3); // une image quelconque à l\'écran
+      ppu.write(0xff40, OFF);
+      expect(ppu.screen.every((p) => p === 0), 'LCD coupé = dalle laiteuse').toBe(true);
+    });
+
+    it('rallumer : la trame repart de ZÉRO — l\'ancre renaît', () => {
+      const { machine, ppu } = makePPU();
+      ppu.write(0xff40, OFF);
+      machine.totalCycles = 1000; // du temps passe, écran noir... blanc
+      ppu.write(0xff40, ON);
+      machine.totalCycles = 1000 + 114 * 5 + 3;
+      expect(
+        ppu.read(LY),
+        'ligne 5 depuis le RALLUMAGE — pas la ligne 8 de l\'horloge brute',
+      ).toBe(5);
+    });
+
+    it('rallumer : le VBlank reprend sur la nouvelle grille (144 lignes après l\'ancre)', () => {
+      const { machine, knocks, ppu } = makePPU();
+      ppu.write(0xff40, OFF);
+      machine.totalCycles = 1000;
+      ppu.write(0xff40, ON);
+      machine.totalCycles = 1000 + VBLANK_AT - 1;
+      ppu.check();
+      expect(knocks.length, 'pas encore : la 144e ligne de la nouvelle trame n\'est pas là').toBe(0);
+      machine.totalCycles = 1000 + VBLANK_AT;
+      ppu.check();
+      expect(knocks.length, 'la frappe, recalée sur l\'ancre du rallumage').toBe(1);
+    });
+
+    it('réécrire LCDC SANS toucher au bit 7 ne ré-ancre RIEN — seule la transition compte', () => {
+      const { machine, ppu } = makePPU();
+      machine.totalCycles = 114 * 4; // la trame court depuis 0, ligne 4
+      ppu.write(0xff40, 0b1011_0001); // toujours allumé, on a juste ouvert la fenêtre (bit 5)
+      expect(
+        ppu.read(LY),
+        'les jeux réécrivent LCDC sans arrêt : un ré-ancrage ici gèlerait la trame pour toujours',
+      ).toBe(4);
+    });
+  });
+
   describe('les pixels : le décor, tuile par tuile', () => {
     // Le gréement : une vraie ram de 64 Ko derrière un bus minimal, la
     // machine factice par-dessus — le PPU lit la VRAM par le bus, comme convenu.
@@ -131,8 +200,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
-      // réglage de base : BG allumé, adressage 0x8000 (bit 4), carte 0x9800
-      ppu.write(0xff40, 0b0001_0001);
+      // réglage de base : ÉCRAN allumé (bit 7 !), BG allumé, adressage 0x8000, carte 0x9800
+      ppu.write(0xff40, 0b1001_0001);
       ppu.write(0xff47, 0b1110_0100); // BGP identité : 0=0, 1=1, 2=2, 3=3
       return { ram, machine, knocks, ppu };
     };
