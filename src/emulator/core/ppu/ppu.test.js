@@ -616,6 +616,182 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('la fenêtre : un calque opaque qui recouvre le décor', () => {
+    // LCDC : écran + BG + FENÊTRE (bit 5) + adressage 0x8000 (bit 4)
+    //      + carte fenêtre = 0x9C00 (bit 6 = 1), DISTINCTE de la carte BG
+    //        (0x9800) — sans quoi décor et fenêtre liraient les mêmes cases.
+    const makeRig = (lcdc = 0b1111_0001) => {
+      const ram = new Uint8Array(0x10000);
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { this._if = v; },
+        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+      };
+      const PPU = buildPPU(machine);
+      const ppu = new PPU();
+      ppu.write(0xff40, lcdc);
+      ppu.write(0xff47, 0b1110_0100); // BGP identité (la fenêtre l'utilise aussi)
+      return { ram, ppu };
+    };
+
+    const poseTuile = (ram, id, rows, base = 0x8000) => {
+      rows.forEach((row, r) => {
+        let lo = 0;
+        let hi = 0;
+        row.forEach((c, x) => {
+          lo |= (c & 1) << (7 - x);
+          hi |= ((c >> 1) & 1) << (7 - x);
+        });
+        ram[base + id * 16 + r * 2] = lo;
+        ram[base + id * 16 + r * 2 + 1] = hi;
+      });
+    };
+    const plein = (t) => Array(8).fill(Array(8).fill(t));
+    const row = (ppu, line) => Array.from(ppu.screen.slice(line * 160, line * 160 + 160));
+
+    // un décor de teinte 1 partout (tuile 1 en case 0 de la carte BG 0x9800)
+    const poseDecor = (ram, t = 1) => {
+      poseTuile(ram, 1, plein(t));
+      for (let i = 0; i < 32 * 32; i++) ram[0x9800 + i] = 1;
+    };
+    // la carte fenêtre (0x9C00 par défaut, distincte du décor) pointe partout vers `id`
+    const poseCarteFenetre = (ram, id, base = 0x9c00) => {
+      for (let i = 0; i < 32 * 32; i++) ram[base + i] = id;
+    };
+
+    describe('① la fenêtre remplace le décor là où elle est active', () => {
+      it('WX=7, WY=0 : la fenêtre couvre toute la ligne et écrase le BG', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 1);              // BG teinte 1
+        poseTuile(ram, 2, plein(3));    // fenêtre teinte 3
+        poseCarteFenetre(ram, 2);
+        ppu.write(0xff4a, 0);           // WY=0
+        ppu.write(0xff4b, 7);           // WX=7 → écran x=0
+        ppu.renderLine(0);
+        expect(row(ppu, 0).slice(0, 8), 'le décor est intégralement recouvert').toEqual(Array(8).fill(3));
+      });
+
+      it('WX décale de 7 : WX=8 laisse le pixel 0 au décor, la fenêtre commence en x=1', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 1);
+        poseTuile(ram, 2, plein(3));
+        poseCarteFenetre(ram, 2);
+        ppu.write(0xff4a, 0);
+        ppu.write(0xff4b, 8);           // WX=8 → écran x=1
+        ppu.renderLine(0);
+        const l = row(ppu, 0);
+        expect(l[0], 'x=0 : encore le décor (1)').toBe(1);
+        expect(l[1], 'x=1 : la fenêtre commence (3)').toBe(3);
+      });
+
+      it('WY : rien avant la ligne WY', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 1);
+        poseTuile(ram, 2, plein(3));
+        poseCarteFenetre(ram, 2);
+        ppu.write(0xff4a, 5);           // WY=5
+        ppu.write(0xff4b, 7);
+        ppu.renderLine(4);
+        expect(row(ppu, 4)[0], 'ligne 4 < WY : pas de fenêtre').toBe(1);
+        ppu.renderLine(5);
+        expect(row(ppu, 5)[0], 'ligne 5 = WY : la fenêtre apparaît').toBe(3);
+      });
+
+      it('LCDC bit 5 éteint : pas de fenêtre du tout', () => {
+        const { ram, ppu } = makeRig(0b1001_0001); // bit 5 éteint
+        poseDecor(ram, 1);
+        poseTuile(ram, 2, plein(3));
+        poseCarteFenetre(ram, 2);
+        ppu.write(0xff4a, 0);
+        ppu.write(0xff4b, 7);
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'fenêtre désactivée').toBe(1);
+      });
+    });
+
+    describe('② la fenêtre ignore SCX / SCY', () => {
+      it('le scroll ne déplace pas la fenêtre', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 1);
+        // tuile fenêtre : rangée 0 = teinte 3, le reste 0
+        const rows = Array.from({ length: 8 }, () => Array(8).fill(0));
+        rows[0] = Array(8).fill(3);
+        poseTuile(ram, 2, rows);
+        poseCarteFenetre(ram, 2);
+        ppu.write(0xff42, 50);          // SCY=50 : ne doit PAS décaler la fenêtre
+        ppu.write(0xff43, 50);          // SCX=50 : idem
+        ppu.write(0xff4a, 0);
+        ppu.write(0xff4b, 7);
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'la fenêtre lit sa rangée 0, indifférente au scroll').toBe(3);
+      });
+    });
+
+    describe('③ la carte de la fenêtre (LCDC bit 6, distinct du BG)', () => {
+      it('bit 6 choisit 0x9C00 au lieu de 0x9800', () => {
+        const { ram, ppu } = makeRig(0b1111_0001); // + bit 6 : carte fenêtre = 0x9C00
+        poseDecor(ram, 1);
+        poseTuile(ram, 4, plein(2));
+        poseCarteFenetre(ram, 4, 0x9c00); // la carte HAUTE
+        ppu.write(0xff4a, 0);
+        ppu.write(0xff4b, 7);
+        ppu.renderLine(0);
+        expect(row(ppu, 0)[0], 'la fenêtre lit sa carte 0x9C00').toBe(2);
+      });
+    });
+
+    describe('④ le compteur de ligne INTERNE — pas (line − WY)', () => {
+      // Une tuile fenêtre dont les rangées diffèrent : rangée r = teinte (r % 4).
+      const poseTuileEscalier = (ram, id = 2) => {
+        const rows = Array.from({ length: 8 }, (_, r) => Array(8).fill([0, 1, 2, 3][r % 4]));
+        poseTuile(ram, id, rows);
+        poseCarteFenetre(ram, id);
+      };
+
+      it('le compteur n\'avance QUE sur les lignes où la fenêtre est dessinée', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 3); // BG teinte 3, bien visible quand la fenêtre est coupée
+        poseTuileEscalier(ram, 2);
+        ppu.write(0xff4a, 0); // WY=0
+        ppu.write(0xff4b, 7); // WX=7
+
+        ppu.renderLine(0); // fenêtre dessinée : compteur 0 → rangée 0 (teinte 0 = transparente ? non, opaque : 0)
+        // rangée 0 de l'escalier = teinte 0 → BGP identité → 0 (la fenêtre EST opaque, elle écrit 0)
+        expect(row(ppu, 0)[0], 'ligne 0 : rangée fenêtre 0').toBe(0);
+
+        // on COUPE la fenêtre (bit 5 éteint, bit 6 CONSERVÉ), on rend la ligne 1 :
+        // le compteur ne doit PAS avancer
+        ppu.write(0xff40, 0b1101_0001);
+        ppu.renderLine(1);
+        expect(row(ppu, 1)[0], 'ligne 1 : fenêtre coupée, le décor (3)').toBe(3);
+
+        // on RALLUME, ligne 2 : le compteur vaut TOUJOURS 1 (pas 2 !)
+        ppu.write(0xff40, 0b1111_0001);
+        ppu.renderLine(2);
+        expect(
+          row(ppu, 2)[0],
+          'rangée 1 (compteur interne), PAS rangée 2 : la ligne coupée n\'a rien compté',
+        ).toBe(1);
+      });
+
+      it('le compteur se remet à zéro au début de chaque trame (ligne 0)', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 3);
+        poseTuileEscalier(ram, 2);
+        ppu.write(0xff4a, 0);
+        ppu.write(0xff4b, 7);
+
+        ppu.renderLine(0);
+        ppu.renderLine(1);
+        ppu.renderLine(2); // compteur monté à 3
+        ppu.renderLine(0); // NOUVELLE trame : reset
+        expect(row(ppu, 0)[0], 'rangée 0 de nouveau : le compteur est reparti de zéro').toBe(0);
+      });
+    });
+  });
+
   describe('intégration : le cœur de l\'écran réveille un jeu endormi', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
