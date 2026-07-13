@@ -36,6 +36,25 @@ class LCDCregister extends Register(8) {
         }
     }
 }
+class DMAregister extends Register(8) {
+    constructor(parent) {
+        super();
+        this.parent = parent;
+    }
+
+    get bus() {
+        return this.parent.machine.cpu.memory;
+    }
+
+    setValue(value) {
+        super.setValue(value);
+        const source = value << 8;
+
+        for (let i = 0; i <= 0x9F; i++) {
+            this.bus.write(0xFE00 + i, this.bus.read(source + i))
+        }
+    }
+}
 
 export default function(machine) {
     class PPU {
@@ -48,7 +67,7 @@ export default function(machine) {
             this.SCY = new (Register(8));
             this.SCX = new (Register(8));
             this.LYC = new (Register(8));
-            this.DMA = new (Register(8));
+            this.DMA = new DMAregister(this);
             this.BGP = new (Register(8));
             this.OBP0 = new (Register(8));
             this.OBP1 = new (Register(8));
