@@ -77,6 +77,7 @@ export default function(machine) {
             this.dateAlarme = 0;
             this.anchor = this.totalMachineCycles;
             this.screen = new Uint8Array(160 * 144);
+            this.windowLine = 0;
         }
 
         sleep() {
@@ -115,6 +116,26 @@ export default function(machine) {
                 0xFF49: this.OBP1,
                 0xFF4A: this.WY,
                 0xFF4B: this.WX,
+            }
+        }
+
+        renderWindow(line) {
+            const startX = this.WX.getValue() - 7;
+            const card = byte.getFlag(this.LCDC.getValue(), 6) ? 0x9C00 : 0x9800;
+            const wrow = this.windowLine;
+
+            for (let x = 0; x < 160; x++) {
+                if (x < startX) continue;
+                const wx = x - startX;
+                const id = this.bus.read(card + (wrow >> 3) * 32 + (wx >> 3));
+                const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
+                    0x8000 + id * 16 :
+                    0x9000 + byte.sign8(id) * 16;
+                const low = this.bus.read(tile + (wrow & 7) * 2);
+                const high = this.bus.read(tile + (wrow & 7) * 2 + 1);
+                const bit = 7 - (wx & 7)
+                const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+                this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
         }
 
@@ -180,6 +201,7 @@ export default function(machine) {
         }
 
         renderLine(line) {
+            if (line === 0) this.windowLine = 0;
             if (!byte.getFlag(this.LCDC.getValue(), 0)) return this.screen.fill(0, line * 160, line * 160 + 160);
 
             for (let x = 0; x <= 159; x++) {
@@ -198,6 +220,10 @@ export default function(machine) {
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
 
+            if (byte.getFlag(this.LCDC.getValue(), 5) && line >= this.WY.getValue()) {
+                this.renderWindow(line);
+                this.windowLine++;
+            }
             if (byte.getFlag(this.LCDC.getValue(), 1)) this.renderSprites(line);
         }
 
