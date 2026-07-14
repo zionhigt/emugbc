@@ -778,6 +778,26 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         ).toBe(1);
       });
 
+      it('le compteur n\'avance PAS tant que la fenêtre est hors-écran (WX > 166) — le fix dmg-acid2', () => {
+        const { ram, ppu } = makeRig();
+        poseDecor(ram, 3); // BG teinte 3 quand la fenêtre ne dessine pas
+        poseTuileEscalier(ram, 2);
+        ppu.write(0xff4a, 0);   // WY=0
+        ppu.write(0xff4b, 240); // WX=240 → fenêtre HORS écran (startX=233 > 159)
+
+        ppu.renderLine(0); // fenêtre activée + line>=WY, mais INVISIBLE : le compteur ne doit pas bouger
+        ppu.renderLine(1);
+        expect(row(ppu, 0)[0], 'hors écran : le décor reste (3)').toBe(3);
+
+        // la fenêtre entre à l'écran : sa PREMIÈRE ligne visible doit être la rangée 0
+        ppu.write(0xff4b, 7); // WX=7 → visible
+        ppu.renderLine(2);
+        expect(
+          row(ppu, 2)[0],
+          'rangée 0 (compteur=0) : les lignes hors-écran n\'ont RIEN compté — sinon rangée 2',
+        ).toBe(0);
+      });
+
       it('le compteur se remet à zéro au début de chaque trame (ligne 0)', () => {
         const { ram, ppu } = makeRig();
         poseDecor(ram, 3);
