@@ -34,11 +34,12 @@ class Register16 extends BaseRegister {
     }
 }
 
-export function FlagRegister(size) {
+export function FlagRegister(size, mask=0xf0) {
     const parent = Register(size);
     class FlagRegister extends parent {
         constructor(properties) {
             super();
+            this.mask = mask;
             for (const key of Object.keys(properties)) {
                 const priv = `_${key}`;
                 this[priv] = properties[key];
@@ -60,7 +61,7 @@ export function FlagRegister(size) {
         }
 
         setValue(value) {
-            return super.setValue(value & 0xf0);
+            return super.setValue(value & this.mask);
         }
     }
 

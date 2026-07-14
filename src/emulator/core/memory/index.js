@@ -155,16 +155,24 @@ function FactorySerialSection(serial) {
     return SerialSection;
 }
 
-class JoypadStubSection extends Section {
-    read(addr) {
-        if (addr === 0xFF00) return 0xFF;
+function FactoryJoypadSection(joypad) {
+    class JoypadStubSection extends Section {
+        constructor(memory) {
+            super(memory);
+            this.joypad = joypad;
+        }
+        read(addr) {
+            return this.joypad.read(addr);
+        }
+        write(addr, value) {
+            return this.joypad.write(addr, value);
+        }
     }
-    write() {
-        return;
-    }
+
+    return JoypadStubSection;
 }
 
-export default function(cartridge, serialbus, timer, ppu) {
+export default function(cartridge, serialbus, timer, ppu, joypad) {
     const memory = new Memory();
     if (arguments.length === 0) {
         memory.bindRange("flat", 0x000, 0xFFFF, Section);
@@ -178,7 +186,8 @@ export default function(cartridge, serialbus, timer, ppu) {
     }
     // TODO: Explods for each sections
     memory.bindRange("overflow0", overflowStart, 0xFEFF, Section);
-    memory.bindRange("joypad", 0xFF00, 0xFF00, JoypadStubSection);
+    joypad = FactoryJoypadSection(joypad);
+    memory.bindRange("joypad", 0xFF00, 0xFF00, joypad);
     serialbus = FactorySerialSection(serialbus);
     timer = FactoryTimerSection(timer);
     ppu = FactoryPPUSection(ppu);
