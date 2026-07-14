@@ -323,16 +323,18 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       expect(ppu.screen.slice(0, 8).every((p) => p === 0), 'décor coupé = blanc').toBe(true);
     });
 
-    it('check() par ligne : l\'horloge à la ligne 3 a peint les lignes 0-2, pas la 3', () => {
+    it('check() par ligne : une ligne se peint à sa phase de dessin (offset 20)', () => {
       const { ram, machine, ppu } = makeRig();
       poseTuile(ram, 0, Array(8).fill(Array(8).fill(3)));
       ram[0x9800] = 0;
-      machine.totalCycles = 114 * 2 + 10; // en plein milieu de la ligne 2
+      // au début de la ligne 3 : les lignes 0,1,2 ont passé leur dessin (offset 20),
+      // la ligne 3 est à son offset 0 (mode 2) — pas encore dessinée.
+      machine.totalCycles = 114 * 3;
       ppu.check();
       expect(ppu.screen[0], 'ligne 0 peinte').toBe(3);
       expect(ppu.screen[160], 'ligne 1 peinte').toBe(3);
-      expect(ppu.screen[2 * 160], 'ligne 2 peinte (entamée = peinte à son entrée)').toBe(3);
-      expect(ppu.screen[3 * 160], 'ligne 3 pas encore').toBe(0);
+      expect(ppu.screen[2 * 160], 'ligne 2 peinte').toBe(3);
+      expect(ppu.screen[3 * 160], 'ligne 3 pas encore (son dessin est à l\'offset 20)').toBe(0);
     });
   });
 
@@ -842,13 +844,14 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       });
     });
 
-    describe('bits 0-1 : le mode du PPU', () => {
-      it('lignes visibles → mode 0, VBlank → mode 1', () => {
+    describe('bits 0-1 : le mode du PPU, selon la PHASE de la scanline', () => {
+      it('offset 0 → mode 2 (OAM), +20 → mode 3 (dessin), +63 → mode 0 (HBlank), VBlank → mode 1', () => {
         const { machine, ppu } = makeRig();
-        versLigne(machine, 50);
-        expect(ppu.read(0xff41) & 0b11, 'ligne 50 visible').toBe(0);
-        versLigne(machine, 145);
-        expect(ppu.read(0xff41) & 0b11, 'ligne 145 en VBlank').toBe(1);
+        const modeAt = (cyc) => { machine.totalCycles = cyc; ppu.check(); return ppu.read(0xff41) & 0b11; };
+        expect(modeAt(114 * 50 + 0), 'début de ligne : scan OAM').toBe(2);
+        expect(modeAt(114 * 50 + 25), 'après 20 cycles : dessin').toBe(3);
+        expect(modeAt(114 * 50 + 70), 'après 63 cycles : HBlank').toBe(0);
+        expect(modeAt(114 * 145 + 5), 'ligne 145 : VBlank').toBe(1);
       });
     });
 
@@ -905,6 +908,59 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         expect(machine.IF & 0b1, 'le VBlank classique, bit 0').toBe(0b1);
         expect(machine.IF & 0b10, 'le STAT, bit 1, en plus').toBe(0b10);
       });
+    });
+  });
+
+  describe('la machine à phases : le dessin a lieu APRÈS l\'interruption STAT — LE fix', () => {
+    // Bus adossé à une vraie ram. Le décor est agencé pour que le pixel 0 de
+    // l'écran dépende de SCX : case 0 de la carte = teinte 1, case 1 = teinte 2.
+    // Ainsi SCX=0 → pixel 0 lit la case 0 (teinte 1) ; SCX=8 → case 1 (teinte 2).
+    const makeRig = () => {
+      const ram = new Uint8Array(0x10000);
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { this._if = v; },
+        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+      };
+      const PPU = buildPPU(machine);
+      const ppu = new PPU();
+      ppu.write(0xff40, 0b1001_0001); // écran + BG + adressage 0x8000
+      ppu.write(0xff47, 0b1110_0100); // BGP identité
+      // tuile 1 = teinte 1 partout, tuile 2 = teinte 2 partout
+      for (let r = 0; r < 8; r++) { ram[0x8010 + r * 2] = 0xff; ram[0x8010 + r * 2 + 1] = 0x00; } // tuile1=1
+      for (let r = 0; r < 8; r++) { ram[0x8020 + r * 2] = 0x00; ram[0x8020 + r * 2 + 1] = 0xff; } // tuile2=2
+      // toute la carte : colonne 0 → tuile 1, colonne 1 → tuile 2 (à chaque rangée,
+      // car la ligne testée lit la rangée line/8 de la carte, pas la rangée 0)
+      for (let row = 0; row < 32; row++) { ram[0x9800 + row * 32] = 1; ram[0x9800 + row * 32 + 1] = 2; }
+      return { ram, machine, ppu };
+    };
+
+    it('un registre changé entre l\'interruption (offset 0) et le dessin (offset 20) affecte CETTE ligne', () => {
+      const { machine, ppu } = makeRig();
+      const N = 30;
+      ppu.write(0xff45, N);        // LYC = 30
+      ppu.write(0xff41, 0b0100_0000); // interruption de coïncidence armée (bit 6)
+      ppu.write(0xff43, 0);        // SCX = 0
+
+      // on avance PILE au début de la ligne 30 (offset 0, mode 2) : l'interruption
+      // STAT part, mais la ligne n'est PAS encore dessinée (dessin à l'offset 20).
+      machine.totalCycles = 114 * N;
+      ppu.check();
+      expect(machine.IF & 0b10, 'la coïncidence STAT a frappé à l\'offset 0').toBe(0b10);
+      expect(ppu.screen[N * 160], 'la ligne 30 n\'est PAS encore dessinée').toBe(0);
+
+      // le "gestionnaire STAT" change SCX — comme dmg-acid2 le fait
+      ppu.write(0xff43, 8); // SCX = 8
+
+      // on avance jusqu'au dessin (offset 20) : il doit lire le NOUVEAU SCX
+      machine.totalCycles = 114 * N + 25;
+      ppu.check();
+      expect(
+        ppu.screen[N * 160],
+        'le dessin lit SCX=8 (teinte 2), PAS SCX=0 (teinte 1) : le fix de timing',
+      ).toBe(2);
     });
   });
 
