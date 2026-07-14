@@ -255,7 +255,7 @@ export default function(machine) {
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
 
-            if (byte.getFlag(this.LCDC.getValue(), 5) && line >= this.WY.getValue()) {
+            if (byte.getFlag(this.LCDC.getValue(), 5) && line >= this.WY.getValue() && this.WX.getValue() <= 166) {
                 this.renderWindow(line);
                 this.windowLine++;
             }
