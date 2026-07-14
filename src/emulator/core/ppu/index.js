@@ -50,7 +50,7 @@ class STATregister extends Register(8) {
         const ly = this.parent.LY.getValue();
         const lyc = this.parent.LYC.getValue();
         const coincidence = (ly === lyc) ? 1 : 0;
-        const mode = ly >= 144 ? 1 : 0;
+        const mode = this.parent.mode;
         return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
     }
 
@@ -96,21 +96,27 @@ export default function(machine) {
             this.WY = new (Register(8));
             this.WX = new (Register(8));
 
-            this.dateAlarme = 0;
+
             this.anchor = this.totalMachineCycles;
+            this.line = 0;
+            this.phase = 0;
+            this.mode = 2;
+            this.next = this.anchor;
+
             this.screen = new Uint8Array(160 * 144);
             this.windowLine = 0;
             this.bgLine = new Uint8Array(160);
         }
 
         sleep() {
-            this.dateAlarme = Infinity;
             this.screen.fill(0);
         }
 
         wake() {
             this.anchor = this.totalMachineCycles;
-            this.dateAlarme = this.anchor;
+            this.line = 0;
+            this.phase = 0;
+            this.next = this.anchor;
         }
 
         get bus() {
@@ -140,6 +146,10 @@ export default function(machine) {
                 0xFF4A: this.WY,
                 0xFF4B: this.WX,
             }
+        }
+
+        get currentPhase() {
+            return this.getPhaseByLine(this.line)[this.phase];
         }
 
         renderWindow(line) {
@@ -252,26 +262,58 @@ export default function(machine) {
             if (byte.getFlag(this.LCDC.getValue(), 1)) this.renderSprites(line);
         }
 
-        check() {
-            while (this.totalMachineCycles >= this.dateAlarme) {
-                const line = Math.floor((this.dateAlarme - this.anchor) / 114) % 154
-                if (line === 144) {
-                    this.machine.IF |= 0b00001;
+        getPhaseByLine(line) {
+            if (line < 144) {
+                return [
+                    {mode:2, offset:0},
+                    {mode:3, offset:20},
+                    {mode:0, offset:63},
+                ]
+            } else {
+                return [ {mode: 1, offset:0} ]
+            }
+        }
 
-                } else if (line < 144) {
-                    this.renderLine(line);
-                }
+        runPhase() {
+            const phase = this.currentPhase;
+            this.mode = phase.mode;
 
-                const stat = this.STAT.getValue();
+            const stat = this.STAT.getValue();
+            if (this.phase === 0) {
                 let statLine = false;
-                if (line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
-                if (line === 144 && byte.getFlag(stat, 4)) statLine = true;
-                if (line < 144 && byte.getFlag(stat, 5)) statLine = true;
-                if (line < 144 && byte.getFlag(stat, 3)) statLine = true;
+                if (this.line === 144) this.machine.IF |= 0b00001;
+                if (this.line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
+                if (this.line < 144                   && byte.getFlag(stat, 5)) statLine = true;
+                if (this.line === 144                 && byte.getFlag(stat, 4)) statLine = true;
                 if (statLine) {
                     this.machine.IF |= 0b00010;
                 }
-                this.dateAlarme += 114;
+            }
+            if (phase.mode === 0 && byte.getFlag(stat, 3)) this.machine.IF |= 0b00010;
+            if (phase.mode === 3) this.renderLine(this.line);
+        }
+
+        advance() {
+            const phases = this.getPhaseByLine(this.line);
+            if (this.phase < phases.length - 1) {
+                this.phase++;
+            } else {
+                this.line++;
+                if (this.line === 154) {
+                    this.line = 0;
+                    this.anchor += 154 * 114
+                }
+                this.phase = 0;
+            }
+
+            this.next = this.anchor + this.line * 114 + this.currentPhase.offset
+        }
+
+        check() {
+            if (!this.LCDC.isOn) return;
+            while (this.totalMachineCycles >= this.next) {                
+                this.runPhase();
+                this.advance();
             }
         }
 
