@@ -2,7 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig({
+// GitHub Pages sert le site sous /emugbc/ (nom du repo). En dev/test on reste
+// à la racine. `base` propage automatiquement à import.meta.env.BASE_URL,
+// aux assets, au service worker et à %BASE_URL% dans index.html.
+const base = '/emugbc/';
+
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? base : '/',
   plugins: [
     react(),
     VitePWA({
@@ -20,9 +26,10 @@ export default defineConfig({
         background_color: '#0b1220',
         display: 'standalone', // plein écran, sans barre de navigateur
         orientation: 'portrait',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         icons: [
+          // src relatifs : résolus par rapport au manifest (→ /emugbc/icon-*.png)
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
@@ -30,10 +37,6 @@ export default defineConfig({
       },
     }),
   ],
-  // Vite bloque par défaut les requêtes dont le Host est inconnu (403
-  // « Blocked request »). Pour tester via un tunnel, on autorise ses domaines
-  // (localtunnel = .loca.lt, cloudflared = .trycloudflare.com). Le « . » de tête
-  // couvre tous les sous-domaines.
   preview: { allowedHosts: ['.loca.lt', '.trycloudflare.com'] },
   server: { allowedHosts: ['.loca.lt', '.trycloudflare.com'] },
   test: {
@@ -41,4 +44,4 @@ export default defineConfig({
     globals: true,
     setupFiles: './src/test/setup.js',
   },
-});
+}));
