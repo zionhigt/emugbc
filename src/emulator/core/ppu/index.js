@@ -36,6 +36,28 @@ class LCDCregister extends Register(8) {
         }
     }
 }
+class STATregister extends Register(8) {
+    constructor(parent) {
+        super();
+        this.parent = parent;
+    }
+
+    get bus() {
+        return this.parent.bus;
+    }
+
+    getValue() {
+        const ly = this.parent.LY.getValue();
+        const lyc = this.parent.LYC.getValue();
+        const coincidence = (ly === lyc) ? 1 : 0;
+        const mode = ly >= 144 ? 1 : 0;
+        return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
+    }
+
+    setValue(value) {
+        super.setValue(value & 0x78);
+    }
+}
 class DMAregister extends Register(8) {
     constructor(parent) {
         super();
@@ -63,7 +85,7 @@ export default function(machine) {
             this._innerCycles = this.totalMachineCycles; // Almost a bad boy. Whatcha gonna do !!
             this.LY = new LYregister(this);
             this.LCDC = new LCDCregister(this);
-            this.STAT = new (Register(8));
+            this.STAT = new STATregister(this);
             this.SCY = new (Register(8));
             this.SCX = new (Register(8));
             this.LYC = new (Register(8));
@@ -78,6 +100,7 @@ export default function(machine) {
             this.anchor = this.totalMachineCycles;
             this.screen = new Uint8Array(160 * 144);
             this.windowLine = 0;
+            this.bgLine = new Uint8Array(160);
         }
 
         sleep() {
@@ -135,6 +158,7 @@ export default function(machine) {
                 const high = this.bus.read(tile + (wrow & 7) * 2 + 1);
                 const bit = 7 - (wx & 7)
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+                this.bgLine[x] = teinte;
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
         }
@@ -191,7 +215,7 @@ export default function(machine) {
                     const ex = sprite.x + col;
 
                     if (ex < 0 || ex >= 160) continue;
-                    if (byte.getFlag(sprite.attrs, 7) && this.screen[line * 160 + ex] != 0) continue;
+                    if (byte.getFlag(sprite.attrs, 7) && this.bgLine[ex] != 0) continue;
                     this.screen[line * 160 + ex] = (palette.getValue() >> (teinte * 2)) & 0b11;
                 }
             
@@ -217,6 +241,7 @@ export default function(machine) {
                 const high = this.bus.read(tile + (dy % 8) * 2 + 1); 
                 const bit = 7 - (dx % 8);
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+                this.bgLine[x] = teinte;
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
             }
 
@@ -235,6 +260,16 @@ export default function(machine) {
 
                 } else if (line < 144) {
                     this.renderLine(line);
+                }
+
+                const stat = this.STAT.getValue();
+                let statLine = false;
+                if (line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
+                if (line === 144 && byte.getFlag(stat, 4)) statLine = true;
+                if (line < 144 && byte.getFlag(stat, 5)) statLine = true;
+                if (line < 144 && byte.getFlag(stat, 3)) statLine = true;
+                if (statLine) {
+                    this.machine.IF |= 0b00010;
                 }
                 this.dateAlarme += 114;
             }
