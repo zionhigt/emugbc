@@ -54,20 +54,29 @@ class Emulator extends React.Component {
     window.removeEventListener('keyup', this.handleKeyUp);
   }
 
-  // clavier → manette : on ne touche à rien tant qu'aucune cartouche n'est
-  // insérée (this.machine créé au chargement du .gb).
+  // le point d'entrée unique vers la manette : clavier ET boutons de coque y
+  // passent. Inerte tant qu'aucune cartouche n'est insérée (this.machine créé
+  // au chargement du .gb).
+  pressButton = (gb) => {
+    if (this.machine) this.machine.joypad.onPress(gb);
+  };
+
+  releaseButton = (gb) => {
+    if (this.machine) this.machine.joypad.onRelease(gb);
+  };
+
   handleKeyDown = (event) => {
     const gb = KEYMAP[event.key.toLowerCase()];
     if (!gb || !this.machine) return;
     event.preventDefault(); // pas de scroll sur Espace, pas de submit sur Entrée
-    this.machine.joypad.onPress(gb);
+    this.pressButton(gb);
   };
 
   handleKeyUp = (event) => {
     const gb = KEYMAP[event.key.toLowerCase()];
     if (!gb || !this.machine) return;
     event.preventDefault();
-    this.machine.joypad.onRelease(gb);
+    this.releaseButton(gb);
   };
 
   toggleDock = () => {
@@ -111,7 +120,7 @@ class Emulator extends React.Component {
         </header>
 
         <main className="emu-page__stage">
-          <Console>
+          <Console onPress={this.pressButton} onRelease={this.releaseButton}>
             <Canvas screen={this.state.screen} />
           </Console>
 
