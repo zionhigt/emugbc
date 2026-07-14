@@ -8,7 +8,7 @@ import { VitePWA } from 'vite-plugin-pwa';
 const base = '/emugbc/dist/';
 
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? base : '/',
+  base: "./", //command === 'build' ? base : '/',
   plugins: [
     react(),
     VitePWA({
