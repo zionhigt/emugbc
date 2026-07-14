@@ -5,10 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 // GitHub Pages sert le site sous /emugbc/ (nom du repo). En dev/test on reste
 // à la racine. `base` propage automatiquement à import.meta.env.BASE_URL,
 // aux assets, au service worker et à %BASE_URL% dans index.html.
-const base = '/emugbc/';
+const base = '/emugbc/dist/';
 
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? base : './',
+  base: command === 'build' ? base : '/',
   plugins: [
     react(),
     VitePWA({
