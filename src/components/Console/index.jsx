@@ -9,20 +9,32 @@ import './Console.css';
 // Le contenu de l'écran — le canvas 160×144 — se compose en enfant.
 // Les boutons pilotent la manette via les props onPress(key)/onRelease(key).
 class Console extends React.Component {
+  // l'animation d'appui est pilotée en JS via l'attribut data-pressed, PAS via
+  // :active : le repaint 60 fps (setState de l'écran à chaque tick) re-rend la
+  // Console en continu et empêche :active de « tenir ». Les events, eux, se
+  // déclenchent bien — on s'appuie dessus.
+  state = { pressed: {} };
+
   // les handlers d'un bouton pour une touche GB : souris ET tactile.
   // onMouseLeave/onTouchCancel relâchent si le doigt/curseur quitte en maintenant.
   buttonProps(key) {
     const { onPress, onRelease } = this.props;
     if (!onPress) return {}; // Console purement décorative (ex. tests)
-    const press = (e) => { e.preventDefault(); onPress(key); };
-    const release = (e) => { e.preventDefault(); onRelease(key); };
+    const setPressed = (value) =>
+      this.setState((s) => ({ pressed: { ...s.pressed, [key]: value } }));
+    // Tactile : touchstart est passif (preventDefault interdit → on presse
+    // sans) ; on le garde sur touchend (non passif) pour tuer le clic fantôme.
+    const press = () => { setPressed(true); onPress(key); };
+    const release = () => { setPressed(false); onRelease(key); };
+    const releaseTouch = (e) => { e.preventDefault(); release(); };
     return {
       type: 'button',
+      'data-pressed': this.state.pressed[key] ? '' : undefined,
       onMouseDown: press,
       onMouseUp: release,
       onMouseLeave: release,
       onTouchStart: press,
-      onTouchEnd: release,
+      onTouchEnd: releaseTouch,
       onTouchCancel: release,
     };
   }
@@ -51,8 +63,14 @@ class Console extends React.Component {
             </div>
           </div>
           <div className="gbc-console__buttons--actions">
-            <button className="gbc-console__buttons--action-select" {...this.buttonProps('select')}>select</button>
-            <button className="gbc-console__buttons--action-start" {...this.buttonProps('start')}>start</button>
+            <span className="gbc-console__buttons--action">
+              <button className="gbc-console__buttons--action-select" aria-label="select" {...this.buttonProps('select')}></button>
+              <span className="gbc-console__buttons--action-label" aria-hidden="true">SELECT</span>
+            </span>
+            <span className="gbc-console__buttons--action">
+              <button className="gbc-console__buttons--action-start" aria-label="start" {...this.buttonProps('start')}></button>
+              <span className="gbc-console__buttons--action-label" aria-hidden="true">START</span>
+            </span>
           </div>
         </div>
       </div>
