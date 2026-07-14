@@ -10,6 +10,19 @@ import { MachineBuilder } from '../../emulator/core/index.js';
 
 import './Emulator.css';
 
+// Mapping clavier (AZERTY) → boutons Game Boy. Lu via event.key (le caractère
+// tapé), donc calé sur le clavier physique français.
+const KEYMAP = {
+  z: 'up',
+  q: 'left',
+  s: 'down',
+  d: 'right',
+  p: 'a',
+  l: 'b',
+  enter: 'start',
+  ' ': 'select',
+};
+
 // FileReader plutôt que file.arrayBuffer() : même résultat, mais compatible
 // avec tous les environnements (jsdom des tests compris)
 const readBytes = (file) =>
@@ -31,11 +44,31 @@ class Emulator extends React.Component {
     // l'immersion : tant que la console est à l'écran, le Layout s'efface
     // (la nav est masquée par CSS via cette classe, en mobile seulement)
     document.body.classList.add('emu-immersion');
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('keyup', this.handleKeyUp);
   }
 
   componentWillUnmount() {
     document.body.classList.remove('emu-immersion');
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('keyup', this.handleKeyUp);
   }
+
+  // clavier → manette : on ne touche à rien tant qu'aucune cartouche n'est
+  // insérée (this.machine créé au chargement du .gb).
+  handleKeyDown = (event) => {
+    const gb = KEYMAP[event.key.toLowerCase()];
+    if (!gb || !this.machine) return;
+    event.preventDefault(); // pas de scroll sur Espace, pas de submit sur Entrée
+    this.machine.joypad.onPress(gb);
+  };
+
+  handleKeyUp = (event) => {
+    const gb = KEYMAP[event.key.toLowerCase()];
+    if (!gb || !this.machine) return;
+    event.preventDefault();
+    this.machine.joypad.onRelease(gb);
+  };
 
   toggleDock = () => {
     this.setState((s) => ({ dockOpen: !s.dockOpen }));
