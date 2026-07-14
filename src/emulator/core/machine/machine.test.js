@@ -58,10 +58,16 @@ const buildFakePPU = () => ({
   check: () => {},
 });
 
+// Un joypad factice : 0xFF = aucune touche pressée (actif bas).
+const buildFakeJoypad = () => ({
+  read: () => 0xff,
+  write: () => {},
+});
+
 const buildAll = () => {
   const serial = buildFakeSerial();
   const timer = buildFakeTimer();
-  const cpu = new CPU(buildMemory(undefined, serial, timer, buildFakePPU()));
+  const cpu = new CPU(buildMemory(undefined, serial, timer, buildFakePPU(), buildFakeJoypad()));
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();

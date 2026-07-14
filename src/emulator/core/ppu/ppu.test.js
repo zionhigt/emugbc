@@ -988,13 +988,14 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
       const timer = { read: () => 0, write() {} };
+      const joypad = { read: () => 0xff, write() {} };
       const cbs = [];
       const clock = {
         onTick(cb) { cbs.push(cb); },
         start() {}, stop() {},
         tick() { cbs.forEach((cb) => cb({ detail: 'tick' })); },
       };
-      const cpu = new CPU(buildMemory(undefined, serial, timer));
+      const cpu = new CPU(buildMemory(undefined, serial, timer, undefined, joypad));
       const Decoder = buildDecoder(cpu, buildInstructions());
       const Machine = buildMachine(cpu, new Decoder(), clock, serial, timer);
       const machine = new Machine();

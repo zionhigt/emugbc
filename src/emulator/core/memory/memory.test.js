@@ -111,26 +111,32 @@ describe('Memory avec MBC : la plage 0x0000-0x7FFF appartient à la cartouche', 
   });
 });
 
-describe('Memory + joypad : 0xFF00, la logique INVERSÉE — le silence vaut 0xFF', () => {
-  // Les boutons sont actifs à l'état BAS : un bit à 0 = pressé. Une ram
-  // vierge qui lit 0x00 dit « TOUT est enfoncé » — dont A+B+Start+Select,
-  // le combo de soft-reset de Tetris et de tant d'autres. Reset infini,
-  // écran blanc éternel. Personne ne presse rien = tous les bits à 1.
-  it('lire 0xFF00 sans manette branchée rend 0xFF, jamais 0x00', () => {
-    const memory = buildMemory(undefined, { read() {}, write() {}, echo() {} });
-    expect(
-      hex(memory.read(0xff00), 2),
-      '0x00 ici = tous les boutons pressés = le soft-reset en boucle',
-    ).toBe('0xFF');
+describe('Memory + joypad : 0xFF00 est routé vers le contrôleur manette', () => {
+  // Un contrôleur joypad espion : le bus doit lui déléguer read/write sur 0xFF00.
+  // (le comportement de la matrice — sélection de colonne, actif bas — est
+  // testé chez le contrôleur lui-même, pas ici.)
+  const serial = { read() {}, write() {}, echo() {} };
+  const timer = { read: () => 0, write() {} };
+  const ppu = { read: () => 0, write() {}, check() {} };
+  const buildFakeJoypad = () => {
+    const writes = [];
+    return { writes, read: () => 0xff, write: (addr, v) => writes.push([addr, v]) };
+  };
+
+  it('lire 0xFF00 délègue au contrôleur (ici 0xFF : aucune touche pressée)', () => {
+    const joypad = buildFakeJoypad();
+    const memory = buildMemory(undefined, serial, timer, ppu, joypad);
+    expect(hex(memory.read(0xff00), 2), 'le contrôleur répond, pas la ram plate').toBe('0xFF');
   });
 
-  it('même après une écriture (la sélection de colonne), les bits de boutons restent hauts', () => {
-    const memory = buildMemory(undefined, { read() {}, write() {}, echo() {} });
+  it('écrire 0xFF00 (la sélection de colonne) est transmis au contrôleur', () => {
+    const joypad = buildFakeJoypad();
+    const memory = buildMemory(undefined, serial, timer, ppu, joypad);
     memory.write(0xff00, 0x20); // le jeu sélectionne une colonne de la matrice
     expect(
-      memory.read(0xff00) & 0x0f,
-      'le nibble bas (les boutons) reste muet : 0b1111',
-    ).toBe(0x0f);
+      joypad.writes,
+      'la sélection doit atteindre le contrôleur (adresse + valeur)',
+    ).toEqual([[0xff00, 0x20]]);
   });
 });
 
@@ -198,11 +204,17 @@ describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maî
 
   it('la section est récupérable par son tag "serial", et cohabite avec la cartouche', () => {
     const serial = buildFakeSerial();
-    const memory = buildMemory(buildFakeCartridge(), serial);
+    const memory = buildMemory(
+      buildFakeCartridge(),
+      serial,
+      { read: () => 0, write: () => {} },        // timer
+      { read: () => 0, write: () => {}, check: () => {} }, // ppu
+      { read: () => 0xff, write: () => {} },      // joypad
+    );
     expect(memory.getSectionByTag('serial'), 'le tag doit exister').toBeDefined();
-    // les voisins ne débordent pas : 0xFF00 (joypad) et 0xFF03 restent de la ram plate
-    memory.write(0xff00, 0x30);
-    memory.write(0xff03, 0x42);
+    // les voisins ne débordent pas sur la série : 0xFF00 (joypad) et 0xFF03 (ram plate)
+    memory.write(0xff00, 0x30); // → joypad, pas série
+    memory.write(0xff03, 0x42); // → ram plate, pas série
     expect(serial.writes, 'aucun trafic série pour les adresses voisines').toEqual([]);
     expect(hex(memory.read(0x0100), 2), 'et la cartouche répond toujours').toBe('0x42');
   });
