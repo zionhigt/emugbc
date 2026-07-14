@@ -792,6 +792,122 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
+  describe('STAT (0xFF41) + LYC : le registre d\'état et ses interruptions', () => {
+    // Rig avec bus muet (check() peint des lignes vierges) et IF espionné.
+    const makeRig = () => {
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { this._if = v; },
+        cpu: { memory: { read: () => 0, write: () => {} } },
+      };
+      const PPU = buildPPU(machine);
+      const ppu = new PPU();
+      return { machine, ppu };
+    };
+    // amène l'horloge pile au début de la ligne `n`
+    const versLigne = (machine, n) => { machine.totalCycles = 114 * n; };
+
+    describe('le registre : bits bas calculés, bits hauts écrits', () => {
+      it('bit 7 lit toujours 1', () => {
+        const { ppu } = makeRig();
+        ppu.write(0xff41, 0x00);
+        expect(ppu.read(0xff41) & 0x80, 'le bit 7 est câblé à 1').toBe(0x80);
+      });
+
+      it('les bits 3-6 (autorisations) sont écrits et relus', () => {
+        const { ppu } = makeRig();
+        ppu.write(0xff41, 0b0111_1000); // les 4 autorisations
+        expect(ppu.read(0xff41) & 0b0111_1000, 'bits 3-6 conservés').toBe(0b0111_1000);
+      });
+
+      it('les bits 0-2 NE sont PAS écrits : ils restent calculés', () => {
+        const { machine, ppu } = makeRig();
+        machine.totalCycles = 0; // LY=0
+        ppu.write(0xff45, 99); // LYC=99, donc PAS de coïncidence
+        ppu.write(0xff41, 0b0000_0111); // on tente d'écrire les bits bas...
+        expect(ppu.read(0xff41) & 0b0000_0100, 'bit 2 reflète LY==LYC (faux), pas l\'écriture').toBe(0);
+      });
+    });
+
+    describe('bit 2 : le drapeau de coïncidence LY == LYC', () => {
+      it('levé quand LY atteint LYC, baissé sinon', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 5); // LYC=5
+        versLigne(machine, 5);
+        expect(ppu.read(0xff41) & 0b100, 'LY=5 == LYC=5').toBe(0b100);
+        versLigne(machine, 6);
+        expect(ppu.read(0xff41) & 0b100, 'LY=6 != LYC=5').toBe(0);
+      });
+    });
+
+    describe('bits 0-1 : le mode du PPU', () => {
+      it('lignes visibles → mode 0, VBlank → mode 1', () => {
+        const { machine, ppu } = makeRig();
+        versLigne(machine, 50);
+        expect(ppu.read(0xff41) & 0b11, 'ligne 50 visible').toBe(0);
+        versLigne(machine, 145);
+        expect(ppu.read(0xff41) & 0b11, 'ligne 145 en VBlank').toBe(1);
+      });
+    });
+
+    describe('les interruptions STAT (IF bit 1) — déclenchées par check()', () => {
+      const IF_STAT = 0b0000_0010;
+
+      it('coïncidence LYC (bit 6) : IF bit 1 quand LY atteint LYC', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 40);        // LYC=40
+        ppu.write(0xff41, 0b0100_0000); // SEULE la coïncidence est armée (bit 6)
+        machine.totalCycles = 114 * 41; // check traverse la ligne 40
+        ppu.check();
+        expect(machine.IF & IF_STAT, 'la coïncidence a frappé').toBe(IF_STAT);
+      });
+
+      it('coïncidence NON armée (bit 6 éteint) : aucune frappe', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 40);
+        ppu.write(0xff41, 0b0000_0000);
+        machine.totalCycles = 114 * 41;
+        ppu.check();
+        expect(machine.IF & IF_STAT, 'source désarmée = silence').toBe(0);
+      });
+
+      it('VBlank via STAT (bit 4) : frappe à la ligne 144', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0001_0000); // seul bit 4 (mode 1)
+        machine.totalCycles = 114 * 145;
+        ppu.check();
+        expect(machine.IF & IF_STAT, 'l\'entrée en VBlank arme aussi STAT').toBe(IF_STAT);
+      });
+
+      it('OAM via STAT (bit 5) : frappe sur les lignes visibles', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0010_0000); // seul bit 5 (mode 2)
+        machine.totalCycles = 114 * 10;
+        ppu.check();
+        expect(machine.IF & IF_STAT, 'chaque ligne visible arme le mode OAM').toBe(IF_STAT);
+      });
+
+      it('HBlank via STAT (bit 3) : frappe sur les lignes visibles', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0000_1000); // seul bit 3 (mode 0)
+        machine.totalCycles = 114 * 10;
+        ppu.check();
+        expect(machine.IF & IF_STAT, 'chaque ligne visible arme le mode HBlank').toBe(IF_STAT);
+      });
+
+      it('STAT (bit 1) est distinct du VBlank (bit 0) : la ligne 144 lève les DEUX', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0001_0000); // VBlank-via-STAT armé
+        machine.totalCycles = 114 * 145;
+        ppu.check();
+        expect(machine.IF & 0b1, 'le VBlank classique, bit 0').toBe(0b1);
+        expect(machine.IF & 0b10, 'le STAT, bit 1, en plus').toBe(0b10);
+      });
+    });
+  });
+
   describe('intégration : le cœur de l\'écran réveille un jeu endormi', () => {
     it('HALT en attendant le VBlank : réveillé et servi au vecteur 0x40', () => {
       const serial = { read() {}, write() {}, echo() {} };
