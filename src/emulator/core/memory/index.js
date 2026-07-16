@@ -11,10 +11,9 @@ class Memory {
     _section(addr) {
         for (let tag in this._sections) {
             const section = this.getSectionByTag(tag);
-            if (section.stop < addr) continue;
             if (section.start <= addr && section.stop >= addr) return section.instance;
-            return null;
         }
+        return null;
     }
 
     getSectionByTag(tag) {
