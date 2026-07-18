@@ -113,6 +113,38 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       expect(timer.read(TIMA), 'désarmé = figé sur sa base').toBe(0x10);
     });
 
+    // UPDATE — le gel d'un timer QUI TOURNE. Le test ci-dessus n'allume jamais
+    // TAC : TIMA n'a jamais compté, sa base est déjà la bonne valeur. Ici les
+    // crans écoulés doivent être soldés dans la base AVANT que TAC ne s'éteigne.
+    it('TAC éteint en marche : TIMA se fige sur sa valeur courante, pas sur son ancienne base', () => {
+      const { machine, timer } = makeArmed();
+      timer.write(TAC, 0b101); // armé, période 4
+      timer.write(TIMA, 0x10); // base = 0x10, ancre = maintenant
+      machine.totalCycles += 12; // 3 crans
+      expect(timer.read(TIMA), 'avant extinction').toBe(0x13);
+
+      timer.write(TAC, 0b001); // bit 2 tombe
+      expect(timer.read(TIMA), 'le gel solde les crans écoulés').toBe(0x13);
+      machine.totalCycles += 10000;
+      expect(timer.read(TIMA), 'et plus rien ne bouge ensuite').toBe(0x13);
+    });
+
+    // UPDATE — même exigence, cas plus discret : le timer reste allumé, seule la
+    // cadence change. Les crans déjà acquis à l'ancienne période doivent survivre
+    // au rebranchement, sinon TIMA RECULE.
+    it('changer de fréquence solde les crans à l\'ancienne cadence avant de rebrancher', () => {
+      const { machine, timer } = makeArmed();
+      timer.write(TAC, 0b101); // armé, période 4
+      timer.write(TIMA, 0x10);
+      machine.totalCycles += 12; // 3 crans à période 4
+      expect(timer.read(TIMA), 'avant le changement').toBe(0x13);
+
+      timer.write(TAC, 0b111); // toujours armé, période 64
+      expect(timer.read(TIMA), 'les 3 crans sont acquis : TIMA ne recule pas').toBe(0x13);
+      machine.totalCycles += 64;
+      expect(timer.read(TIMA), 'et il repart à la nouvelle cadence').toBe(0x14);
+    });
+
     it.each([
       { tac: 0b100, periode: 256 },
       { tac: 0b101, periode: 4 },
@@ -192,6 +224,112 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       machine.totalCycles += 10_000_000;
       timer.check();
       expect(knocks, 'aucun rendez-vous n\'existe sans TAC').toEqual([]);
+    });
+  });
+
+  // Le détecteur de front. Le timer ne surveille pas le temps mais UN SIGNAL :
+  // le bit du compteur sélectionné par TAC, ET le bit 2 de TAC. TIMA s'incrémente
+  // à chaque fois que ce signal tombe de 1 à 0 — y compris quand c'est une ÉCRITURE
+  // qui le fait tomber, sans que le compteur ait avancé d'un seul cycle.
+  //
+  // Repère d'unités : les tests poussent des cycles machine, le timer compte en
+  // T-cycles (×4). Avec TAC=0b101 la prise est le bit 3, donc à 2 cycles machine
+  // le compteur vaut 8 (0b1000) et le bit surveillé vaut 1.
+  describe('détecteur de front : une écriture peut incrémenter TIMA', () => {
+    const makeArmed = () => {
+      const knocks = [];
+      const machine = {
+        totalCycles: 0,
+        _if: 0,
+        get IF() { return this._if; },
+        set IF(v) { knocks.push(v); this._if = v; },
+      };
+      const Timer = buildTimer(machine);
+      return { machine, knocks, timer: new Timer() };
+    };
+
+    // Poste le timer là où le bit 3 vaut 1, TIMA à 0x10.
+    const surUnBitHaut = () => {
+      const ctx = makeArmed();
+      ctx.timer.write(TAC, 0b101);
+      ctx.timer.write(TIMA, 0x10);
+      ctx.machine.totalCycles += 2; // compteur = 8 T = 0b1000, bit 3 levé
+      expect(ctx.timer.read(TIMA), 'aucun cran écoulé avant le front').toBe(0x10);
+      return ctx;
+    };
+
+    it('éteindre le timer fait tomber le ET : TIMA gagne son dernier cran', () => {
+      const { timer } = surUnBitHaut();
+      timer.write(TAC, 0b001); // bit 2 tombe, le bit du compteur n'a pas bougé
+      expect(timer.read(TIMA), 'le ET est passé de 1 à 0 : +1').toBe(0x11);
+    });
+
+    it('éteindre le timer sur un bit BAS ne produit aucun front', () => {
+      const { timer } = makeArmed();
+      timer.write(TAC, 0b101);
+      timer.write(TIMA, 0x10); // compteur = 0, bit 3 à 0 : le ET vaut déjà 0
+      timer.write(TAC, 0b001);
+      expect(timer.read(TIMA), '0 vers 0 n\'est pas une chute').toBe(0x10);
+    });
+
+    it('changer de fréquence déplace la prise : ancien bit à 1, nouveau à 0 = +1', () => {
+      const { timer } = surUnBitHaut();
+      timer.write(TAC, 0b111); // bit 3 (levé) vers bit 7 (baissé), timer TOUJOURS allumé
+      expect(timer.read(TIMA), 'la prise a bougé sous le signal : +1').toBe(0x11);
+    });
+
+    it('remettre DIV à zéro écrase le bit surveillé : +1', () => {
+      const { timer } = surUnBitHaut();
+      timer.write(DIV, 0x42); // valeur ignorée, le compteur repart de 0
+      expect(timer.read(TIMA), 'le bit 3 est passé de 1 à 0 : +1').toBe(0x11);
+    });
+
+    // Remettre DIV à zéro déplace la grille, donc le rendez-vous — qu'il y ait eu un
+    // front ou non. Ici le bit surveillé vaut déjà 0 : aucun front, mais l'alarme doit
+    // quand même repartir du compteur remis à zéro.
+    it('remettre DIV à zéro sans front recale quand même le rendez-vous', () => {
+      const { machine, knocks, timer } = makeArmed();
+      timer.write(TMA, 0x00);
+      timer.write(TAC, 0b101); // période 4 cycles machine
+      timer.write(TIMA, 0xfd); // 3 crans avant le gouffre
+      machine.totalCycles += 5; // compteur = 20 T = 0b10100 : bit 3 BAS, 1 cran écoulé
+      expect(timer.read(TIMA), 'un cran passé, pas de front en vue').toBe(0xfe);
+
+      timer.write(DIV, 0x00); // le compteur repart de 0, il reste 2 crans
+      machine.totalCycles += 8; // exactement 2 crans depuis le reset
+      timer.check();
+      expect(knocks.length, 'le rendez-vous doit suivre le compteur, pas rester derrière').toBe(1);
+    });
+
+    // Le cran gagné par une écriture rapproche le débordement d'une période. Si l'alarme
+    // a été posée AVANT l'incrément, elle vise encore l'ancien rendez-vous.
+    it('le cran gagné par une écriture avance le rendez-vous d\'autant', () => {
+      const { machine, knocks, timer } = makeArmed();
+      timer.write(TMA, 0x00);
+      timer.write(TAC, 0b101);
+      timer.write(TIMA, 0xfe); // 2 crans avant le gouffre
+      machine.totalCycles += 2; // bit 3 levé
+
+      timer.write(DIV, 0x00); // front : TIMA passe à 0xFF, donc 1 SEUL cran restant
+      expect(timer.read(TIMA), 'le front a bien poussé TIMA').toBe(0xff);
+
+      machine.totalCycles += 4; // un cran plein après le reset du compteur
+      timer.check();
+      expect(knocks.length, 'il ne restait qu\'un cran, le rendez-vous doit tomber ici').toBe(1);
+    });
+
+    it('le front provoqué par une écriture peut déborder : frappe et recharge TMA', () => {
+      const { machine, knocks, timer } = makeArmed();
+      timer.write(TMA, 0xf0);
+      timer.write(TAC, 0b101);
+      timer.write(TIMA, 0xff); // au bord du gouffre
+      machine.totalCycles += 2; // bit 3 levé, aucun cran écoulé
+      expect(timer.read(TIMA), 'toujours au bord').toBe(0xff);
+
+      timer.write(TAC, 0b001); // le front de l'extinction pousse TIMA par-dessus
+      expect(knocks.length, 'le débordement frappe, même sans temps écoulé').toBe(1);
+      expect(machine.IF & 0b100, 'bit 2 de IF').toBe(0b100);
+      expect(timer.read(TIMA), 'rechargé avec TMA, pas laissé à 0x100').toBe(0xf0);
     });
   });
 });
