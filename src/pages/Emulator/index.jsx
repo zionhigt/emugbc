@@ -5,6 +5,8 @@ import Console from '../../components/Console';
 import Canvas from '../../components/Canvas';
 import buildCartridge from '../../emulator/core/cartridge/Cartridge';
 import { cartridgeLoaded } from '../../store/slices/emulatorSlice';
+import { shellChanged } from '../../store/slices/settingsSlice';
+import { SHELLS, SHELL_KEYS } from '../../theme/shells';
 
 import { MachineBuilder } from '../../emulator/core/index.js';
 
@@ -36,9 +38,11 @@ const readBytes = (file) =>
 class Emulator extends React.Component {
   // `screen` : le tampon de teintes que le Canvas peint. Le rendu se
   // rafraîchit à chaque changement d'identité de cet état.
-  // `dockOpen` : le volet cartouche (mobile) — replié au-dessus de l'écran,
+  // `dockOpen` : le volet console (mobile) — replié au-dessus de l'écran,
   // il descend par le haut, comme la fente de la vraie console.
-  state = { screen: null, dockOpen: false };
+  // `tab` : l'onglet visible dans le volet. « cartouche » par défaut, c'est le
+  // geste qu'on vient faire ici neuf fois sur dix.
+  state = { screen: null, dockOpen: false, tab: 'cartouche' };
 
   componentDidMount() {
     // l'immersion : tant que la console est à l'écran, le Layout s'efface
@@ -83,6 +87,103 @@ class Emulator extends React.Component {
     this.setState((s) => ({ dockOpen: !s.dockOpen }));
   };
 
+  selectTab = (tab) => () => this.setState({ tab });
+
+  // ── les onglets du volet ──
+
+  renderTabs() {
+    const onglets = [
+      ['cartouche', 'Cartouche'],
+      ['options', 'Options'],
+    ];
+    return (
+      <div className="emu-tabs" role="tablist" aria-label="volet console">
+        {onglets.map(([cle, libelle]) => (
+          <button
+            key={cle}
+            type="button"
+            role="tab"
+            id={`emu-tab-${cle}`}
+            aria-selected={this.state.tab === cle}
+            aria-controls={`emu-panel-${cle}`}
+            className={`emu-tabs__tab${this.state.tab === cle ? ' emu-tabs__tab--active' : ''}`}
+            onClick={this.selectTab(cle)}
+          >
+            {libelle}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  renderCartouche() {
+    const { cartridge } = this.props;
+    return (
+      <div
+        className="emu-panel"
+        role="tabpanel"
+        id="emu-panel-cartouche"
+        aria-labelledby="emu-tab-cartouche"
+      >
+        <label className="emu-cart">
+          <span className="emu-cart__ridges" aria-hidden="true"></span>
+          <span className="emu-cart__label">
+            <span className="emu-cart__title">Cartouche (.gb)</span>
+            <span className="emu-cart__game">
+              {/* l'extension est retirée : le nom complet vit dans le statut */}
+              {cartridge ? cartridge.fileName.replace(/\.gb$/i, '') : 'INSÉRER'}
+            </span>
+          </span>
+          <input
+            className="emu-cart__input"
+            type="file"
+            accept=".gb"
+            onChange={this.handleFileChange}
+          />
+        </label>
+
+        {cartridge ? (
+          <p className="emu-page__status">
+            Cartouche chargée : {cartridge.fileName} ({cartridge.size} octets)
+          </p>
+        ) : (
+          <p className="emu-page__hint">PRESS START</p>
+        )}
+      </div>
+    );
+  }
+
+  renderOptions() {
+    const { shell, shellChanged } = this.props;
+    return (
+      <div
+        className="emu-panel"
+        role="tabpanel"
+        id="emu-panel-options"
+        aria-labelledby="emu-tab-options"
+      >
+        <fieldset className="emu-options__group">
+          <legend className="emu-options__legend">Couleur de coque</legend>
+          <div className="emu-shells">
+            {SHELL_KEYS.map((cle) => (
+              <button
+                key={cle}
+                type="button"
+                aria-pressed={shell === cle}
+                aria-label={SHELLS[cle].nom}
+                title={SHELLS[cle].nom}
+                className={`emu-shells__swatch${shell === cle ? ' emu-shells__swatch--active' : ''}`}
+                style={{ '--swatch': SHELLS[cle].shell }}
+                onClick={() => shellChanged(cle)}
+              />
+            ))}
+          </div>
+          <p className="emu-options__current">{SHELLS[shell].nom}</p>
+        </fieldset>
+      </div>
+    );
+  }
+
   // l'enseigne EMUGBC — six lettres, six couleurs (via CSS nth-child)
   renderLogo() {
     return 'EMUGBC'.split('').map((lettre, i) => <span key={i}>{lettre}</span>);
@@ -109,7 +210,6 @@ class Emulator extends React.Component {
   };
 
   render() {
-    const { cartridge } = this.props;
     return (
       <div className="emu-page">
         <header className="emu-page__header">
@@ -133,36 +233,15 @@ class Emulator extends React.Component {
               onClick={this.toggleDock}
               aria-expanded={this.state.dockOpen}
             >
-              CARTOUCHE {this.state.dockOpen ? '▲' : '▼'}
+              CONSOLE {this.state.dockOpen ? '▲' : '▼'}
             </button>
 
             <div className="emu-page__title emu-page__dock-logo" aria-hidden="true">
               {this.renderLogo()}
             </div>
-            <label className="emu-cart">
-              <span className="emu-cart__ridges" aria-hidden="true"></span>
-              <span className="emu-cart__label">
-                <span className="emu-cart__title">Cartouche (.gb)</span>
-                <span className="emu-cart__game">
-                  {/* l'extension est retirée : le nom complet vit dans le statut */}
-                  {cartridge ? cartridge.fileName.replace(/\.gb$/i, '') : 'INSÉRER'}
-                </span>
-              </span>
-              <input
-                className="emu-cart__input"
-                type="file"
-                accept=".gb"
-                onChange={this.handleFileChange}
-              />
-            </label>
 
-            {cartridge ? (
-              <p className="emu-page__status">
-                Cartouche chargée : {cartridge.fileName} ({cartridge.size} octets)
-              </p>
-            ) : (
-              <p className="emu-page__hint">PRESS START</p>
-            )}
+            {this.renderTabs()}
+            {this.state.tab === 'cartouche' ? this.renderCartouche() : this.renderOptions()}
           </aside>
         </main>
       </div>
@@ -172,10 +251,12 @@ class Emulator extends React.Component {
 
 const mapStateToProps = (state) => ({
   cartridge: state.emulator.cartridge,
+  shell: state.settings.shell,
 });
 
 const mapDispatchToProps = {
   cartridgeLoaded,
+  shellChanged,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(Emulator);

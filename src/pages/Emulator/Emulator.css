@@ -12,7 +12,7 @@
   color: #e8edf2;
   font-family: 'Courier New', ui-monospace, 'Cascadia Mono', monospace;
   background:
-    radial-gradient(1100px 560px at 50% -5%, rgba(37, 131, 175, 0.28), transparent 65%),
+    radial-gradient(1100px 560px at 50% -5%, var(--theme-glow-wide, rgba(37, 131, 175, 0.28)), transparent 65%),
     linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     #141821;
@@ -71,6 +71,124 @@
   align-items: center;
   gap: 24px;
   padding-top: 48px;
+}
+
+/* ── les onglets du volet ──────────────────────────────────────────────
+   Deux onglets, soulignés par la couleur de coque : le liseré actif est le
+   repère visuel le plus direct du thème choisi. */
+
+.emu-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.emu-tabs__tab {
+  padding: 8px 20px 9px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #7f8ea0;
+  font: 700 11px/1 'Courier New', ui-monospace, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.emu-tabs__tab:hover {
+  color: #c3d0de;
+}
+
+.emu-tabs__tab--active {
+  color: #e8edf2;
+  background: var(--theme-accent-soft, rgba(53, 170, 220, 0.35));
+  box-shadow: inset 0 -2px 0 var(--theme-accent, #35aadc);
+}
+
+.emu-tabs__tab:focus-visible {
+  outline: 2px solid var(--theme-accent, #35aadc);
+  outline-offset: 2px;
+}
+
+/* le panneau : même colonne centrée que le volet, quel que soit l'onglet */
+.emu-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* ── l'onglet Options ── */
+
+.emu-options__group {
+  margin: 0;
+  padding: 18px 22px 20px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.emu-options__legend {
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #7f8ea0;
+}
+
+.emu-shells {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* une pastille par coque — la couleur EST l'étiquette, le nom vit dans le
+   title/aria-label et sous la rangée */
+.emu-shells__swatch {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 2px solid rgba(0, 0, 0, 0.55);
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+
+.emu-shells__swatch:hover {
+  transform: translateY(-2px) scale(1.06);
+}
+
+.emu-shells__swatch--active {
+  /* le halo blanc marque la sélection sans dépendre de la teinte : lisible
+     aussi bien sur le jaune Dandelion que sur le violet Grape */
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.35),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.35),
+    0 0 0 3px #141821,
+    0 0 0 5px #e8edf2;
+}
+
+.emu-shells__swatch:focus-visible {
+  outline: 2px solid #e8edf2;
+  outline-offset: 4px;
+}
+
+.emu-options__current {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--theme-accent, #35aadc);
 }
 
 /* ── la cartouche-bouton ── */
@@ -228,12 +346,12 @@
     padding: 24px 16px 28px;
     align-items: center;
     background:
-      radial-gradient(500px 260px at 50% -20%, rgba(37, 131, 175, 0.30), transparent 70%),
+      radial-gradient(500px 260px at 50% -20%, var(--theme-glow-strong, rgba(37, 131, 175, 0.30)), transparent 70%),
       linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
       linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
       #141821;
     background-size: auto, 26px 26px, 26px 26px, auto;
-    border-bottom: 2px solid rgba(53, 170, 220, 0.35);
+    border-bottom: 2px solid var(--theme-accent-soft, rgba(53, 170, 220, 0.35));
     box-shadow: 0 18px 30px rgba(0, 0, 0, 0.55);
     transform: translateY(-100%);
     transition: transform 220ms ease;
@@ -268,7 +386,7 @@
     left: 50%;
     transform: translateX(-50%);
     padding: 7px 18px 9px;
-    border: 2px solid rgba(53, 170, 220, 0.35);
+    border: 2px solid var(--theme-accent-soft, rgba(53, 170, 220, 0.35));
     border-top: none;
     border-radius: 0 0 10px 10px;
     background: #1b2230;
