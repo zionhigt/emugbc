@@ -1,22 +1,82 @@
+import byte from "../../lib/byte";
 import { Register } from "../../lib/register";
 
-class DIVregister extends Register(8) {
-    
-    constructor(parent) {
-        super();
-        this.parent = parent;
+// Le détecteur de front, mutualisé entre DIV et TAC — les deux seuls registres dont
+// l'écriture peut faire tomber le signal (bit surveillé du compteur ET bit 2 de TAC).
+// Les sous-classes implémentent `_setValue` ; le wrapper photographie le signal avant
+// et après, et pousse TIMA si la valeur est passée de 1 à 0.
+//
+// Les fronts dus au TEMPS ne passent pas par ici : `TIMAregister.getValue` les compte
+// par soustraction sur la grille, sans avoir à les visiter un par un.
+function Collapse(size) {
+    class CollapseWatcher extends Register(size || 8) {
+        constructor(parent) {
+            super();
+            this.parent = parent;
+        }
+
+        hookBeforeSetValue(value) {
+            console.warn("Not implemented")
+        }
+
+        hookAfterSetValue(value) {
+            console.warn("Not implemented")
+        }
+
+        hookAfterIncrement(value) {
+            console.warn("Not implemented")
+        }
+        
+        setValue(value) {
+            const oldSignal = this.parent.isSignal;
+            this.hookBeforeSetValue(value);
+            super.setValue(value);
+            this.hookAfterSetValue(value);
+            if (oldSignal && !this.parent.isSignal) {
+                this.parent._incrementTIMA();
+                this.hookAfterIncrement(value);
+            }
+        }
+        _setValue(value) {
+            super.setValue(value);
+        }
     }
+
+    return CollapseWatcher;
+} 
+
+class DIVregister extends Collapse(8) {
 
     getValue() {
         const cycles = this.parent.innerCycles;
-        const value = Math.floor(cycles / 64);
+        const value = Math.floor(cycles / 256);
         return value & 0xFF;
     }
 
-    setValue(value) {
-        this.parent._innerCycles = this.parent.totalMachineCycles;
-        return super.setValue(0);
+    // Le front descendant provoqué par le reset est géré par `Collapse` — la valeur
+    // écrite est ignorée, seul compte le retour à zéro du compteur.
+    //
+    // Le réarmement est inconditionnel côté écriture (`hookAfterSetValue`) : remettre le
+    // compteur à zéro déplace la grille, donc le rendez-vous, qu'il y ait eu un front ou
+    // non. Le garde `isTAC` évite seulement de ressusciter une alarme que `check()` a
+    // mise à l'infini.
+    setValue(val) {
+        return super.setValue(0);        
     }
+
+    hookBeforeSetValue(value) {
+        this.parent._capture();
+        this.parent._innerCycles = this.parent.totalMachineCycles;
+        this.parent.cranBase = 0;
+    }
+
+    hookAfterSetValue(value) {
+        if (this.parent.isTAC) this.parent._armer();
+    }
+    
+    // hookAfterIncrement(value) {
+    //     console.warn("Not implemented");
+    // }
 }
 
 class TIMAregister extends Register(8) {
@@ -25,30 +85,44 @@ class TIMAregister extends Register(8) {
         this.parent = parent;
     }
 
+    // DIVERGE — doc §TIMA Overflow Behavior
+    // Après un débordement, TIMA doit lire 0x00 pendant 4 T-cycles avant la recharge.
+    // Ici la valeur saute directement de 0xFF à TMA : la fenêtre n'existe pas.
     getValue() {
         if (!this.parent.isTAC) return this.parent.base;
-        const crans = Math.floor((this.parent.totalMachineCycles - this.parent.anchor) / this.parent.periode);
-        return (this.parent.base + crans) & 0xFF;
+        const crans = Math.floor(this.parent.innerCycles / this.parent.periode);
+        return (this.parent.base + (crans - this.parent.cranBase)) & 0xFF;
     }
 
+    // DIVERGE — doc §TIMA Overflow Behavior
+    // 1) Écrire pendant les 4 T-cycles du débordement doit annuler la recharge TMA
+    //    *et* l'interruption, et TIMA garde la valeur écrite. Non implémenté.
+    // 2) Écrire pile sur le T-cycle de la recharge doit être ignoré (TMA gagne).
     setValue(value) {
         this.parent.base = value;
         super.setValue(value);
         this.parent._armer();
     }
 }
-class TACregister extends Register(8) {
-    constructor(parent) {
-        super();
-        this.parent = parent;
+class TACregister extends Collapse(8) {
+    // Deux fronts possibles ici, tous deux pris en charge par `Collapse` : éteindre le
+    // timer force le ET à 0 « despite the fact that the selected bit of the counter
+    // didn't change » (doc §An Edge Case), et changer les bits 1-0 déplace la prise sur
+    // un bit qui peut valoir 0 alors que l'ancien valait 1.
+    //
+    // L'ordre compte : `_capture()` lit la valeur à travers l'ANCIEN TAC, `_armer()`
+    // réancre avec le NOUVEAU. Les deux ne peuvent pas tenir du même côté de l'écriture.
+    hookBeforeSetValue(value) {
+        this.parent._capture();
     }
 
-    setValue(value) {
-        super.setValue(value);
-        if (value & 0x4) {
-            this.parent._armer();
-        }
+    hookAfterSetValue(value) {
+        if (value & 0x4) this.parent._armer();
     }
+    
+    // hookAfterIncrement(value) {
+    //     console.warn("Not implemented");
+    // }
 }
 
 export default function(machine) {
@@ -62,12 +136,12 @@ export default function(machine) {
             this.TMA = new (Register(8));
 
             this.base = 0;
-            this.anchor = this.totalMachineCycles;
             this.dateAlarme = Infinity;
+            this.cranBase = 0;
         }
 
         get innerCycles() {
-            return this.totalMachineCycles - this._innerCycles;
+            return 4 * (this.totalMachineCycles - this._innerCycles);
         }
         
         get totalMachineCycles() {
@@ -83,35 +157,111 @@ export default function(machine) {
             }
         }
 
-        get periode() {
-            const mapping = {
-                0b00: 256,
-                0b01: 4,
-                0b10: 16,
-                0b11: 64,
+        get periodMapping() {
+            return {
+                0b00: 9,
+                0b01: 3,
+                0b10: 5,
+                0b11: 7,
             }
-            return mapping[this.TAC.getValue() & 0b11];
+        }
+
+        // `periodMapping` donne le numéro de bit du compteur surveillé (doc §Timer
+        // Operation). La période s'en déduit : un bit fait son cycle complet en
+        // 2^(bit+1) T-cycles, donc un seul front descendant par 2^(bit+1).
+        // Tout ce fichier compte en T-CYCLES — d'où le ×4 dans `innerCycles`, qui
+        // reçoit des cycles machine. Changer d'unité décale les 4 indices de 2.
+        get periode() {
+            const value = 2 ** (this.periodMapping[this.TAC.getValue() & 0b11] + 1)
+            return value;
         }
 
         get isTAC() {
-            return (this.TAC.getValue() & 0x4) > 0;
+            return  (this.TAC.getValue() & 0x4) > 0
         }
 
+        get isSignal() {
+            const mask = 1 << this.periodMapping[this.TAC.getValue() & 0b11];
+            const isBitCounter = (this.innerCycles & mask) > 0;
+            return this.isTAC && isBitCounter;
+        }
+
+        _resetCrans() {
+            this.cranBase = Math.floor(this.innerCycles / this.periode);
+
+        }
+
+        // Le matériel ne planifie aucune date, il compare le résultat du ET à celui du
+        // cycle précédent. L'alarme est une optimisation équivalente TANT QU'ELLE DÉRIVE
+        // DU COMPTEUR : `cranBase` est une position sur la grille des fronts, pas un
+        // instant d'écriture, donc le rendez-vous tombe toujours SUR une barre.
+        //
+        // Elle couvre les fronts dus au TEMPS. Ceux dus aux écritures passent par
+        // `Collapse`. Les deux ne se rejoindront qu'une fois la machine capable
+        // d'avancer cycle par cycle — alors l'alarme deviendra inutile.
         _armer() {
-            this.anchor = this.totalMachineCycles;
-            this.dateAlarme = this.anchor + (0x100 - this.base) * this.periode;
+            this._resetCrans();
+            this.dateAlarme = (this.cranBase + (0x100 - this.base)) * this.periode;
+        }
+        /**
+         * Matérialise la valeur courante de TIMA dans `base`. À appeler AVANT tout
+         * changement de référentiel (écriture de TAC ou de DIV) : une fois le référentiel
+         * changé, `getValue()` ne sait plus recalculer la valeur d'avant.
+         * Inoffensif si le timer est éteint — `getValue()` rend alors `base`, qu'on
+         * réécrit à l'identique. Donc appelable inconditionnellement.
+         */
+        _capture() {
+            this.base = this.TIMA.getValue();
+            this._resetCrans();
         }
 
+        _incrementTIMA() {
+            this.base ++;
+            if (this.base > 0xFF) {
+                this._reset(this.innerCycles);
+            }
+            this._armer();
+        }
+
+        // `origin` = la position du compteur où le débordement a EU LIEU, pas l'heure
+        // courante. Les deux appelants ne donnent pas la même chose : `check()` passe
+        // `dateAlarme` (le rendez-vous qui vient de tomber, parfois loin derrière si
+        // plusieurs ont été enjambés), `_incrementTIMA()` passe `innerCycles` (le
+        // débordement vient d'une écriture, il a donc lieu maintenant). Se tromper de
+        // référence décale `cranBase`, et TIMA repart avec un écart constant.
+        _reset(origin) {
+            this._getupIF();
+            this.base = this.TMA.getValue();
+            this.cranBase = Math.floor(origin / this.periode);
+        }
+
+        _getupIF() {
+            this.machine.IF |= 0b00100;
+        }
+
+        // DIVERGE — doc §TIMA Overflow Behavior
+        // « These actions don't occur instantaneously » : ici tout est atomique. La doc
+        // impose 4 T-cycles entre le débordement et ses effets, pendant lesquels TIMA lit
+        // 0x00, IF n'est pas levé et TMA n'est pas encore lu — fenêtre annulable par une
+        // écriture dans TIMA, et pendant laquelle une écriture dans TMA change la valeur
+        // rechargée. Trois comportements observables qui n'ont ici nulle part où exister.
+        //
+        // Ce n'est PAS réparable dans ce fichier. `machine/index.js` fait `totalCycles +=
+        // cost` par instruction entière et n'appelle `check()` qu'entre deux instructions :
+        // la machine ne sait pas à quel T-cycle, dans l'instruction, une écriture est
+        // tombée. Aucune refonte du timer ne peut inventer cette information.
+        //
+        // La boucle, elle, est juste : chaque tour se recale sur `dateAlarme` — le
+        // rendez-vous manqué — et jamais sur l'heure courante. C'est ce qui rend le
+        // rattrapage exact quand plusieurs débordements ont été enjambés d'un coup.
         check() {
             if (!this.isTAC) {
                 this.dateAlarme = Infinity;
                 return;
             }
-            while (this.totalMachineCycles >= this.dateAlarme) {
-                this.machine.IF = this.machine.IF | 0b00100;
-                this.base = this.TMA.getValue();
-                this.anchor = this.dateAlarme;
-                this.dateAlarme = this.anchor + (0x100 - this.base) * this.periode;
+            while (this.innerCycles >= this.dateAlarme) {
+                this._reset(this.dateAlarme);
+                this.dateAlarme += (0x100 - this.base) * this.periode;
             }
         }
 
