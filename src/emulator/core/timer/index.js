@@ -1,6 +1,8 @@
 import byte from "../../lib/byte";
 import { Register } from "../../lib/register";
 
+// La fenêtre du §TIMA Overflow, en T-CYCLES — l'unité de tout ce fichier.
+// Vue de `machine.totalCycles`, qui compte en cycles machine, elle en vaut 1.
 const WINDOW = 4;
 
 // Le détecteur de front, mutualisé entre DIV et TAC — les deux seuls registres dont
@@ -100,9 +102,11 @@ class TIMAregister extends Register(8) {
     // `_armer()` recalcule `dateAlarme` depuis l'instant présent, donc le rendez-vous
     // part au loin et `check()` ne le voit plus. Là aussi, gratuit.
     //
-    // DIVERGE — reste un cas non traité : écrire PILE sur le T-cycle de la recharge doit
-    // être ignoré (TMA gagne). Ici l'écriture arrive avant le `check()` du même cycle et
-    // repousse l'alarme, donc c'est l'écriture qui gagne. Non testé.
+    // Écrire PILE sur le cycle de la recharge, en revanche, est IGNORÉ : TMA gagne.
+    // C'est la garde ci-dessous. Sans elle, l'écriture s'exécute juste après le `check()`
+    // du même M-cycle — qui vient de recharger — et l'écraserait.
+    // Vérifié par mooneye acceptance/timer/tima_write_reloading, dont les quatre sondes
+    // séparées d'un M-cycle donnent $80 (avant), $7F (fenêtre), $FE (ICI), $7F (après).
     setValue(value) {
         if (this.parent.innerCycles === this.parent.lastReload) return;
         this.parent.base = value;
@@ -263,7 +267,7 @@ export default function(machine) {
         // l'heure courante. C'est ce qui rend le rattrapage exact quand plusieurs
         // débordements ont été enjambés d'un coup.
         //
-        // Le `+ FENETRE_RECHARGE` est le §TIMA Overflow : entre le débordement et ses
+        // Le `+ WINDOW` est le §TIMA Overflow : entre le débordement et ses
         // effets, le matériel laisse passer 4 T-cycles. Pendant cette fenêtre TIMA lit
         // déjà 0x00 (voir `TIMAregister.getValue`), mais TMA n'est pas encore lu et IF
         // pas encore levé — c'est ce délai qui rend observables les écritures faites

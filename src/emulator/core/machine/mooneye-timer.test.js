@@ -13,8 +13,9 @@ import buildCartridge from '../cartridge/Cartridge';
  * MOONEYE — acceptance/timer.
  *
  * La suite de gekkio, écrite pour épingler le comportement du timer au T-cycle près.
- * C'est l'oracle matériel du chapitre qu'on vient de terminer, et le seul capable de
- * trancher le `DIVERGE` restant (écriture dans TIMA pile sur le cycle de recharge).
+ * C'est l'oracle matériel du chapitre timer, et c'est lui qui a tranché le dernier écart
+ * que la documentation ne permettait pas de résoudre : l'écriture tombant pile sur le
+ * cycle de recharge — ignorée pour TIMA, encore prise en compte pour TMA. Les 13 passent.
  *
  * PROTOCOLE (README amont) : le test écrit son verdict sur le port série.
  *   - réussite : les nombres de Fibonacci 3, 5, 8, 13, 21, 34
