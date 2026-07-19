@@ -1,6 +1,25 @@
 import byte from "../../lib/byte.js";
 import { Register, FlagRegister, Extendedregister } from "../../lib/register.js";
 
+class MemoryWrapper {
+    constructor(cpu, memory) {
+        this._memory = memory;
+        this.cpu = cpu;
+    }
+
+    write(address, value) {
+        return this._memory.write(address, value);
+    }
+
+    read(address) {
+        return this._memory.read(address);
+    }
+
+    pay(c) {
+        this.cpu.cycles += n;
+    }
+}
+
 class CPUFlagRegister extends FlagRegister(8) {
     constructor() {
         super({
@@ -97,7 +116,7 @@ export default class CPU {
     }
 
     initMemory(memory) {
-        this.memory = memory;
+        this.memory = new MemoryWrapper(this, memory);
         this.stack = new Stack(this.memory, this.registers.SP);
     }
 

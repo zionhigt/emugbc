@@ -12,6 +12,7 @@ export default function(cpu, decoder, clock, serial) {
         constructor() {
             // Assume that, decoder.cpu == cpu
             this.cpu = cpu;
+            this._memory = cpu.memory;
             this.decoder = decoder;
             this.clock = clock;
             this.interruptsAcc = 1;
@@ -38,6 +39,10 @@ export default function(cpu, decoder, clock, serial) {
         }
         set IF(value) {
             return this.cpu.memory.write(0xFF0F, value);
+        }
+
+        get memory() {
+            return this._memory;
         }
 
         start() {
@@ -141,6 +146,7 @@ export default function(cpu, decoder, clock, serial) {
                 this.ppu,
                 this.joypad
             );
+            this._memory = newMemory;
             this.cpu.initMemory(newMemory);
             cpu.postBoot();
         }
