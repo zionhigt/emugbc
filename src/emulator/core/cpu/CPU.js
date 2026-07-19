@@ -95,6 +95,8 @@ export default class CPU {
         this._halt = false;
         this._stopped = false;
         this.cycles = 0;
+
+        this._cyclesUpdateObservers = [];
     }
 
     get ime() {
@@ -126,6 +128,7 @@ export default class CPU {
 
     resetCycles() {
         this.cycles = 0;
+        this._emitCyclesUpdate({type: "set", value: 0});
     }
 
     di() {
@@ -194,5 +197,18 @@ export default class CPU {
 
     pay(n) {
         this.cycles += n;
+        this._emitCyclesUpdate({type: "add", value: n});
+    }
+
+    _emitCyclesUpdate(n) {
+        for (let ob of this._cyclesUpdateObservers) {
+            ob.call(null, this, n);
+        }
+    }
+
+    onCyclesUpdate(cb) {
+        if (cb && typeof cb === "function") {
+            this._cyclesUpdateObservers.push(cb);
+        }
     }
 }

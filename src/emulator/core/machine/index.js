@@ -26,6 +26,12 @@ export default function(memory, cpu, decoder, clock, serial) {
             }.bind(this));
 
             this._tickObservers = [];
+
+            this.cpu.onCyclesUpdate(this.cyclesUpdate.bind(this));
+        }
+
+        cyclesUpdate(cpu, n) {
+            if (n.type === "add") this.totalCycles += n.value;
         }
 
         get IE() {
@@ -72,12 +78,12 @@ export default function(memory, cpu, decoder, clock, serial) {
                 const mask = 0xFF ^ source;
                 this.cpu.di();
                 this.IF = this.IF & mask;
+                this.cpu.pay(2);
                 this.cpu.stack.push(this.cpu.registers.PC.getValue());
+                this.cpu.pay(1);
                 const address = Math.log2(source) * 8 + 0x40;
                 this.cpu.registers.PC.setValue(address);
-                return 5;
             }
-            return 0;
         }
 
         subscribePostStep(cb) {
@@ -120,14 +126,16 @@ export default function(memory, cpu, decoder, clock, serial) {
                 if (this.cpu.halted && (this.IE & this.IF) !== 0) {
                     cpu.wake();
                 }
-                let cost = this.dispatch();
+                const deltaCycles = this.totalCycles;
+                this.dispatch();
+                let cost = this.totalCycles - deltaCycles;
                 if (this.cpu.halted) {
+                    cpu.pay(1);
                     cost += 1;
                 } else {
                     cost += this.decoder.step();
                 }
                 budget -= cost;
-                this.totalCycles += cost;
                 this.postStep();
             }
             this.emitTick();
