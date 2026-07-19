@@ -200,29 +200,39 @@ describe('Machine : le chef d\'orchestre', () => {
       return all;
     };
 
+    // dispatch() ne REND plus son coût, il le FACTURE. On mesure donc sur l'horloge du
+    // monde — jamais remise à zéro, contrairement à cpu.cycles que step() vide.
+    // Le repère est pris après armCpu, dont les écritures IE/IF passent par le port
+    // et se facturent elles aussi.
+    const coutDuDispatch = (machine) => {
+      const avant = machine.totalCycles;
+      machine.dispatch();
+      return machine.totalCycles - avant;
+    };
+
     it('personne ne sonne (IE=0, IF=0) : 0 cycle, rien ne bouge', () => {
       const { cpu, machine } = armCpu();
-      expect(machine.dispatch(), 'aucun coût').toBe(0);
+      expect(coutDuDispatch(machine), 'aucun coût').toBe(0);
       expect(hex(cpu.registers.PC.getValue()), 'PC intact').toBe(hex(0xc234));
       expect(cpu.ime, 'IME toujours allumé').toBe(true);
     });
 
     it('IME éteint : le disjoncteur coupe TOUT, même une frappe autorisée', () => {
       const { cpu, machine } = armCpu({ ie: 0b00100, iF: 0b00100, ime: false });
-      expect(machine.dispatch(), 'aucun service disjoncteur baissé').toBe(0);
+      expect(coutDuDispatch(machine), 'aucun service disjoncteur baissé').toBe(0);
       expect(hex(cpu.registers.PC.getValue()), 'PC intact').toBe(hex(0xc234));
       expect(cpu.memory.read(0xff0f), 'IF NON acquitté : la frappe attend').toBe(0b00100);
     });
 
     it("frappe sans autorisation (IF levé, IE muet) : on n'ouvre pas", () => {
       const { cpu, machine } = armCpu({ ie: 0b00000, iF: 0b00100 });
-      expect(machine.dispatch()).toBe(0);
+      expect(coutDuDispatch(machine)).toBe(0);
       expect(cpu.memory.read(0xff0f), 'la frappe reste en attente dans IF').toBe(0b00100);
     });
 
     it('service complet du Timer : 5 cycles, PC=0x50, IME coupé, IF acquitté, retour empilé', () => {
       const { cpu, machine } = armCpu({ ie: 0b00100, iF: 0b00100 });
-      expect(machine.dispatch(), 'le coût du saut').toBe(5);
+      expect(coutDuDispatch(machine), 'le coût du saut').toBe(5);
       expect(hex(cpu.registers.PC.getValue()), 'PC au vecteur Timer').toBe(hex(0x0050));
       expect(cpu.ime, 'IME coupé dans le même souffle').toBe(false);
       expect(cpu.memory.read(0xff0f), 'IF acquitté : le bit servi est éteint').toBe(0);
