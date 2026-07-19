@@ -319,12 +319,17 @@
   /* IMMERSION : la page s'efface, la console EST l'écran */
   .emu-page {
     padding: 0;
+    /* la marge négative de -8px (qui avale celle du body) déborderait de 16px
+       en largeur et rendrait la page défilable horizontalement */
+    margin: 0;
+    overflow-x: hidden;
     background: #141821; /* le décor complet part vivre dans le volet */
   }
 
-  /* la nav du Layout disparaît tant qu'on est dans la console */
-  body.emu-immersion nav {
-    display: none;
+  /* le body ne doit rien ajouter autour de la console en immersion */
+  body.emu-immersion {
+    margin: 0;
+    overflow-x: hidden;
   }
 
   .emu-page__header {

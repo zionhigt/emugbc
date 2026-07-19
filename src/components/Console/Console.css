@@ -330,16 +330,44 @@
 @media (max-width: 700px) {
   .gbc-console {
     --gbc-scale: 1.75;
-    width: 100vw;
-    min-height: 100vh;
-    min-height: 100dvh; /* la vraie hauteur visible, barres du navigateur déduites */
-    height: auto;
-    padding: 20px 12px 28px;
+    /* 100% et non 100vw : `vw` ignore la barre de défilement et provoque
+       justement le débordement horizontal qu'on veut interdire. */
+    width: 100%;
+    /* hauteur FIXE, pas un minimum : la coque ne peut plus pousser la page. */
+    height: 100vh;
+    height: 100dvh; /* la vraie hauteur visible, barres du navigateur déduites */
+    overflow: hidden; /* aucun défilement en mode console, dans aucun sens */
+    /* peu de marge en haut : c'est là qu'est le gras, et c'est là qu'on rogne */
+    padding: 8px 12px 28px;
     border: none;
     border-radius: 0;
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
+    /* ancré EN BAS : si ça déborde, c'est le haut de la coque qui sort du cadre,
+       jamais les commandes — elles doivent rester entières et sous le pouce. */
+    justify-content: flex-end;
+    gap: 16px;
+  }
+
+  /* La dalle NE BOUGE PAS : elle garde la taille que lui donne --gbc-scale.
+     Un écran qui se redimensionne tout seul n'est plus une Game Boy. */
+  .gbc-console__screen,
+  .gbc-console__screen--frame,
+  .gbc-console__buttons {
+    flex-shrink: 0;
+  }
+
+  /* CENTRÉ quand il y a de la place, ROGNÉ PAR LE HAUT quand il n'y en a pas.
+     Les deux marges automatiques se partagent l'espace libre à parts égales,
+     donc l'ensemble dalle + commandes est centré verticalement. Dès que le
+     contenu dépasse, elles tombent à zéro et c'est `justify-content: flex-end`
+     qui décide du sens du débordement : vers le haut. */
+  .gbc-console__screen {
+    margin-top: auto;
+  }
+
+  .gbc-console__buttons {
+    margin-bottom: auto;
   }
 
   .gbc-console__buttons {

@@ -1,17 +1,14 @@
 import React from 'react';
-import { Link, Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 
+// Coquille minimale : l'application n'a qu'une seule page, l'émulateur.
+// Pas de navigation — il n'y a nulle part où aller.
 class Layout extends React.Component {
   render() {
     return (
-      <div>
-        <nav>
-          <Link to="/">Home</Link> | <Link to="/emulator">Emulator</Link>
-        </nav>
-        <main>
-          <Outlet />
-        </main>
-      </div>
+      <main>
+        <Outlet />
+      </main>
     );
   }
 }
