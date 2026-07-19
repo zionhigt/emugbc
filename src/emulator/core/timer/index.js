@@ -85,19 +85,22 @@ class TIMAregister extends Register(8) {
         this.parent = parent;
     }
 
-    // DIVERGE — doc §TIMA Overflow Behavior
-    // Après un débordement, TIMA doit lire 0x00 pendant 4 T-cycles avant la recharge.
-    // Ici la valeur saute directement de 0xFF à TMA : la fenêtre n'existe pas.
+    // Le zéro de la fenêtre §TIMA Overflow sort d'ici GRATUITEMENT : tant que `_reset`
+    // n'a pas remplacé `base` par TMA, la somme vaut 0x100, donc 0x00 après le masque.
+    // Rien de spécial à coder pour lui — il suffit que la recharge n'arrive pas trop tôt.
     getValue() {
         if (!this.parent.isTAC) return this.parent.base;
         const crans = Math.floor(this.parent.innerCycles / this.parent.periode);
         return (this.parent.base + (crans - this.parent.cranBase)) & 0xFF;
     }
 
-    // DIVERGE — doc §TIMA Overflow Behavior
-    // 1) Écrire pendant les 4 T-cycles du débordement doit annuler la recharge TMA
-    //    *et* l'interruption, et TIMA garde la valeur écrite. Non implémenté.
-    // 2) Écrire pile sur le T-cycle de la recharge doit être ignoré (TMA gagne).
+    // Écrire pendant la fenêtre du §TIMA Overflow annule la recharge ET l'interruption :
+    // `_armer()` recalcule `dateAlarme` depuis l'instant présent, donc le rendez-vous
+    // part au loin et `check()` ne le voit plus. Là aussi, gratuit.
+    //
+    // DIVERGE — reste un cas non traité : écrire PILE sur le T-cycle de la recharge doit
+    // être ignoré (TMA gagne). Ici l'écriture arrive avant le `check()` du même cycle et
+    // repousse l'alarme, donc c'est l'écriture qui gagne. Non testé.
     setValue(value) {
         this.parent.base = value;
         super.setValue(value);
@@ -239,27 +242,21 @@ export default function(machine) {
             this.machine.IF |= 0b00100;
         }
 
-        // DIVERGE — doc §TIMA Overflow Behavior
-        // « These actions don't occur instantaneously » : ici tout est atomique. La doc
-        // impose 4 T-cycles entre le débordement et ses effets, pendant lesquels TIMA lit
-        // 0x00, IF n'est pas levé et TMA n'est pas encore lu — fenêtre annulable par une
-        // écriture dans TIMA, et pendant laquelle une écriture dans TMA change la valeur
-        // rechargée. Trois comportements observables qui n'ont ici nulle part où exister.
+        // Chaque tour se recale sur `dateAlarme` — le rendez-vous manqué — et jamais sur
+        // l'heure courante. C'est ce qui rend le rattrapage exact quand plusieurs
+        // débordements ont été enjambés d'un coup.
         //
-        // Ce n'est PAS réparable dans ce fichier. `machine/index.js` fait `totalCycles +=
-        // cost` par instruction entière et n'appelle `check()` qu'entre deux instructions :
-        // la machine ne sait pas à quel T-cycle, dans l'instruction, une écriture est
-        // tombée. Aucune refonte du timer ne peut inventer cette information.
-        //
-        // La boucle, elle, est juste : chaque tour se recale sur `dateAlarme` — le
-        // rendez-vous manqué — et jamais sur l'heure courante. C'est ce qui rend le
-        // rattrapage exact quand plusieurs débordements ont été enjambés d'un coup.
+        // Le `+ FENETRE_RECHARGE` est le §TIMA Overflow : entre le débordement et ses
+        // effets, le matériel laisse passer 4 T-cycles. Pendant cette fenêtre TIMA lit
+        // déjà 0x00 (voir `TIMAregister.getValue`), mais TMA n'est pas encore lu et IF
+        // pas encore levé — c'est ce délai qui rend observables les écritures faites
+        // pendant la fenêtre. Couvert par `timer-overflow.test.js`.
         check() {
             if (!this.isTAC) {
                 this.dateAlarme = Infinity;
                 return;
             }
-            while (this.innerCycles >= this.dateAlarme) {
+            while (this.innerCycles >= this.dateAlarme + 4) {
                 this._reset(this.dateAlarme);
                 this.dateAlarme += (0x100 - this.base) * this.periode;
             }
