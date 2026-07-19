@@ -425,7 +425,7 @@ describe('Machine : le chef d\'orchestre', () => {
       expect(
         serial.echos.at(-1),
         'le protocole complet a traversé cartouche = bus = cpu = décodeur = section = maître',
-      ).toBe('P');
+      ).toEqual(['P'.charCodeAt(0)]);
     });
   });
 });

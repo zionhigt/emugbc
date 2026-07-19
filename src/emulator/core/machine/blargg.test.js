@@ -34,7 +34,8 @@ const buildSerial = () => ({
   output: '',
   read() {},
   write() {},
-  echo(buffer) { this.output = buffer; },
+  // Le bus transporte des OCTETS ; décider qu'ils sont de l'ASCII est le rôle du maître.
+  echo(buffer) { this.output = String.fromCharCode(...buffer); },
 });
 
 // Insère la ROM, tourne la manivelle jusqu'au verdict (ou au plafond),

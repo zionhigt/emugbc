@@ -154,6 +154,8 @@ describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maî
   });
 
   const P = 'P'.charCodeAt(0); // 0x50
+  const a = 'a'.charCodeAt(0);
+  const s = 's'.charCodeAt(0);
 
   it('la sonnette : écrire le caractère en 0xFF01 puis 0x81 en 0xFF02 déclenche echo', () => {
     const serial = buildFakeSerial();
@@ -161,7 +163,7 @@ describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maî
     memory.write(0xff01, P);
     expect(serial.echos, 'pas encore : la lettre attend dans la boîte').toEqual([]);
     memory.write(0xff02, 0x81);
-    expect(serial.echos, 'sonnette ! le maître reçoit le buffer').toEqual(['P']);
+    expect(serial.echos, 'sonnette ! le maître reçoit le buffer, en OCTETS').toEqual([[P]]);
   });
 
   it('le buffer est cumulatif : chaque sonnette renvoie TOUT le message', () => {
@@ -171,16 +173,35 @@ describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maî
       memory.write(0xff01, c.charCodeAt(0));
       memory.write(0xff02, 0x81);
     }
-    expect(serial.echos, 'des instantanés qui grandissent').toEqual(['P', 'Pa', 'Pas']);
+    expect(serial.echos, 'des instantanés qui grandissent').toEqual([[P], [P, a], [P, a, s]]);
   });
 
-  it("écrire autre chose que 0x81 en 0xFF02 ne sonne pas", () => {
+  // Ce qui déclenche un transfert, c'est le BIT 7 seul — les bits bas décrivent
+  // l'horloge (interne/externe, normale/rapide) et ne disent rien du départ.
+  // Tester l'égalité à 0x81 marchait tant que Blargg était la seule ROM d'essai :
+  // mooneye écrit 0x83 (bit 7 + horloge rapide) et ne sonnait jamais.
+  it.each([
+    { sc: 0x00, nom: '0x00 — tout éteint' },
+    { sc: 0x01, nom: '0x01 — horloge choisie, mais pas de départ' },
+    { sc: 0x03, nom: '0x03 — horloge rapide choisie, toujours pas de départ' },
+  ])('bit 7 à zéro : $nom ne sonne pas', ({ sc }) => {
     const serial = buildFakeSerial();
     const memory = buildMemory(undefined, serial);
     memory.write(0xff01, P);
-    memory.write(0xff02, 0x00);
-    memory.write(0xff02, 0x80);
-    expect(serial.echos, 'aucune sonnette sans 0x81').toEqual([]);
+    memory.write(0xff02, sc);
+    expect(serial.echos, 'sans le bit 7, aucun transfert n\'est demandé').toEqual([]);
+  });
+
+  it.each([
+    { sc: 0x80, nom: '0x80 — bit 7 nu' },
+    { sc: 0x81, nom: '0x81 — celui de Blargg' },
+    { sc: 0x83, nom: '0x83 — celui de mooneye, horloge rapide' },
+  ])('bit 7 levé : $nom sonne, quels que soient les bits d\'horloge', ({ sc }) => {
+    const serial = buildFakeSerial();
+    const memory = buildMemory(undefined, serial);
+    memory.write(0xff01, P);
+    memory.write(0xff02, sc);
+    expect(serial.echos, 'le bit 7 demande le transfert, à lui seul').toEqual([[P]]);
   });
 
   it('le maître reçoit aussi les write bruts (sans obligation de s\'en servir)', () => {
