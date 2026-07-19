@@ -1,3 +1,6 @@
 node_modules/
 .env
 dist/
+src/test/fixtures/mooneye/*
+!src/test/fixtures/mooneye/build/
+!src/test/fixtures/mooneye/build/**
