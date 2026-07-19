@@ -1,3 +1,5 @@
+import byte from "../../lib/byte";
+
 /**
  * 
  * @returns Default raw memory
@@ -128,15 +130,13 @@ function FactorySerialSection(serial) {
         constructor(memory) {
             super(memory);
             this.serial = serial;
-            this._buffer = "";
+            this._buffer = [];
         }
     
         write(addr, value) {
             super.write(addr, value);
-            if (addr === 0xFF02 && value === 0x81) {
-                this._buffer += String.fromCharCode(
-                    this.memory.read(0xFF01)
-                );
+            if (addr === 0xFF02 && byte.getFlag(value, 7)) {
+                this._buffer.push(this.memory.read(0xFF01));
                 this.echo();
             } 
             return this.serial.write(addr, value);
@@ -148,7 +148,7 @@ function FactorySerialSection(serial) {
         }
 
         echo() {
-            this.serial.echo(this._buffer);
+            this.serial.echo([...this._buffer]);
         }
     }
     return SerialSection;

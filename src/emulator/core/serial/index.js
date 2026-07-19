@@ -6,7 +6,7 @@ export default function(logger) {
         write () {};
 
         echo(value) {
-            logger.log(value);
+            logger.log(value.map(i => String.fromCharCode(i)).join(""));
         }
     }
 
