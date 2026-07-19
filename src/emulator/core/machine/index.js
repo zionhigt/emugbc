@@ -29,16 +29,16 @@ export default function(cpu, decoder, clock, serial) {
         }
 
         get IE() {
-            return this.cpu.memory.read(0xFFFF);
+            return this.memory.read(0xFFFF);
         }
         get IF() {
-            return this.cpu.memory.read(0xFF0F);
+            return this.memory.read(0xFF0F);
         }
         set IE(value) {
-            return this.cpu.memory.write(0xFFFF, value);
+            return this.memory.write(0xFFFF, value);
         }
         set IF(value) {
-            return this.cpu.memory.write(0xFF0F, value);
+            return this.memory.write(0xFF0F, value);
         }
 
         get memory() {

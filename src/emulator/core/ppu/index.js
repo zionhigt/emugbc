@@ -120,7 +120,7 @@ export default function(machine) {
         }
 
         get bus() {
-            return this.machine.cpu.memory;
+            return this.machine.memory;
         }
 
         get innerCycles() {

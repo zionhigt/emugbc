@@ -27,7 +27,7 @@ const makePPU = () => {
     get IF() { return this._if; },
     set IF(v) { knocks.push(v); this._if = v; },
     // un bus muet : check() peint des lignes en passant, il lui faut une VRAM
-    cpu: { memory: { read: () => 0, write: () => {} } },
+    memory: { read: () => 0, write: () => {} },
   };
   const PPU = buildPPU(machine);
   return { machine, knocks, ppu: new PPU() };
@@ -196,7 +196,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { knocks.push(v); this._if = v; },
-        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+        memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
@@ -348,7 +348,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
-        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+        memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
       return { ram, ppu: new PPU() };
@@ -402,7 +402,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
-        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+        memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
@@ -629,7 +629,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
-        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+        memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
@@ -822,7 +822,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
-        cpu: { memory: { read: () => 0, write: () => {} } },
+        memory: { read: () => 0, write: () => {} },
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
@@ -942,7 +942,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
-        cpu: { memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } } },
+        memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
       const ppu = new PPU();
