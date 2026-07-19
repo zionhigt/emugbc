@@ -1,6 +1,8 @@
 import byte from "../../lib/byte";
 import { Register } from "../../lib/register";
 
+const WINDOW = 4;
+
 // Le détecteur de front, mutualisé entre DIV et TAC — les deux seuls registres dont
 // l'écriture peut faire tomber le signal (bit surveillé du compteur ET bit 2 de TAC).
 // Les sous-classes implémentent `_setValue` ; le wrapper photographie le signal avant
@@ -102,6 +104,7 @@ class TIMAregister extends Register(8) {
     // être ignoré (TMA gagne). Ici l'écriture arrive avant le `check()` du même cycle et
     // repousse l'alarme, donc c'est l'écriture qui gagne. Non testé.
     setValue(value) {
+        if (this.parent.innerCycles === this.parent.lastReload) return;
         this.parent.base = value;
         super.setValue(value);
         this.parent._armer();
@@ -128,6 +131,18 @@ class TACregister extends Collapse(8) {
     // }
 }
 
+class TMAregister extends Register(8) {
+    constructor(parent) {
+        super();
+        this.parent = parent;
+    }
+    
+    setValue(value) {
+        if (this.parent.innerCycles === this.parent.lastReload) this.parent.base = value;
+        super.setValue(value);
+    }
+}
+
 export default function(machine) {
     class Timer {
         constructor() {
@@ -136,10 +151,11 @@ export default function(machine) {
             this.DIV = new DIVregister(this);
             this.TIMA = new TIMAregister(this);
             this.TAC = new TACregister(this);
-            this.TMA = new (Register(8));
+            this.TMA = new TMAregister(this);
 
             this.base = 0;
             this.dateAlarme = Infinity;
+            this.lastReload = -Infinity;
             this.cranBase = 0;
         }
 
@@ -236,6 +252,7 @@ export default function(machine) {
             this._getupIF();
             this.base = this.TMA.getValue();
             this.cranBase = Math.floor(origin / this.periode);
+            this.lastReload = origin + WINDOW;
         }
 
         _getupIF() {
@@ -256,7 +273,7 @@ export default function(machine) {
                 this.dateAlarme = Infinity;
                 return;
             }
-            while (this.innerCycles >= this.dateAlarme + 4) {
+            while (this.innerCycles >= this.dateAlarme + WINDOW) {
                 this._reset(this.dateAlarme);
                 this.dateAlarme += (0x100 - this.base) * this.periode;
             }
