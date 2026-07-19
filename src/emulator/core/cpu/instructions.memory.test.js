@@ -16,12 +16,23 @@ const dumpFlags = (F) =>
 const instructions = buildInstructions();
 
 describe('CPU + mémoire', () => {
-  it('expose la mémoire injectée : new CPU(memory) → cpu.memory', () => {
+  // cpu.memory n'est plus la mémoire injectée : c'est le port qui la sert en
+  // facturant les cycles. L'identité ne veut donc plus rien dire — ce qu'on
+  // vérifie ici, c'est que le port DÉLÈGUE au lieu de tenir son propre tampon.
+  // (on ne passe jamais l'objet mémoire à expect() : vitest sérialiserait les
+  // 64 Ko de RAM dans le message d'échec — que des octets des deux côtés)
+  it('délègue à la mémoire injectée : ce que le CPU écrit, la mémoire le voit', () => {
     const memory = buildMemory();
     const cpu = new CPU(memory);
-    // comparaison en booléen : ne JAMAIS passer l'objet mémoire à expect(),
-    // sinon vitest sérialise les 64 Ko de RAM dans le message d'échec
-    expect(cpu.memory === memory, 'cpu.memory doit être la mémoire injectée au constructeur').toBe(true);
+    cpu.memory.write(0xc000, 0x42);
+    expect(hex(memory.read(0xc000), 2), "l'écriture du CPU atterrit dans la mémoire injectée").toBe('0x42');
+  });
+
+  it('délègue dans les deux sens : ce que la mémoire contient, le CPU le lit', () => {
+    const memory = buildMemory();
+    const cpu = new CPU(memory);
+    memory.write(0xc001, 0x37);
+    expect(hex(cpu.memory.read(0xc001), 2), 'le CPU lit la mémoire injectée, pas un tampon à lui').toBe('0x37');
   });
 });
 
