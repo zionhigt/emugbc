@@ -5,6 +5,15 @@ import { faCaretDown, faCaretUp, faCaretRight, faCaretLeft, faA, faB } from '@fo
 
 import './Console.css';
 
+// Une secousse courte et sèche à l'appui : le retour tactile d'un vrai bouton.
+// `navigator.vibrate` n'existe pas partout (iOS Safari ne l'implémente pas) et
+// exige un geste utilisateur — d'où la garde, et le silence en cas d'absence.
+const vibrer = () => {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(12);
+  }
+};
+
 // La coque de la console : structure minimale (une dalle dans un boîtier).
 // Le contenu de l'écran — le canvas 160×144 — se compose en enfant.
 // Les boutons pilotent la manette via les props onPress(key)/onRelease(key).
@@ -24,7 +33,7 @@ class Console extends React.Component {
       this.setState((s) => ({ pressed: { ...s.pressed, [key]: value } }));
     // Tactile : touchstart est passif (preventDefault interdit → on presse
     // sans) ; on le garde sur touchend (non passif) pour tuer le clic fantôme.
-    const press = () => { setPressed(true); onPress(key); };
+    const press = () => { setPressed(true); vibrer(); onPress(key); };
     const release = () => { setPressed(false); onRelease(key); };
     const releaseTouch = (e) => { e.preventDefault(); release(); };
     return {
@@ -36,6 +45,9 @@ class Console extends React.Component {
       onTouchStart: press,
       onTouchEnd: releaseTouch,
       onTouchCancel: release,
+      // le maintien du doigt ouvre sinon le menu contextuel du système, avec
+      // sa secousse haptique — on veut NOTRE vibration, pas celle d'Android
+      onContextMenu: (e) => e.preventDefault(),
     };
   }
 

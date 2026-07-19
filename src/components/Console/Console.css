@@ -77,6 +77,18 @@
   image-rendering: pixelated;
 }
 
+/* ── comportement tactile des commandes ──────────────────────────────
+   Trois réflexes du navigateur mobile n'ont aucun sens sur une manette :
+   le voile bleu au toucher, le menu contextuel au maintien (avec sa secousse
+   haptique), et la sélection de texte. On les coupe tous les trois. */
+.gbc-console button {
+  -webkit-tap-highlight-color: transparent; /* le voile bleu */
+  -webkit-touch-callout: none;              /* le menu au maintien */
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;               /* ni double-tap zoom, ni délai de 300 ms */
+}
+
 .gbc-console__buttons {
   margin-top: 64px;
 }
