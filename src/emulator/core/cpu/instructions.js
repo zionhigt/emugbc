@@ -327,16 +327,16 @@ export default function() {
     });
     //------------------ CALL -------------------------------
     buildInstruction("CALL_n16", 6, 3, function(cpu, n16) {
-        cpu.stack.push(cpu.registers.PC.getValue());
         cpu.pay(1);
+        cpu.stack.push(cpu.registers.PC.getValue());
         cpu.registers.PC.setValue(n16);
     });
     buildInstruction("CALL_cc_n16", [6, 3], 3, function(cpu, cc, n16) {
         
         if (matchCC(cpu, cc)) {
+            cpu.pay(1);
             cpu.stack.push(cpu.registers.PC.getValue());
             cpu.registers.PC.setValue(n16);
-            cpu.pay(1);
         }
     });
     //------------------ CARRY -------------------------------

@@ -18,10 +18,10 @@ export default function(memory, cpu, decoder, clock, serial) {
             this.interruptsAcc = 1;
             this.clock.onTick(this.handleTick.bind(this));
             this.totalCycles = 0;
-            this._observersPostStep = [];
+            this._observersCyclesUpdate = [];
             this.ppu = new (PPU(this));
             this.joypad = new (Joypad())
-            this.subscribePostStep(function() {
+            this.subscribeCycleUpdate(function() {
                 this.ppu.check();
             }.bind(this));
 
@@ -32,6 +32,13 @@ export default function(memory, cpu, decoder, clock, serial) {
 
         cyclesUpdate(cpu, n) {
             if (n.type === "add") this.totalCycles += n.value;
+            this.emitCyclesUpdate();
+        }
+
+        emitCyclesUpdate() {
+            for (let o of this._observersCyclesUpdate) {
+                o.call(null, this);
+            }
         }
 
         get IE() {
@@ -86,14 +93,11 @@ export default function(memory, cpu, decoder, clock, serial) {
             }
         }
 
-        subscribePostStep(cb) {
-            this._observersPostStep.push(cb);
+        subscribeCycleUpdate(cb) {
+            this._observersCyclesUpdate.push(cb);
         }
 
         postStep() {
-            for (let o of this._observersPostStep) {
-                o.call(null, this);
-            }
             const isScheduled = this.cpu.imeScheduled;
             if (!isScheduled) {
                 // this.interruptsAcc = 1;
@@ -128,14 +132,12 @@ export default function(memory, cpu, decoder, clock, serial) {
                 }
                 const deltaCycles = this.totalCycles;
                 this.dispatch();
-                let cost = this.totalCycles - deltaCycles;
                 if (this.cpu.halted) {
                     cpu.pay(1);
-                    cost += 1;
                 } else {
-                    cost += this.decoder.step();
+                    this.decoder.step();
                 }
-                budget -= cost;
+                budget -= (this.totalCycles - deltaCycles);
                 this.postStep();
             }
             this.emitTick();
@@ -144,7 +146,7 @@ export default function(memory, cpu, decoder, clock, serial) {
 
         plugCartridge(cartridge) {
             const timer = new (Timer(this));
-            this.subscribePostStep(function(machine) {
+            this.subscribeCycleUpdate(function(machine) {
                 timer.check();
             })
             const newMemory = MemoryBuilder(
