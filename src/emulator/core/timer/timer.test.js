@@ -188,6 +188,7 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       timer.write(TIMA, 0xff); // au bord du gouffre
       timer.write(TAC, 0b101);
       machine.totalCycles += 4; // le cran fatal
+      machine.totalCycles += 1; // §TIMA Overflow : la recharge et la frappe attendent la fenêtre
       timer.check();
       expect(knocks.length, 'UNE frappe').toBe(1);
       expect(machine.IF & 0b100, 'le bit 2 levé').toBe(0b100);
@@ -214,6 +215,7 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       timer.write(TIMA, 0xff); // la première à +4
       timer.write(TAC, 0b101);
       machine.totalCycles += 20; // rendez-vous à 4, 12 et 20 : tous dépassés
+      machine.totalCycles += 1; // §TIMA Overflow : la recharge et la frappe attendent la fenêtre
       timer.check();
       expect(knocks.length, 'chaque alarme manquée doit sa frappe — un while, pas un if').toBe(3);
     });
@@ -297,6 +299,7 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
 
       timer.write(DIV, 0x00); // le compteur repart de 0, il reste 2 crans
       machine.totalCycles += 8; // exactement 2 crans depuis le reset
+      machine.totalCycles += 1; // §TIMA Overflow : la recharge et la frappe attendent la fenêtre
       timer.check();
       expect(knocks.length, 'le rendez-vous doit suivre le compteur, pas rester derrière').toBe(1);
     });
@@ -314,6 +317,7 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       expect(timer.read(TIMA), 'le front a bien poussé TIMA').toBe(0xff);
 
       machine.totalCycles += 4; // un cran plein après le reset du compteur
+      machine.totalCycles += 1; // §TIMA Overflow : la recharge et la frappe attendent la fenêtre
       timer.check();
       expect(knocks.length, 'il ne restait qu\'un cran, le rendez-vous doit tomber ici').toBe(1);
     });
