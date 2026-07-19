@@ -42,10 +42,12 @@ const buildSerial = () => ({
 const runRom = (fileName, maxFrames = 3000) => {
   const serial = buildSerial();
   const clock = buildManivelle();
-  const cpu = new CPU(buildMemory(undefined, serial));
+  // Le bus NU : la machine le reçoit tel quel, le CPU en reçoit une vue qui facture.
+  const memory = buildMemory(undefined, serial);
+  const cpu = new CPU(memory);
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
-  const Machine = buildMachine(cpu, decoder, clock, serial);
+  const Machine = buildMachine(memory, cpu, decoder, clock, serial);
   const machine = new Machine();
 
   const bytes = new Uint8Array(readFileSync(join(FIXTURES_DIR, fileName)));

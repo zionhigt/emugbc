@@ -1018,16 +1018,20 @@ describe("ADC_A_HL : A = A + [HL] + C — [HL] est l'octet POINTÉ par HL", () =
         cpu.memory.write(0xfffc, 0x03);
         cpu.memory.write(0xfffd, 0xc0);
         cpu.registers.F.setValue(flags);
+        cpu.resetCycles(); // poser la pile passe par le port, qui facture
         return cpu;
       };
 
+      // run() seul, sans le fetch : les totaux sont donc PARTIELS (le décodeur ajoute 1).
+      // Le contrat mesuré ici est la SYMÉTRIE de RET_cc, la seule des quatre à facturer
+      // dans les deux branches : la décision se paie même quand on ne revient pas.
       const pris = makeCpu(0b1000_0000); // Z levé
       instructions.RET_cc.run(pris, 'Z');
-      expect(pris.cycles, 'branche prise = +extraCycle').toBe(3);
+      expect(pris.cycles, 'pris : décision + 2 lectures pile + rechargement de PC').toBe(4);
 
       const pasPris = makeCpu(0b0000_0000);
       instructions.RET_cc.run(pasPris, 'Z');
-      expect(pasPris.cycles, 'branche non prise = compteur intact').toBe(0);
+      expect(pasPris.cycles, 'non pris : la décision se paie quand même, sans aucune lecture').toBe(1);
     });
   });
 

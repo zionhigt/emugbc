@@ -14,6 +14,9 @@ const makeCpu = (program, at = 0xc000) => {
   const cpu = new CPU(buildMemory());
   program.forEach((b, i) => cpu.memory.write(at + i, b));
   cpu.registers.PC.setValue(at);
+  // Poser le programme passe par le port, qui FACTURE : la mise en place n'est pas
+  // de la dépense d'instruction, on repart de zéro avant de mesurer.
+  cpu.resetCycles();
   return cpu;
 };
 

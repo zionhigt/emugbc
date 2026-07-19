@@ -67,11 +67,14 @@ const buildFakeJoypad = () => ({
 const buildAll = () => {
   const serial = buildFakeSerial();
   const timer = buildFakeTimer();
-  const cpu = new CPU(buildMemory(undefined, serial, timer, buildFakePPU(), buildFakeJoypad()));
+  // Le bus NU : la machine (et donc le PPU) le reçoit tel quel, le CPU en reçoit une vue
+  // qui facture. Sans ça, chaque lecture de VRAM du PPU serait débitée au CPU.
+  const memory = buildMemory(undefined, serial, timer, buildFakePPU(), buildFakeJoypad());
+  const cpu = new CPU(memory);
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();
-  const Machine = buildMachine(cpu, decoder, clock, serial, timer);
+  const Machine = buildMachine(memory, cpu, decoder, clock, serial, timer);
   const machine = new Machine();
   return { cpu, decoder, clock, serial, timer, machine };
 };
