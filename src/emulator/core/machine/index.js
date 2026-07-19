@@ -7,12 +7,12 @@ const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
 const DEFAULT_BUDGET = Number.parseInt(MACHINE_FREQUENCE / MACHINE_FRAMES_PER_SECONDES);
 
-export default function(cpu, decoder, clock, serial) {
+export default function(memory, cpu, decoder, clock, serial) {
     class Machine {
         constructor() {
             // Assume that, decoder.cpu == cpu
             this.cpu = cpu;
-            this._memory = cpu.memory;
+            this._memory = memory;
             this.decoder = decoder;
             this.clock = clock;
             this.interruptsAcc = 1;

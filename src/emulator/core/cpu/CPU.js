@@ -8,15 +8,19 @@ class MemoryWrapper {
     }
 
     write(address, value) {
-        return this._memory.write(address, value);
+        const r = this._memory.write(address, value);
+        this.pay(1);
+        return r;
     }
 
     read(address) {
-        return this._memory.read(address);
+        const r = this._memory.read(address);
+        this.pay(1);
+        return r;
     }
 
-    pay(c) {
-        this.cpu.cycles += n;
+    pay(n) {
+        this.cpu.pay(n);
     }
 }
 
@@ -186,5 +190,9 @@ export default class CPU {
         this.updateHFlag(operation, carry);
         return this;
 
+    }
+
+    pay(n) {
+        this.cycles += n;
     }
 }

@@ -178,6 +178,7 @@ export default function() {
     });
     
     buildInstruction("ADD_HL_r16", 2, 1, function(cpu, r16) {
+        cpu.pay(1);
         const hl = cpu.registers.HL.getValue();
         const b = r16.getValue();
         const raw = hl + b;
@@ -228,7 +229,8 @@ export default function() {
         cpu.registers.F.Z = 0;
         return cpu
         .updateNAndHFlags(operation)
-        .updateCarryFlag(operation);
+        .updateCarryFlag(operation)
+        .pay(2);
     });
 
     //------------------ LOGIC -------------------------------
@@ -326,6 +328,7 @@ export default function() {
     //------------------ CALL -------------------------------
     buildInstruction("CALL_n16", 6, 3, function(cpu, n16) {
         cpu.stack.push(cpu.registers.PC.getValue());
+        cpu.pay(1);
         cpu.registers.PC.setValue(n16);
     });
     buildInstruction("CALL_cc_n16", [6, 3], 3, function(cpu, cc, n16) {
@@ -333,7 +336,7 @@ export default function() {
         if (matchCC(cpu, cc)) {
             cpu.stack.push(cpu.registers.PC.getValue());
             cpu.registers.PC.setValue(n16);
-            cpu.cycles += this.extraCycle;
+            cpu.pay(1);
         }
     });
     //------------------ CARRY -------------------------------
@@ -434,6 +437,7 @@ export default function() {
         .updateNAndHFlags(operation)
     });
     buildInstruction("DEC_r16", 2, 1, function(cpu, r16) {
+        cpu.pay(1);
         return DEC16(r16);
     });
     buildInstruction("DEC_SP", 2, 1, function(cpu) {
@@ -465,7 +469,7 @@ export default function() {
     buildInstruction("INC_HL", 3, 1, function(cpu) {
         const hl = cpu.registers.HL.getValue();
         const a = cpu.memory.read(hl);
-        const raw = a + 1;
+        const raw = a + 1 & 0xFF;
         cpu.memory.write(hl, raw);
         const operation = {
             id: 0,
@@ -474,10 +478,11 @@ export default function() {
             raw,
         }
         cpu
-        .updateZeroFlag(cpu.memory.read(hl))
+        .updateZeroFlag(raw)
         .updateNAndHFlags(operation)
     });
     buildInstruction("INC_r16", 2, 1, function(cpu, r16) {
+        cpu.pay(1);
         return INC16(r16);
     });
     buildInstruction("INC_SP", 2, 1, function(cpu) {
@@ -495,17 +500,19 @@ export default function() {
         return cpu.halt();
     });
     buildInstruction("STOP", -1, 2, function(cpu, n8) {
+        // cpu.pay(-1);
         return cpu.stop(n8);
     });
 
     //------------------ JUMP -------------------------------
     buildInstruction("JP_n16", 4, 3, function(cpu, n16) {
         cpu.registers.PC.setValue(n16);
+        cpu.pay(1);
     });
     buildInstruction("JP_cc_n16", [4, 3], 3, function(cpu, cc, n16) {
         if (matchCC(cpu, cc)) {
             cpu.registers.PC.setValue(n16);
-            cpu.cycles += this.extraCycle;
+            cpu.pay(1);
         }
     });
     buildInstruction("JP_HL", 1, 1, function(cpu) {
@@ -516,13 +523,14 @@ export default function() {
         const pc = cpu.registers.PC.getValue();
         n16 = pc + byte.sign8(n16);
         cpu.registers.PC.setValue(n16);
+        cpu.pay(1)
     });
     buildInstruction("JR_cc_n16", [3, 2], 2, function(cpu, cc, n16) {
         if (matchCC(cpu, cc)) {
             const pc = cpu.registers.PC.getValue();
             n16 = pc + byte.sign8(n16);
             cpu.registers.PC.setValue(n16);
-            cpu.cycles += this.extraCycle;
+            cpu.pay(1);
         }
     });
 
@@ -656,15 +664,17 @@ export default function() {
         cpu.registers.F.Z = 0;
         return cpu
         .updateNAndHFlags(operation)
-        .updateCarryFlag(operation);
+        .updateCarryFlag(operation)
+        .pay(1);
     });
     buildInstruction("LD_SP_HL", 2, 1, function(cpu) {
+        cpu.pay(1);
         LOAD(cpu.registers.SP, cpu.registers.HL.getValue());
     });
 
     //------------------ NOP -------------------------------
 
-    buildInstruction("NOP", 1, 1, function(cpu) {});
+    buildInstruction("NOP", 1, 1, function(cpu) { });
 
     //------------------ STACK -------------------------------
 
@@ -678,6 +688,7 @@ export default function() {
         cpu.stack.push(cpu.registers.AF);
     });
     buildInstruction("PUSH_r16", 4, 1, function(cpu, r16) {
+        cpu.pay(1);
         cpu.stack.push(r16);
     });
 
@@ -697,17 +708,19 @@ export default function() {
 
     buildInstruction("RET", 4, 1, function(cpu) {
         cpu.registers.PC.setValue(cpu.stack.pop());
+        cpu.pay(1);
     });
     buildInstruction("RET_cc", [5, 2], 1, function(cpu, cc) {
+        cpu.pay(1);
         if (matchCC(cpu, cc)) {
             cpu.registers.PC.setValue(cpu.stack.pop());
-            cpu.cycles += this.extraCycle;
+            cpu.pay(1);
         }
     });
     buildInstruction("RETI", 4, 1, function(cpu) {
         cpu.start();
         cpu.registers.PC.setValue(cpu.stack.pop());
-        cpu.cycles += this.extraCycle;
+        cpu.pay(1);
     });
 
     //------------------ RL -------------------------------
@@ -886,6 +899,7 @@ export default function() {
     //------------------ RST -------------------------------
 
     buildInstruction("RST_vec", 4, 1, function(cpu, vec) {
+        cpu.pay(1);
         cpu.stack.push(cpu.registers.PC.getValue());
         cpu.registers.PC.setValue(vec);
     });

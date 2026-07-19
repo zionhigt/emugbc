@@ -48,7 +48,7 @@ export default function(cpu, instructions) {
             }
 
             instructions[id].run(cpu, ...args);
-            const cycles = cpu.cycles + instructions[id].cycle;
+            const cycles = cpu.cycles;
             cpu.resetCycles();
             return cycles;
         }

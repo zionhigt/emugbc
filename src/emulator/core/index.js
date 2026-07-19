@@ -22,7 +22,7 @@ export function MachineBuilder() {
     const clock = new ClockClass(1000 / 59.7275);
 
     const MachineClass = Machine(
-        cpu, decoder, clock, serial
+        memory, cpu, decoder, clock, serial
     )
 
     return new MachineClass();
