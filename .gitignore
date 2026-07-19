@@ -3,4 +3,5 @@ node_modules/
 dist/
 src/test/fixtures/mooneye/*
 !src/test/fixtures/mooneye/build/
-!src/test/fixtures/mooneye/build/**
+!src/test/fixtures/mooneye/build/**/*.gb
+src/test/fixtures/mooneye/build/**/*.sym
