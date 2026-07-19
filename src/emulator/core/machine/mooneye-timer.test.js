@@ -43,6 +43,21 @@ const VERDICT_LONGUEUR = REUSSITE.length;
 // 0x42 est le « B » majuscule, donc une bande ratée se lit « BBBBBB ».
 const enTexte = (octets) => String.fromCharCode(...octets);
 
+// Ce qui a été REÇU, dit en clair. Trois issues très différentes qu'il ne faut pas
+// confondre : la ROM n'a pas parlé, la ROM a dit « raté », ou elle a dit autre chose.
+const diagnostic = ({ verdict, brut, frames, estEchecMooneye }) => {
+  if (verdict.length === 0) {
+    return `RIEN reçu après ${frames} trames : la ROM n'a jamais rendu son verdict `
+      + `(elle est bloquée, ou le port série ne la relaie pas)`;
+  }
+  if (estEchecMooneye) {
+    return `la ROM a rendu son verdict après ${frames} trames et il est NÉGATIF `
+      + `(six fois 0x42, le signal d'échec de mooneye). L'émulateur diverge du matériel.`;
+  }
+  return `bande série inattendue après ${frames} trames : [${verdict}] («${brut}») `
+    + `— ni Fibonacci, ni le motif d'échec de mooneye`;
+};
+
 const Cartridge = buildCartridge();
 const instructions = buildInstructions();
 
@@ -90,12 +105,8 @@ describe('Mooneye acceptance/timer : l\'oracle matériel du chapitre timer', () 
     '%s envoie Fibonacci sur le port série',
     (fileName) => {
       const { verdict, brut, frames } = runRom(fileName);
-      expect(
-        verdict,
-        verdict.length === 0
-          ? `rien reçu après ${frames} trames : la ROM n'a jamais rendu son verdict`
-          : `bande série après ${frames} trames : [${verdict}] («${brut}» — six 0x42, soit « BBBBBB », signifie ÉCHEC)`,
-      ).toEqual(REUSSITE);
+      const estEchecMooneye = verdict.length === 6 && verdict.every((o) => o === 0x42);
+      expect(verdict, diagnostic({ verdict, brut, frames, estEchecMooneye })).toEqual(REUSSITE);
     },
     60000,
   );
