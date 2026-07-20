@@ -42,7 +42,11 @@ class Emulator extends React.Component {
   // il descend par le haut, comme la fente de la vraie console.
   // `tab` : l'onglet visible dans le volet. « cartouche » par défaut, c'est le
   // geste qu'on vient faire ici neuf fois sur dix.
-  state = { screen: null, dockOpen: false, tab: 'cartouche' };
+  // plus de `screen` dans le state : la trame ne passe plus par React (repaint
+  // impératif du canvas via canvasRef), donc rien à stocker ni à re-rendre.
+  state = { dockOpen: false, tab: 'cartouche' };
+
+  canvasRef = React.createRef();
 
   componentDidMount() {
     // l'immersion : tant que la console est à l'écran, le Layout s'efface
@@ -201,7 +205,10 @@ class Emulator extends React.Component {
     this.machine = MachineBuilder();
     this.machine.plugCartridge(this.cartridge);
     this.machine.onTick(function(machine) {
-      this.setState({ screen: machine.ppu.screen });
+      // repaint impératif : on parle au canvas directement, sans setState —
+      // sinon tout l'arbre React se re-rend à chaque trame (voir Canvas).
+      const canvas = this.canvasRef.current;
+      if (canvas) canvas.draw(machine.ppu.screen);
     }.bind(this));
     this.machine.start();
 
@@ -221,7 +228,7 @@ class Emulator extends React.Component {
 
         <main className="emu-page__stage">
           <Console onPress={this.pressButton} onRelease={this.releaseButton}>
-            <Canvas screen={this.state.screen} />
+            <Canvas ref={this.canvasRef} />
           </Console>
 
           <aside
