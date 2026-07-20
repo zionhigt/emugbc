@@ -10,6 +10,15 @@
   padding: 40px 24px 80px;
   position: relative;
   color: #e8edf2;
+
+  /* Une console n'a AUCUN texte à sélectionner : logo, tagline, languette
+     « CONSOLE » sont de la sérigraphie, pas du contenu. Sur mobile, l'appui
+     long déclenchait sinon la sélection de texte du système — et avec elle
+     sa secousse haptique. Couper la sélection au niveau PAGE règle les deux
+     d'un coup, partout, sans avoir à traquer chaque libellé. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none; /* pas de menu « copier » au maintien (iOS) */
   font-family: 'Courier New', ui-monospace, 'Cascadia Mono', monospace;
   background:
     radial-gradient(1100px 560px at 50% -5%, var(--theme-glow-wide, rgba(37, 131, 175, 0.28)), transparent 65%),
