@@ -8,9 +8,15 @@ import './Console.css';
 // Une secousse courte et sèche à l'appui : le retour tactile d'un vrai bouton.
 // `navigator.vibrate` n'existe pas partout (iOS Safari ne l'implémente pas) et
 // exige un geste utilisateur — d'où la garde, et le silence en cas d'absence.
+// Le moteur Android (un ERM, pas un moteur haptique fin) a un seuil perceptible
+// élevé : 12 et 30 ms ne se sentaient pas du tout, 100 ms était franc mais long
+// pour un tic de bouton qu'on répète. 60 ms est le compromis — assez pour se
+// sentir, assez court pour ne pas traîner quand on martèle. Mesuré sur appareil.
+const PULSE_MS = 60;
+
 const vibrer = () => {
   if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-    navigator.vibrate(12);
+    navigator.vibrate(PULSE_MS);
   }
 };
 

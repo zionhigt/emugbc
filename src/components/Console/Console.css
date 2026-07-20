@@ -86,7 +86,18 @@
   -webkit-touch-callout: none;              /* le menu au maintien */
   -webkit-user-select: none;
   user-select: none;
-  touch-action: manipulation;               /* ni double-tap zoom, ni délai de 300 ms */
+  /* `none` (et pas `manipulation`) : le navigateur cesse d'interpréter le geste
+     lui-même, ce qui coupe la reconnaissance d'appui long — et donc, sur une
+     bonne partie des Android, la secousse système qui l'accompagne. */
+  touch-action: none;
+}
+
+/* Les icônes (SVG FontAwesome) sont du contenu « attrapable » à l'appui long :
+   le navigateur y voit une image à glisser/copier, avec sa secousse. On les
+   rend transparentes au tactile — c'est le BOUTON qui reçoit tout. */
+.gbc-console button svg {
+  pointer-events: none;
+  -webkit-user-drag: none;
 }
 
 .gbc-console__buttons {
