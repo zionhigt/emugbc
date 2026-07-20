@@ -30,6 +30,30 @@ class Console extends React.Component {
   // déclenchent bien — on s'appuie dessus.
   state = { pressed: {} };
 
+  buttonsRef = React.createRef();
+
+  componentDidMount() {
+    // LE correctif FPS. Maintenir un bouton (sauter, sprinter) déclenche vers
+    // ~500 ms la reconnaissance de geste long-press du navigateur : sélection,
+    // loupe, menu contextuel. Elle se met à traquer le doigt en continu, sature
+    // le compositeur et fait chuter les FPS du canvas tant qu'on tient.
+    //
+    // preventDefault sur touchstart dit au navigateur « je gère ce toucher,
+    // n'engage AUCUN geste » — et tue la chose à la racine. React attache
+    // touchstart en PASSIF (preventDefault y est ignoré), d'où ce listener natif
+    // non passif. Il ne bloque PAS la propagation : onTouchStart/press part quand
+    // même.
+    const el = this.buttonsRef.current;
+    if (el) el.addEventListener('touchstart', this.blockNativeGesture, { passive: false });
+  }
+
+  componentWillUnmount() {
+    const el = this.buttonsRef.current;
+    if (el) el.removeEventListener('touchstart', this.blockNativeGesture, { passive: false });
+  }
+
+  blockNativeGesture = (e) => { e.preventDefault(); };
+
   // les handlers d'un bouton pour une touche GB : souris ET tactile.
   // onMouseLeave/onTouchCancel relâchent si le doigt/curseur quitte en maintenant.
   buttonProps(key) {
@@ -64,7 +88,7 @@ class Console extends React.Component {
         <div className="gbc-console__screen">
           <div className="gbc-console__screen--frame">{children}</div>
         </div>
-        <div className="gbc-console__buttons">
+        <div className="gbc-console__buttons" ref={this.buttonsRef}>
           <div className="gbc-console__buttons--container">
             <div className="gbc-console__buttons--cross">
               <button className="gbc-console__buttons--cross-up" {...this.buttonProps('up')}><FontAwesomeIcon icon={faCaretUp} /></button>
