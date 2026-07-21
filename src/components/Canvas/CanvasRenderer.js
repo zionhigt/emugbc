@@ -14,6 +14,7 @@ export default class CanvasRenderer {
     // un tampon RGBA (4 octets/pixel) de la taille de l'écran, réutilisé
     // à chaque trame — on n'en réalloue jamais.
     this.image = this.ctx.createImageData(SCREEN_WIDTH, SCREEN_HEIGHT);
+    this.buf32 = new Uint32Array(this.image.data.buffer);
   }
 
   get palette() {
@@ -25,22 +26,17 @@ export default class CanvasRenderer {
     }
   }
 
+  get palette32() {
+    return Object.values(this.palette).map(([r, g, b, a]) =>
+      (a << 24) | (b << 16) | (g << 8) | r
+    );
+  }
+
   draw(screen) {
     if (!this.ctx || !screen) return;
-    const palette = this.palette;
     for (let i = 0; i < screen.length; i++) {
-      const colors = palette[screen[i]];
-      for (let j = 0; j < colors.length; j++) {
-        this.image.data[i*4+j] = colors[j];
-      }
+      this.buf32[i] = this.palette32[screen[i]];
     }
     this.ctx.putImageData(this.image, 0, 0);
-    // TODO (à toi) : pour chaque pixel i de `screen` (une teinte 0-3),
-    //   écrire 4 octets R,G,B,A dans this.image.data à l'offset i*4,
-    // puis publier le tampon :
-    //   this.ctx.putImageData(this.image, 0, 0);
-    //
-    // La palette (teinte 0-3 → RGBA) est ton choix — la même que les
-    // variables --gbc-shade-* du CSS, ou une autre.
   }
 }
