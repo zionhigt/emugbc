@@ -29,7 +29,7 @@ const KEYMAP = {
 // avec tous les environnements (jsdom des tests compris)
 const readBytes = (file) =>
   new Promise((resolve, reject) => {
-    const reader = new FileReader();
+    const reader = new FileReader(); // Todo: Info caniuse
     reader.onload = () => resolve(new Uint8Array(reader.result));
     reader.onerror = () => reject(reader.error);
     reader.readAsArrayBuffer(file);
