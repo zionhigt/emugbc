@@ -18,15 +18,21 @@
      (tests de rendu isolé du composant, par exemple) */
   --gbc-console-0: var(--theme-shell, #2583af);
 
-  /* La dalle fait 160×144 pixels logiques ; ce facteur l'agrandit à l'écran. */
-  --gbc-scale: 1.8;
+  /* Tout est PROPORTIONNEL à la coque. `--gbc-scale` est le seul bouton, `--u`
+     l'unité qui en découle. Coque de référence = 360×650 (ratio DMG) à l'échelle
+     1 ; chaque cote interne s'écrit calc(N * var(--u)), donc rien ne déborde
+     quand la coque grandit ou rétrécit. */
+  --gbc-scale: 1;
+  --u: calc(var(--gbc-scale) * 1px);
   box-sizing: border-box;
-  display: inline-block;
-  border: 2px solid black;
-  border-radius: 10px;
-  padding: 32px;
-  width: calc(calc(142px * 2.333) * var(--gbc-scale));
-  height: calc(calc(144px * 3.375) * var(--gbc-scale));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: calc(2 * var(--u)) solid black;
+  border-radius: calc(10 * var(--u));
+  padding: calc(18 * var(--u));
+  width: calc(360 * var(--u));
+  height: calc(650 * var(--u));
   background: var(--gbc-console-0);
   position: relative;
 }
@@ -45,19 +51,19 @@
 
 .gbc-console__screen {
   width: 100%;
-  height: calc(calc(144px * 1.666) * var(--gbc-scale));
+  height: calc(300 * var(--u));
   display: flex;
   justify-content: center;
   align-items: center;
   background: var(--gbc-shade-4);
-  border-radius: 20px;
+  border-radius: calc(14 * var(--u));
   position: relative;
 
 }
 
 .gbc-console__screen--frame {
-  width: calc(160px * var(--gbc-scale));
-  height: calc(144px * var(--gbc-scale));
+  width: calc(224 * var(--u));
+  height: calc(202 * var(--u));
   /* Le contenu (canvas 160×144) sera agrandi sans lissage : des pixels francs,
      pas un flou bilinéaire. */
   image-rendering: pixelated;
@@ -101,7 +107,8 @@
 }
 
 .gbc-console__buttons {
-  margin-top: 64px;
+  width: 100%;
+  margin-top: calc(40 * var(--u));
 }
 
 .gbc-console__buttons--container {
@@ -109,7 +116,9 @@
   flex-wrap: nowrap;
   justify-content: space-between;
   width: 100%;
-  gap: 250px;
+  /* plus de gap fixe : space-between écarte croix et A/B dans la largeur
+     disponible, donc la rangée ne peut plus déborder de la coque */
+  gap: 0;
 }
 .gbc-console__buttons--cross {
   display: flex;
@@ -128,11 +137,11 @@
 .gbc-console__buttons--cross button,
 .gbc-console__buttons--cross .gbc-console__buttons--cross-center,
 .gbc-console__buttons--ab button {
-  width: 64px;
-  height: 64px;
+  width: calc(46 * var(--u));
+  height: calc(46 * var(--u));
   background-color: var(--gbc-shade-4);
   color: #838282;
-  font-size: 28px;
+  font-size: calc(24 * var(--u));
   position: relative;
   text-align: center;
   position: relative;
@@ -140,43 +149,43 @@
 }
 
 .gbc-console__buttons--cross .gbc-console__buttons--cross-center {
-  /* pièce normale de 64 : elle soude les branches bord à bord (plus d'absolu) */
-  width: 64px;
-  height: 64px;
+  /* même pièce que les branches : elle les soude bord à bord (plus d'absolu) */
+  width: calc(46 * var(--u));
+  height: calc(46 * var(--u));
 }
 
 .gbc-console__buttons--ab button {
   border-radius: 50%;
 }
 /* seuls les 4 bouts sont arrondis ; faces internes franches → soudure nette */
-.gbc-console__buttons--cross-up    { border-radius: 8px 8px 0 0; }
-.gbc-console__buttons--cross-down  { border-radius: 0 0 8px 8px; }
-.gbc-console__buttons--cross-left  { border-radius: 8px 0 0 8px; }
-.gbc-console__buttons--cross-right { border-radius: 0 8px 8px 0; }
+.gbc-console__buttons--cross-up    { border-radius: calc(6 * var(--u)) calc(6 * var(--u)) 0 0; }
+.gbc-console__buttons--cross-down  { border-radius: 0 0 calc(6 * var(--u)) calc(6 * var(--u)); }
+.gbc-console__buttons--cross-left  { border-radius: calc(6 * var(--u)) 0 0 calc(6 * var(--u)); }
+.gbc-console__buttons--cross-right { border-radius: 0 calc(6 * var(--u)) calc(6 * var(--u)) 0; }
 
 .gbc-console__buttons--b {
-  top: 32px;
+  top: calc(23 * var(--u));
 }
 
 .gbc-console__buttons--ab {
-  width: 148px;
+  width: calc(112 * var(--u));
   display: flex;
   flex-wrap: nowrap;
   justify-content: space-between;
   align-items: center;
 }
 .gbc-console__buttons--actions {
-  margin-top: 50px;
+  margin-top: calc(40 * var(--u));
   display: flex;
   flex-wrap: nowrap;
   justify-content: center;
   width: 100%;
-  gap: 16px;
+  gap: calc(14 * var(--u));
 }
 
 .gbc-console__buttons--actions button {
-  width: 46px;
-  height: 14px;
+  width: calc(46 * var(--u));
+  height: calc(14 * var(--u));
   border-radius: 50px;
   background-color: var(--gbc-shade-4);
   color: #838282;
@@ -209,7 +218,7 @@
    ════════════════════════════════════════════════════════════════════ */
 
 .gbc-console {
-  border-radius: 22px 22px 40px 40px; /* la silhouette GBC : bas plus rond */
+  border-radius: calc(22 * var(--u)) calc(22 * var(--u)) calc(40 * var(--u)) calc(40 * var(--u)); /* silhouette GBC : bas plus rond */
   border-color: rgba(0, 0, 0, 0.55);
   background-image:
     linear-gradient(150deg, rgba(255, 255, 255, 0.30) 0%, rgba(255, 255, 255, 0) 30%),
@@ -227,16 +236,16 @@
 .gbc-console::before {
   content: "";
   position: absolute;
-  right: 36px;
-  bottom: 30px;
-  width: 110px;
-  height: 78px;
+  right: calc(24 * var(--u));
+  bottom: calc(22 * var(--u));
+  width: calc(86 * var(--u));
+  height: calc(58 * var(--u));
   background: repeating-linear-gradient(
     115deg,
     rgba(0, 0, 0, 0.50) 0 7px,
     transparent 7px 24px
   );
-  border-radius: 10px;
+  border-radius: calc(8 * var(--u));
   pointer-events: none;
 }
 
@@ -267,6 +276,25 @@
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* Thème DMG : la coque grise vient de --theme-shell ; ici on remplace la
+   sérigraphie GBC arc-en-ciel par le « GAME BOY » monochrome d'origine —
+   invisible dans toutes les autres coques. */
+:root[data-shell="dmg"] .gbc-console__screen::after {
+  content: "GAME BOY\2122"; /* \2122 = ™ */
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  color: #23232a;
+  -webkit-text-fill-color: #23232a;
+}
+
+/* Sérigraphie DMG oblige : START/SELECT inclinés en diagonale comme sur la
+   vraie console — on incline le bloc (bouton + libellé), pas juste la pastille,
+   pour que « SELECT »/« START » suivent l'angle. Uniquement en coque DMG. */
+:root[data-shell="dmg"] .gbc-console__buttons--action {
+  transform: rotate(-25deg);
 }
 
 /* la vitre de la dalle : un reflet diagonal discret par-dessus le canvas */
@@ -343,7 +371,7 @@
 
 @media (max-width: 1100px) {
   .gbc-console {
-    --gbc-scale: 1.5;
+    --gbc-scale: 0.9; /* la coque 650 rétrécit un peu ; tout suit via --u */
   }
 }
 
@@ -352,7 +380,9 @@
    largeur, pleine hauteur, angles disparus, commandes réparties. */
 @media (max-width: 700px) {
   .gbc-console {
-    --gbc-scale: 1.75;
+    /* 1.25 : la dalle (calc(224*u)) retombe pile sur ses 280 px d'origine ;
+       les boutons gardent leurs px explicites plus bas. Mobile inchangé. */
+    --gbc-scale: 1.25;
     /* 100% et non 100vw : `vw` ignore la barre de défilement et provoque
        justement le débordement horizontal qu'on veut interdire. */
     width: 100%;

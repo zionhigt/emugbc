@@ -12,6 +12,10 @@ export const SHELLS = {
   grape: { nom: 'Grape', shell: '#6a3fa0', accent: '#9a6fd4' },
   kiwi: { nom: 'Kiwi', shell: '#4aa84f', accent: '#6fd074' },
   dandelion: { nom: 'Dandelion', shell: '#e8b81c', accent: '#ffd94d' },
+  // Le DMG d'origine : hors-famille GBC, boîtier gris. Sa sérigraphie sous
+  // l'écran passe de « GAME BOY COLOR » à « GAME BOY » — voir Console.css,
+  // sélecteur [data-shell="dmg"]. Accent gris clair : rien d'autre ne se colore.
+  dmg: { nom: 'DMG', shell: '#c3c2b4', accent: '#e4e3d6' },
 };
 
 // Teal = la coque d'origine du projet. Elle reste le défaut : changer ce réglage
