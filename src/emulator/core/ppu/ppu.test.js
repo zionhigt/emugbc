@@ -55,31 +55,35 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 
-  describe('LY : le numéro de ligne, dérivé de l\'horloge — le DIV de l\'écran', () => {
+  // Depuis la migration au décompte, LY n'est plus DÉRIVÉ de l'horloge : il LIT
+  // `line`, un état que seul check() fait avancer. La vraie machine appelle
+  // check() à chaque cycle ; ici on le pilote après chaque saut d'horloge, sinon
+  // `line` resterait figé.
+  describe('LY : le numéro de ligne — la source de vérité `line`, avancée par check()', () => {
     it('suit le balayage : ligne = totalCycles ÷ 114', () => {
       const { machine, ppu } = makePPU();
       expect(ppu.read(LY), 'trame naissante : ligne 0').toBe(0);
-      machine.totalCycles = LIGNE; // 114 cycles
+      machine.totalCycles = LIGNE; ppu.check(); // 114 cycles
       expect(ppu.read(LY), 'une ligne complète balayée').toBe(1);
-      machine.totalCycles = LIGNE * 5 + 57; // au milieu de la 6e ligne
+      machine.totalCycles = LIGNE * 5 + 57; ppu.check(); // au milieu de la 6e ligne
       expect(ppu.read(LY), 'en plein milieu d\'une ligne : toujours la ligne 5').toBe(5);
-      machine.totalCycles = LIGNE * 143;
+      machine.totalCycles = LIGNE * 143; ppu.check();
       expect(ppu.read(LY), 'la dernière ligne visible').toBe(143);
-      machine.totalCycles = VBLANK_AT;
+      machine.totalCycles = VBLANK_AT; ppu.check();
       expect(ppu.read(LY), 'l\'entrée en VBlank').toBe(144);
     });
 
     it('boucle à 154 : la trame suivante repart à zéro', () => {
       const { machine, ppu } = makePPU();
-      machine.totalCycles = TRAME;
+      machine.totalCycles = TRAME; ppu.check();
       expect(ppu.read(LY), 'ligne 154 = ligne 0 de la trame suivante').toBe(0);
-      machine.totalCycles = TRAME + LIGNE * 6;
+      machine.totalCycles = TRAME + LIGNE * 6; ppu.check();
       expect(ppu.read(LY), 'et le balayage continue').toBe(6);
     });
 
     it('LY est en lecture seule : écrire ne change rien (le balayage n\'obéit à personne)', () => {
       const { machine, ppu } = makePPU();
-      machine.totalCycles = LIGNE * 10;
+      machine.totalCycles = LIGNE * 10; ppu.check();
       ppu.write(LY, 0x77);
       expect(ppu.read(LY), 'le faisceau est à la ligne 10, point').toBe(10);
     });
@@ -155,6 +159,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       machine.totalCycles = 1000; // du temps passe, écran noir... blanc
       ppu.write(0xff40, ON);
       machine.totalCycles = 1000 + 114 * 5 + 3;
+      ppu.check();
       expect(
         ppu.read(LY),
         'ligne 5 depuis le RALLUMAGE — pas la ligne 8 de l\'horloge brute',
@@ -176,7 +181,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
 
     it('réécrire LCDC SANS toucher au bit 7 ne ré-ancre RIEN — seule la transition compte', () => {
       const { machine, ppu } = makePPU();
-      machine.totalCycles = 114 * 4; // la trame court depuis 0, ligne 4
+      machine.totalCycles = 114 * 4; ppu.check(); // la trame court depuis 0, ligne 4
       ppu.write(0xff40, 0b1011_0001); // toujours allumé, on a juste ouvert la fenêtre (bit 5)
       expect(
         ppu.read(LY),
@@ -828,8 +833,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const ppu = new PPU();
       return { machine, ppu };
     };
-    // amène l'horloge pile au début de la ligne `n`
-    const versLigne = (machine, n) => { machine.totalCycles = 114 * n; };
+    // amène l'horloge au début de la ligne `n` ET pilote le PPU jusque-là :
+    // LY lit `line`, que seul check() fait avancer.
+    const versLigne = (machine, ppu, n) => { machine.totalCycles = 114 * n; ppu.check(); };
 
     describe('le registre : bits bas calculés, bits hauts écrits', () => {
       it('bit 7 lit toujours 1', () => {
@@ -857,9 +863,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       it('levé quand LY atteint LYC, baissé sinon', () => {
         const { machine, ppu } = makeRig();
         ppu.write(0xff45, 5); // LYC=5
-        versLigne(machine, 5);
+        versLigne(machine, ppu, 5);
         expect(ppu.read(0xff41) & 0b100, 'LY=5 == LYC=5').toBe(0b100);
-        versLigne(machine, 6);
+        versLigne(machine, ppu, 6);
         expect(ppu.read(0xff41) & 0b100, 'LY=6 != LYC=5').toBe(0);
       });
     });
