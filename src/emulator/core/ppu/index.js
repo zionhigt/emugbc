@@ -10,8 +10,7 @@ class LYregister extends Register(8) {
 
     getValue() {
         if (!this.parent.LCDC.isOn) return 0;
-        const value = Math.floor((this.parent.totalMachineCycles - this.parent.anchor) / 114) % 154;
-        return value;
+        return this.parent.line;
     }
 }
 
@@ -82,7 +81,6 @@ export default function(machine) {
     class PPU {
         constructor() {
             this.machine = machine;
-            this._innerCycles = this.totalMachineCycles; // Almost a bad boy. Whatcha gonna do !!
             this.LY = new LYregister(this);
             this.LCDC = new LCDCregister(this);
             this.STAT = new STATregister(this);
@@ -97,15 +95,14 @@ export default function(machine) {
             this.WX = new (Register(8));
 
 
-            this.anchor = this.totalMachineCycles;
             this.line = 0;
-            this.phase = 0;
             this.mode = 2;
-            this.next = this.anchor;
 
             this.screen = new Uint8Array(160 * 144);
             this.windowLine = 0;
             this.bgLine = new Uint8Array(160);
+            this.remain = this.duration(this.mode);
+            this.lastSeen = 0;
         }
 
         sleep() {
@@ -113,18 +110,14 @@ export default function(machine) {
         }
 
         wake() {
-            this.anchor = this.totalMachineCycles;
             this.line = 0;
-            this.phase = 0;
-            this.next = this.anchor;
+            this.mode = 2;
+            this.remain = this.duration(this.mode);
+            this.lastSeen = this.totalMachineCycles;
         }
 
         get bus() {
             return this.machine.memory;
-        }
-
-        get innerCycles() {
-            return this.totalMachineCycles - this._innerCycles;
         }
         
         get totalMachineCycles() {
@@ -146,10 +139,6 @@ export default function(machine) {
                 0xFF4A: this.WY,
                 0xFF4B: this.WX,
             }
-        }
-
-        get currentPhase() {
-            return this.getPhaseByLine(this.line)[this.phase];
         }
 
         renderWindow(line) {
@@ -262,58 +251,66 @@ export default function(machine) {
             if (byte.getFlag(this.LCDC.getValue(), 1)) this.renderSprites(line);
         }
 
-        getPhaseByLine(line) {
-            if (line < 144) {
-                return [
-                    {mode:2, offset:0},
-                    {mode:3, offset:20},
-                    {mode:0, offset:63},
-                ]
-            } else {
-                return [ {mode: 1, offset:0} ]
+        fetchLine() {
+            this.line++;
+            if (this.mode == 1 && this.line >= 154) {
+                this.line = 0;
+                this.mode = 2;
             }
-        }
-
-        runPhase() {
-            const phase = this.currentPhase;
-            this.mode = phase.mode;
-
             const stat = this.STAT.getValue();
-            if (this.phase === 0) {
-                let statLine = false;
-                if (this.line === 144) this.machine.IF |= 0b00001;
-                if (this.line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
-                if (this.line < 144                   && byte.getFlag(stat, 5)) statLine = true;
-                if (this.line === 144                 && byte.getFlag(stat, 4)) statLine = true;
-                if (statLine) {
-                    this.machine.IF |= 0b00010;
-                }
-            }
-            if (phase.mode === 0 && byte.getFlag(stat, 3)) this.machine.IF |= 0b00010;
-            if (phase.mode === 3) this.renderLine(this.line);
+            let statLine = false;
+            if (this.line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
+            if (this.line < 144                   && byte.getFlag(stat, 5)) statLine = true;
+            if (this.line === 144                 && byte.getFlag(stat, 4)) statLine = true;
+            if (statLine) {
+                this.machine.IF |= 0b00010;
+            }            
         }
 
-        advance() {
-            const phases = this.getPhaseByLine(this.line);
-            if (this.phase < phases.length - 1) {
-                this.phase++;
-            } else {
-                this.line++;
-                if (this.line === 154) {
-                    this.line = 0;
-                    this.anchor += 154 * 114
-                }
-                this.phase = 0;
-            }
+        duration(mode) {
+            return [204, 456, 80, 172][mode % 4];
+        }
 
-            this.next = this.anchor + this.line * 114 + this.currentPhase.offset
+        transition() {
+            const stat = this.STAT.getValue();
+            switch (this.mode) {
+                case 0:
+                    this.mode = 2;
+                    this.fetchLine();
+                    if (this.line >= 144) {
+                        this.mode = 1;
+                        this.machine.IF |= 0b00001;
+                    }
+                    break;
+                case 1:
+                    this.fetchLine();
+                    break;
+                case 2:
+                    this.mode = 3;
+                    this.renderLine(this.line);
+                    break;
+                case 3:
+                    this.mode = 0;
+                    if (byte.getFlag(stat, 3)) {
+                        this.machine.IF |= 0b00010;
+                    }
+                    break;
+            }
+            // Débordement négatif
+            let overflow = 0;
+            if (this.remain < 0) {
+                overflow = this.remain;
+            }
+            this.remain = this.duration(this.mode) + overflow;
         }
 
         check() {
             if (!this.LCDC.isOn) return;
-            while (this.totalMachineCycles >= this.next) {                
-                this.runPhase();
-                this.advance();
+            const delta = (this.totalMachineCycles - this.lastSeen) * 4;
+            this.lastSeen = this.totalMachineCycles;
+            this.remain -= delta;
+            while (this.remain <= 0) {                
+                this.transition();
             }
         }
 
