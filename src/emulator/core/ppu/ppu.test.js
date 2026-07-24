@@ -935,6 +935,52 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         expect(machine.IF & 0b10, 'le STAT, bit 1, en plus').toBe(0b10);
       });
     });
+
+    // Le vrai matériel n'a qu'UNE ligne d'interruption STAT : les 4 sources y sont
+    // OR'ées, et l'IRQ ne part qu'au FRONT MONTANT (0 -> 1). Tant que la ligne
+    // reste haute, plus rien ne part — c'est le « STAT blocking ». On teste ici ce
+    // que le modèle « frappe à chaque condition » ne sait pas faire.
+    describe('une seule ligne STAT, à front montant (le « STAT blocking »)', () => {
+      const IF_STAT = 0b0000_0010;
+
+      it('blocking : la coïncidence LYC tient la ligne haute, le HBlank ne refrappe pas', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 40);          // LYC=40
+        ppu.write(0xff41, 0b0100_1000); // bit 6 (LYC) + bit 3 (HBlank) armés
+        machine.totalCycles = 114 * 40; ppu.check(); // début ligne 40 : la coïncidence LÈVE la ligne
+        machine.IF = 0;                 // on repart propre, APRÈS ce front
+        machine.totalCycles = 114 * 40 + 100; ppu.check(); // même ligne 40, on entre en HBlank
+        expect(machine.IF & IF_STAT, 'ligne déjà haute (LYC) : le HBlank est BLOQUÉ').toBe(0);
+      });
+
+      it('écrire une autorisation STAT pendant que sa condition est active lève la ligne', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0);           // rien d'armé -> ligne basse
+        machine.totalCycles = 114 * 5 + 100; ppu.check(); // ligne 5, en plein HBlank (mode 0)
+        machine.IF = 0;
+        ppu.write(0xff41, 0b0000_1000); // on ARME le HBlank ALORS QUE le mode 0 est déjà là
+        expect(machine.IF & IF_STAT, 'armer pendant la condition = front montant').toBe(IF_STAT);
+      });
+
+      it('écrire LYC pour créer la coïncidence lève la ligne (le fix stat_lyc_onoff)', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0100_0000); // bit 6 (LYC) armé
+        ppu.write(0xff45, 99);          // LYC=99 : pas de coïncidence
+        machine.totalCycles = 114 * 5; ppu.check(); // ligne 5
+        machine.IF = 0;
+        ppu.write(0xff45, 5);           // LYC recalé sur LY=5 -> coïncidence -> front
+        expect(machine.IF & IF_STAT, 'LYC == LY subitement = front montant').toBe(IF_STAT);
+      });
+
+      it('une source qui reste active ne refrappe pas (VBlank tenu sur plusieurs lignes)', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0001_0000); // bit 4 (VBlank-STAT)
+        machine.totalCycles = 114 * 144; ppu.check(); // entrée VBlank : UN front
+        machine.IF = 0;
+        machine.totalCycles = 114 * 150; ppu.check(); // 6 lignes plus loin, toujours VBlank
+        expect(machine.IF & IF_STAT, 'la ligne reste haute tout le VBlank : aucune re-frappe').toBe(0);
+      });
+    });
   });
 
   describe('la machine à phases : le dessin a lieu APRÈS l\'interruption STAT — LE fix', () => {
