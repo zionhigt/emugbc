@@ -13,6 +13,18 @@ class LYregister extends Register(8) {
         return this.parent.line;
     }
 }
+class LYCregister extends Register(8) {
+    
+    constructor(parent) {
+        super();
+        this.parent = parent;
+    }
+
+    setValue(value) {
+        super.setValue(value);
+        this.parent.updateStat();
+    }
+}
 
 class LCDCregister extends Register(8) {
     constructor(parent) {
@@ -55,6 +67,7 @@ class STATregister extends Register(8) {
 
     setValue(value) {
         super.setValue(value & 0x78);
+        this.parent.updateStat();
     }
 }
 class DMAregister extends Register(8) {
@@ -86,7 +99,7 @@ export default function(machine) {
             this.STAT = new STATregister(this);
             this.SCY = new (Register(8));
             this.SCX = new (Register(8));
-            this.LYC = new (Register(8));
+            this.LYC = new LYCregister(this);
             this.DMA = new DMAregister(this);
             this.BGP = new (Register(8));
             this.OBP0 = new (Register(8));
@@ -103,6 +116,8 @@ export default function(machine) {
             this.bgLine = new Uint8Array(160);
             this.remain = this.duration(this.mode);
             this.lastSeen = 0;
+
+            this.statLine = 0;
         }
 
         sleep() {
@@ -114,6 +129,7 @@ export default function(machine) {
             this.mode = 2;
             this.remain = this.duration(this.mode);
             this.lastSeen = this.totalMachineCycles;
+            this.statLine = 0;
         }
 
         get bus() {
@@ -257,14 +273,20 @@ export default function(machine) {
                 this.line = 0;
                 this.mode = 2;
             }
+        }
+
+        updateStat() {
+            const LYC = this.LYC.getValue();
             const stat = this.STAT.getValue();
-            let statLine = false;
-            if (this.line === this.LYC.getValue() && byte.getFlag(stat, 6)) statLine = true;
-            if (this.line < 144                   && byte.getFlag(stat, 5)) statLine = true;
-            if (this.line === 144                 && byte.getFlag(stat, 4)) statLine = true;
-            if (statLine) {
+
+            const level = (this.line === LYC && byte.getFlag(stat, 6)) ||
+                        (this.mode === 0 && byte.getFlag(stat, 3)) ||
+                        (this.mode === 1 && byte.getFlag(stat, 4)) ||
+                        (this.mode === 2 && byte.getFlag(stat, 5))
+            if (level && !this.statLine) {
                 this.machine.IF |= 0b00010;
-            }            
+            }
+            this.statLine = level;
         }
 
         duration(mode) {
@@ -272,7 +294,6 @@ export default function(machine) {
         }
 
         transition() {
-            const stat = this.STAT.getValue();
             switch (this.mode) {
                 case 0:
                     this.mode = 2;
@@ -291,11 +312,11 @@ export default function(machine) {
                     break;
                 case 3:
                     this.mode = 0;
-                    if (byte.getFlag(stat, 3)) {
-                        this.machine.IF |= 0b00010;
-                    }
                     break;
             }
+
+            this.updateStat();
+
             // Débordement négatif
             let overflow = 0;
             if (this.remain < 0) {
