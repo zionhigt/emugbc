@@ -1248,21 +1248,39 @@ describe('Option A : `computeState` — mode/LY calculés depuis l\'horloge (fon
     expect(ppu.origin, 'origine = totalCycles à l\'allumage').toBe(500);
   });
 
-  it('les bandes d\'une ligne visible (SCX=0, aucun sprite) : 2 → 3 → 0', () => {
+  // On teste les bandes NORMALES sur la ligne 1 : la ligne 0 porte le quirk
+  // d'allumage (pas de scan OAM), traité par un test dédié juste après.
+  const L1 = 114; // décalage d'une ligne, en M-cycles
+
+  it('les bandes d\'une ligne visible normale (ligne 1, SCX=0) : 2 → 3 → 0', () => {
     const { machine, ppu } = makePPU();
     ppu.origin = 0;
 
-    machine.totalCycles = 10; // dot 40 : plein scan OAM
+    machine.totalCycles = L1 + 10; // dot 40 : plein scan OAM
     expect(ppu.computeState().mode, 'dot 40 : mode 2').toBe(2);
 
-    machine.totalCycles = 20; // dot 80 : le dessin commence
+    machine.totalCycles = L1 + 20; // dot 80 : le dessin commence
     expect(ppu.computeState().mode, 'dot 80 : mode 3').toBe(3);
 
-    machine.totalCycles = 62; // dot 248 : encore le dessin
+    machine.totalCycles = L1 + 62; // dot 248 : encore le dessin
     expect(ppu.computeState().mode, 'dot 248 : mode 3').toBe(3);
 
-    machine.totalCycles = 63; // dot 252 = 80 + 172 : HBlank
+    machine.totalCycles = L1 + 63; // dot 252 = 80 + 172 : HBlank
     expect(ppu.computeState().mode, 'dot 252 : mode 0').toBe(0);
+  });
+
+  it('quirk d\'allumage : la ligne 0 n\'a pas de scan OAM — sa bande mode 2 se lit 0', () => {
+    const { machine, ppu } = makePPU();
+    ppu.origin = 0; // allumage à l'instant 0 : la toute première ligne est spéciale
+
+    machine.totalCycles = 10; // dot 40 : là où une ligne normale scannerait l'OAM
+    expect(ppu.computeState().mode, 'ligne 0 : mode 0 au lieu de mode 2').toBe(0);
+
+    machine.totalCycles = 20; // dot 80 : le dessin démarre, comme d'habitude
+    expect(ppu.computeState().mode, 'ligne 0 : mode 3 dès le dot 80').toBe(3);
+
+    machine.totalCycles = 63; // dot 252 : HBlank en fin de ligne, comme d'habitude
+    expect(ppu.computeState().mode, 'ligne 0 : mode 0 en fin de ligne').toBe(0);
   });
 
   it('LY = la ligne, avance tous les 114 M-cycles ; VBlank dès la ligne 144', () => {
@@ -1284,7 +1302,7 @@ describe('Option A : `computeState` — mode/LY calculés depuis l\'horloge (fon
   it('SCX étend le mode 3 : au même instant, SCX=3 dessine encore là où SCX=0 est en HBlank', () => {
     const { machine, ppu } = makePPU();
     ppu.origin = 0;
-    machine.totalCycles = 63; // dot 252
+    machine.totalCycles = L1 + 63; // dot 252 sur la ligne 1 (hors quirk)
 
     // SCX=0 : len = 172, le mode 3 finit PILE ici → HBlank
     ppu.write(0xff43, 0);
