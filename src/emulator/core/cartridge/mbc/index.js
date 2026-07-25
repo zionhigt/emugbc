@@ -6,7 +6,10 @@ export default function(type, rom) {
         0: NoMBC,
         1: MBC1,
     }
-    const cls = classMapping[type];
-    if (!cls) throw new Error("Not implemented");
+    let cls = classMapping[type];
+    if (!cls) {
+        console.warn(`MBC ${type} Not implemented`);
+        cls = MBC1;
+    }
     return new cls(rom);
 }
