@@ -1013,6 +1013,29 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         expect(machine.IF & 0b00001, 'et le VBlank, au même instant').toBe(0b00001);
       });
     });
+
+    // Mode 3 (dessin) n'est PAS fixe : le PPU jette les premiers `SCX & 7` pixels,
+    // ce qui rallonge le mode 3 d'autant — donc le HBlank (mode 0) glisse d'autant.
+    // La ligne reste 456 dots (mode 0 rétrécit pour compenser).
+    describe('mode 3 variable : SCX & 7 rallonge le dessin (le HBlank glisse)', () => {
+      it('SCX & 7 = 0 : le HBlank (mode 0) démarre au M-cycle 63', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff43, 0); // SCX = 0 : mode 3 = 172 dots (base)
+        machine.totalCycles = 62; ppu.check();
+        expect(ppu.mode, 'M-cycle 62 : encore le dessin').toBe(3);
+        machine.totalCycles = 63; ppu.check();
+        expect(ppu.mode, 'M-cycle 63 : HBlank').toBe(0);
+      });
+
+      it('SCX & 7 = 7 : mode 3 rallongé de 7 dots, le HBlank ne vient qu\'au M-cycle 65', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff43, 7); // SCX & 7 = 7 → +7 dots sur le mode 3
+        machine.totalCycles = 64; ppu.check();
+        expect(ppu.mode, 'M-cycle 64 : ENCORE le dessin (allongé)').toBe(3);
+        machine.totalCycles = 65; ppu.check();
+        expect(ppu.mode, 'M-cycle 65 : enfin le HBlank').toBe(0);
+      });
+    });
   });
 
   describe('la machine à phases : le dessin a lieu APRÈS l\'interruption STAT — LE fix', () => {

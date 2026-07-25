@@ -24,6 +24,67 @@ const buildFakeCartridge = () => {
   };
 };
 
+describe('Blocage VRAM/OAM : le PPU verrouille l\'accès CPU selon son mode', () => {
+  // Une mémoire avec un PPU PILOTABLE : on force son mode et l'état LCD.
+  // (serial/timer/joypad restent undefined : les tests ne touchent que VRAM/OAM.)
+  const buildMem = (mode, isOn = true) => buildMemory(
+    buildFakeCartridge(),
+    undefined,
+    undefined,
+    { mode, LCDC: { isOn }, read: () => 0, write: () => {}, check: () => {} },
+    undefined,
+  );
+
+  it('VRAM : lecture CPU rend 0xFF en mode 3 (dessin)', () => {
+    const mem = buildMem(3);
+    mem._write(0x8000, 0x3c); // valeur réelle posée en BRUT (le PPU, lui, y accède)
+    expect(hex(mem.read(0x8000), 2), 'VRAM verrouillée en mode 3').toBe('0xFF');
+  });
+
+  it('VRAM : écriture CPU ignorée en mode 3', () => {
+    const mem = buildMem(3);
+    mem.write(0x8000, 0x3c);
+    expect(mem._read(0x8000), 'rien n\'a atteint la ram').toBe(0);
+  });
+
+  it('VRAM : ouverte hors mode 3 (modes 0 et 2)', () => {
+    for (const mode of [0, 2]) {
+      const mem = buildMem(mode);
+      mem.write(0x8000, 0x3c);
+      expect(hex(mem.read(0x8000), 2), `mode ${mode} : accès libre`).toBe('0x3C');
+    }
+  });
+
+  it('OAM : verrouillée en modes 2 ET 3 (scan + dessin)', () => {
+    for (const mode of [2, 3]) {
+      const mem = buildMem(mode);
+      mem._write(0xfe00, 0x11);
+      expect(hex(mem.read(0xfe00), 2), `OAM bloquée en mode ${mode}`).toBe('0xFF');
+    }
+  });
+
+  it('OAM : ouverte en mode 0 (HBlank)', () => {
+    const mem = buildMem(0);
+    mem.write(0xfe00, 0x11);
+    expect(hex(mem.read(0xfe00), 2), 'HBlank : OAM libre').toBe('0x11');
+  });
+
+  it('écran éteint : tout ouvert, même mode 3 (le mode est figé, sans le LCD c\'est faux)', () => {
+    const mem = buildMem(3, false); // mode 3 MAIS écran coupé
+    mem.write(0x8000, 0x3c);
+    expect(hex(mem.read(0x8000), 2), 'LCD off = VRAM ouverte').toBe('0x3C');
+    mem.write(0xfe00, 0x11);
+    expect(hex(mem.read(0xfe00), 2), 'LCD off = OAM ouverte').toBe('0x11');
+  });
+
+  it('le contournement PPU (_read/_write) ignore le verrou', () => {
+    const mem = buildMem(3); // tout bloqué côté CPU
+    mem._write(0x8000, 0xab);
+    expect(hex(mem._read(0x8000), 2), 'le PPU lit sa VRAM malgré le mode 3').toBe('0xAB');
+    expect(hex(mem.read(0x8000), 2), 'mais le CPU, lui, reste dehors').toBe('0xFF');
+  });
+});
+
 describe('Memory sans cartouche : le tableau plat de secours', () => {
   it('write puis read se répondent sur TOUT l\'espace, plage ROM comprise', () => {
     const memory = buildMemory();
