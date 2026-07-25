@@ -1227,3 +1227,71 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     });
   });
 });
+
+// OPTION A — le PPU « fonction pure de l'horloge ».
+// Au lieu de lire un `this.mode` MUTÉ par check(), on CALCULE mode/LY depuis
+// `totalCycles`, exactement comme le timer calcule TIMA depuis `innerCycles`.
+// C'est la brique de base : purement additive (elle ne débranche rien encore),
+// on la câblera aux lectures à l'étape suivante.
+//
+// Géométrie, en M-cycles (1 M-cycle = 4 dots) :
+//   1 ligne = 114 M-cycles = 456 dots
+//   mode 2 (scan OAM) : dots [0, 80)          = M-cycles [0, 20)
+//   mode 3 (dessin)   : dots [80, 80 + len)   avec len = 172 + pénalité(ligne)
+//   mode 0 (HBlank)   : jusqu'à 456
+// Sans pénalité, len = 172 : le mode 3 finit au dot 252 = M-cycle 63.
+describe('Option A : `computeState` — mode/LY calculés depuis l\'horloge (fonction pure)', () => {
+  it('`wake()` fige l\'origine sur l\'horloge courante', () => {
+    const { machine, ppu } = makePPU();
+    machine.totalCycles = 500;
+    ppu.wake();
+    expect(ppu.origin, 'origine = totalCycles à l\'allumage').toBe(500);
+  });
+
+  it('les bandes d\'une ligne visible (SCX=0, aucun sprite) : 2 → 3 → 0', () => {
+    const { machine, ppu } = makePPU();
+    ppu.origin = 0;
+
+    machine.totalCycles = 10; // dot 40 : plein scan OAM
+    expect(ppu.computeState().mode, 'dot 40 : mode 2').toBe(2);
+
+    machine.totalCycles = 20; // dot 80 : le dessin commence
+    expect(ppu.computeState().mode, 'dot 80 : mode 3').toBe(3);
+
+    machine.totalCycles = 62; // dot 248 : encore le dessin
+    expect(ppu.computeState().mode, 'dot 248 : mode 3').toBe(3);
+
+    machine.totalCycles = 63; // dot 252 = 80 + 172 : HBlank
+    expect(ppu.computeState().mode, 'dot 252 : mode 0').toBe(0);
+  });
+
+  it('LY = la ligne, avance tous les 114 M-cycles ; VBlank dès la ligne 144', () => {
+    const { machine, ppu } = makePPU();
+    ppu.origin = 0;
+
+    machine.totalCycles = 114; // ligne 1, dot 0
+    expect(ppu.computeState().line, 'début de la ligne 1').toBe(1);
+    expect(ppu.computeState().mode, 'une ligne fraîche redémarre en scan OAM').toBe(2);
+
+    machine.totalCycles = 114 * 144; // ligne 144
+    expect(ppu.computeState().line, 'la ligne 144').toBe(144);
+    expect(ppu.computeState().mode, 'lignes 144-153 : VBlank').toBe(1);
+
+    machine.totalCycles = 114 * 154; // trame suivante : retour ligne 0
+    expect(ppu.computeState().line, 'la trame boucle à 154').toBe(0);
+  });
+
+  it('SCX étend le mode 3 : au même instant, SCX=3 dessine encore là où SCX=0 est en HBlank', () => {
+    const { machine, ppu } = makePPU();
+    ppu.origin = 0;
+    machine.totalCycles = 63; // dot 252
+
+    // SCX=0 : len = 172, le mode 3 finit PILE ici → HBlank
+    ppu.write(0xff43, 0);
+    expect(ppu.computeState().mode, 'SCX=0 : mode 0 au dot 252').toBe(0);
+
+    // SCX=3 : len = 175, le mode 3 court jusqu'au dot 255 → encore le dessin
+    ppu.write(0xff43, 3);
+    expect(ppu.computeState().mode, 'SCX=3 : mode 3 au dot 252').toBe(3);
+  });
+});

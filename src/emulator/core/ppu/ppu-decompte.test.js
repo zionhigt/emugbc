@@ -176,11 +176,15 @@ describe('AXE 1 — la machine à décompte : prédire devient décompter', () =
     });
   });
 
-  describe('LY lit line : la source de vérité a changé de nature', () => {
-    it('LY renvoie line, pas une dérivée de l\'horloge', () => {
-      const { ppu } = makePPU();
-      ppu.line = 42; // on force la source de vérité
-      expect(ppu.read(LY), 'LY se contente de LIRE line').toBe(42);
+  describe('LY : source de vérité — AXE 1 lisait this.line, Option A dérive de l\'horloge', () => {
+    // AXE 1 avait posé « LY lit this.line ». Option A supersède ce contrat : LY
+    // redevient une dérivée de l'horloge, mais en fonction PURE (via computeState,
+    // échantillonnée au cycle de l'accès). this.line n'a plus d'emprise sur la lecture.
+    it('LY dérive de l\'horloge : this.line muté n\'est plus lu', () => {
+      const { machine, ppu } = makePPU();
+      ppu.line = 42; // l'ancien état muté est ignoré par la lecture
+      machine.totalCycles = LIGNE * 5; // le faisceau est à la ligne 5
+      expect(ppu.read(LY), 'LY se calcule depuis totalCycles, pas depuis this.line').toBe(5);
     });
 
     it('après un balayage, read(LY) et line sont accordés', () => {
