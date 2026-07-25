@@ -92,29 +92,79 @@ class DMAregister extends Register(8) {
 
 class Fetcher {
     constructor(parent) {
-        this._fifo = [];
-        this.parent = parent; 
+        this.fifo = [];
+        this.step = 0;
+        this.fetchX = 0;
+        this.id = null;
+        this.low = 0;
+        this.high = 0;
+        this.x = 0;
+        this.dy = 0;
+        this.parent = parent;
+        this.discard = 0;
+    }
+
+    tick(line) {
+        const dy = this.dy;
+        const card = byte.getFlag(this.parent.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
+        const addr = card + (dy >> 3) * 32 + (this.fetchX & 31);
+        let tile;
+        switch (this.step) {
+            case 0:
+                this.id = this.parent.bus.ppuRead(addr);
+                this.step = 1;
+                break;
+            case 1:
+                tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
+                    0x8000 + this.id * 16 :
+                    0x9000 + byte.sign8(this.id) * 16;
+                this.low = this.parent.bus.ppuRead(tile + (dy % 8) * 2);
+                this.step = 2;
+                break;
+            case 2:
+                tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
+                    0x8000 + this.id * 16 :
+                    0x9000 + byte.sign8(this.id) * 16;
+                this.high = this.parent.bus.ppuRead(tile + (dy % 8) * 2 + 1);
+                this.step = 3;
+                break;
+            case 3:
+                if (this.fifo.length === 0) {
+                    for (let bit = 7; bit >= 0; bit--) {
+                        const teinte = byte.getBit(this.high, bit) * 2 + byte.getBit(this.low, bit);
+                        this.fifo.push(teinte);
+                    }
+                    this.fetchX++;
+                    this.step = 0;
+                }
+                break;
+        }
+        if (this.fifo.length > 0) {
+            if (this.discard > 0) {
+                this.fifo.shift();
+                this.discard--;
+                return;
+            }
+            const pixel = this.fifo.shift();
+            this.parent.bgLine[this.x] = pixel;
+            this.parent.screen[line * 160 + this.x] = (this.parent.BGP.getValue() >> (pixel * 2)) & 0b11;
+            this.x++;
+        }
+
     }
 
     renderFifo(line) {
         if (line === 0) this.parent.windowLine = 0;
         if (!byte.getFlag(this.parent.LCDC.getValue(), 0)) return this.parent.screen.fill(0, line * 160, line * 160 + 160);
-
-        for (let x = 0; x <= 159; x++) {
-            const dx = (x + this.parent.SCX.getValue()) & 0xFF;
-            const dy = (line + this.parent.SCY.getValue()) & 0xFF;
-            const card = byte.getFlag(this.parent.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
-            const addr = card + (dy >> 3) * 32 + (dx >> 3);
-            const id = this.parent.bus.ppuRead(addr);
-            const tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
-                0x8000 + id * 16 :
-                0x9000 + byte.sign8(id) * 16;
-            const low = this.parent.bus.ppuRead(tile + (dy % 8) * 2);
-            const high = this.parent.bus.ppuRead(tile + (dy % 8) * 2 + 1); 
-            const bit = 7 - (dx % 8);
-            const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
-            this.parent.bgLine[x] = teinte;
-            this.parent.screen[line * 160 + x] = (this.parent.BGP.getValue() >> (teinte * 2)) & 0b11;
+        const scx = this.parent.SCX.getValue();
+        this.fifo = [];
+        this.fetchX = scx >> 3;
+        this.step = 0;
+        this.x = 0;
+        this.discard = scx & 7;
+        this.dy = (line + this.parent.SCY.getValue()) & 0xFF;
+        while (this.x < 160) {
+            this.tick(line);
         }
 
         if (byte.getFlag(this.parent.LCDC.getValue(), 5) && line >= this.parent.WY.getValue() && this.parent.WX.getValue() <= 166) {
