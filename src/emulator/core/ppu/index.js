@@ -282,7 +282,8 @@ export default function(machine) {
             const level = (this.line === LYC && byte.getFlag(stat, 6)) ||
                         (this.mode === 0 && byte.getFlag(stat, 3)) ||
                         (this.mode === 1 && byte.getFlag(stat, 4)) ||
-                        (this.mode === 2 && byte.getFlag(stat, 5))
+                        (this.mode === 2 && byte.getFlag(stat, 5)) ||
+                        (this.line === 144 && byte.getFlag(stat, 5))
             if (level && !this.statLine) {
                 this.machine.IF |= 0b00010;
             }
