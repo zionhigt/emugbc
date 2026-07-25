@@ -60,8 +60,8 @@ class STATregister extends Register(8) {
     getValue() {
         const ly = this.parent.LY.getValue();
         const lyc = this.parent.LYC.getValue();
-        const coincidence = (ly === lyc) ? 1 : 0;
-        const mode = this.parent.mode;
+        const coincidence = this.parent.coincidence;
+        const mode = this.parent.LCDC.isOn ? this.parent.mode : 0;
         return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
     }
 
@@ -122,6 +122,8 @@ export default function(machine) {
             this.lcdJustOn = false;
             this.mode3Penality = 0;
             this._visibleLineSprites = {};
+
+            this.coincidence = 0;
         }
 
         sleep() {
@@ -134,7 +136,7 @@ export default function(machine) {
             this.remain = this.duration(2);
             this.lcdJustOn = true;
             this.lastSeen = this.totalMachineCycles;
-            this.statLine = 0;
+            this.updateStat();
         }
 
         get bus() {
@@ -315,10 +317,11 @@ export default function(machine) {
         }
 
         updateStat() {
+            if (!this.LCDC.isOn) return;
             const LYC = this.LYC.getValue();
             const stat = this.STAT.getValue();
-
-            const level = (this.line === LYC && byte.getFlag(stat, 6)) ||
+            this.coincidence = (this.line === LYC) ? 1 : 0;
+            const level = (this.coincidence && byte.getFlag(stat, 6)) ||
                         (this.mode === 0 && byte.getFlag(stat, 3)) ||
                         (this.mode === 1 && byte.getFlag(stat, 4)) ||
                         (this.mode === 2 && byte.getFlag(stat, 5)) ||
