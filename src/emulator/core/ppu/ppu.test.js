@@ -980,6 +980,19 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         machine.totalCycles = 114 * 150; ppu.check(); // 6 lignes plus loin, toujours VBlank
         expect(machine.IF & IF_STAT, 'la ligne reste haute tout le VBlank : aucune re-frappe').toBe(0);
       });
+
+      // Quirk DMG (vblank_stat_intr) : à l'entrée du VBlank (ligne 144), si le bit 5
+      // (OAM) est armé, la ligne STAT monte AUSSI — au même cycle que le VBlank,
+      // alors même que le mode est déjà 1. (Sur CGB ça décale d'un cycle.)
+      it('quirk : à la ligne 144, l\'OAM (bit 5) frappe au même instant que le VBlank', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0010_0000); // bit 5 (OAM) armé
+        machine.totalCycles = 114 * 143 + 100; ppu.check(); // ligne 143, mode 0 : l'OAM est retombé
+        machine.IF = 0;
+        machine.totalCycles = 114 * 144; ppu.check(); // pile l'entrée en VBlank
+        expect(machine.IF & IF_STAT, 'l\'OAM frappe AUSSI à la ligne 144 (malgré le mode 1)').toBe(IF_STAT);
+        expect(machine.IF & 0b00001, 'et le VBlank, au même instant').toBe(0b00001);
+      });
     });
   });
 
