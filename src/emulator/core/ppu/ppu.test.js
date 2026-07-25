@@ -188,6 +188,25 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         'les jeux réécrivent LCDC sans arrêt : un ré-ancrage ici gèlerait la trame pour toujours',
       ).toBe(4);
     });
+
+    // Quirk d'allumage (lcdon_timing) : le PREMIER frame après un rallumage LCD
+    // ne fait PAS de scan OAM sur la ligne 0. Elle démarre en mode 0 et file
+    // droit en mode 3 — puis tout redevient normal dès la ligne 1. (Le décalage
+    // « 2 T-cycles » exact est sous notre granularité, réglage fin plus tard.)
+    it('allumage : la ligne 0 démarre en mode 0 puis file en mode 3 (pas de scan OAM)', () => {
+      const { machine, ppu } = makePPU();
+      ppu.write(0xff40, OFF);
+      machine.totalCycles = 1000;
+      ppu.write(0xff40, ON); // rallumage → wake
+      machine.totalCycles = 1000 + 5; ppu.check();
+      expect(ppu.mode, 'ligne 0 démarre en mode 0, pas en scan OAM (mode 2)').toBe(0);
+      expect(ppu.line, 'toujours ligne 0').toBe(0);
+      machine.totalCycles = 1000 + 30; ppu.check();
+      expect(ppu.mode, 'puis file direct en mode 3').toBe(3);
+      machine.totalCycles = 1000 + 130; ppu.check();
+      expect(ppu.line, 'ligne 1 atteinte').toBe(1);
+      expect(ppu.mode, 'ligne 1 : scan OAM normal (mode 2)').toBe(2);
+    });
   });
 
   describe('les pixels : le décor, tuile par tuile', () => {
