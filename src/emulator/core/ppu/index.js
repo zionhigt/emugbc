@@ -121,6 +121,7 @@ export default function(machine) {
 
             this.lcdJustOn = false;
             this.mode3Penality = 0;
+            this._visibleLineSprites = {};
         }
 
         sleep() {
@@ -187,14 +188,15 @@ export default function(machine) {
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.bgLine[x] = teinte;
                 this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
+
             }
         }
 
-        renderSprites(line) {
+        visibleLineSprites(line) {
+
+            if (line in (this._visibleLineSprites || {})) return this._visibleLineSprites[line];
             const h = byte.getFlag(this.LCDC.getValue(), 2) ? 16 : 8;
-
             let visibles = [];
-
             for (let i = 0; i < 40 && visibles.length < 10; i++) {
                 const addr = 0xFE00 + i * 4;
                 const y = this.bus.ppuRead(addr) - 16;
@@ -215,8 +217,33 @@ export default function(machine) {
                     return (b.x - a.x) || (b.index - a.index);
                 }
             )
+            this._visibleLineSprites = {[line]: visibles};
+            return this._visibleLineSprites[line];
+        }
 
-            for (let sprite of visibles) {
+        computeOAMPenality(line) {
+            let penality = 0;
+            if (byte.getFlag(this.LCDC.getValue(), 1)) {
+                const visibles = this.visibleLineSprites(line);
+                const tmp = [];
+                const scx = this.SCX.getValue();
+                for (let o of Object.values(visibles)) {
+                    if (o.x >= 160) continue;
+                    if (!tmp.includes(o.x)) {
+                        tmp.push(o.x);
+                        penality += Math.max(0, 5 - ((o.x + scx) & 7));
+                    };
+                    penality += 6;
+                }
+            }
+
+            return penality;
+
+        }
+
+        renderSprites(line) {
+            const h = byte.getFlag(this.LCDC.getValue(), 2) ? 16 : 8;
+            for (let sprite of this.visibleLineSprites(line)) {
                 let row = line - sprite.y;
                 if (byte.getFlag(sprite.attrs, 6)) {
                     row = h - 1 - row
@@ -326,6 +353,7 @@ export default function(machine) {
                 case 2:
                     this.mode = 3;
                     this.mode3Penality = this.SCX.getValue() & 7;
+                    this.mode3Penality += this.computeOAMPenality(this.line);
                     this.renderLine(this.line);
                     break;
                 case 3:
