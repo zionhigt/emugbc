@@ -118,6 +118,8 @@ export default function(machine) {
             this.lastSeen = 0;
 
             this.statLine = 0;
+
+            this.lcdJustOn = false;
         }
 
         sleep() {
@@ -126,8 +128,9 @@ export default function(machine) {
 
         wake() {
             this.line = 0;
-            this.mode = 2;
-            this.remain = this.duration(this.mode);
+            this.mode = 0;
+            this.remain = this.duration(2);
+            this.lcdJustOn = true;
             this.lastSeen = this.totalMachineCycles;
             this.statLine = 0;
         }
@@ -298,6 +301,10 @@ export default function(machine) {
             switch (this.mode) {
                 case 0:
                     this.mode = 2;
+                    if (this.lcdJustOn) {
+                        this.lcdJustOn = false;
+                        return this.transition();
+                    };
                     this.fetchLine();
                     if (this.line >= 144) {
                         this.mode = 1;
