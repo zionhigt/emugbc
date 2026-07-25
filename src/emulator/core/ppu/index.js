@@ -10,7 +10,7 @@ class LYregister extends Register(8) {
 
     getValue() {
         if (!this.parent.LCDC.isOn) return 0;
-        return this.parent.line;
+        return this.parent.computeState(this.parent.totalMachineCycles + 1).line;
     }
 }
 class LYCregister extends Register(8) {
@@ -61,7 +61,9 @@ class STATregister extends Register(8) {
         const ly = this.parent.LY.getValue();
         const lyc = this.parent.LYC.getValue();
         const coincidence = this.parent.coincidence;
-        const mode = this.parent.LCDC.isOn ? this.parent.mode : 0;
+        const mode = this.parent.LCDC.isOn ?
+                this.parent.mode :
+                0;
         return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
     }
 
@@ -202,6 +204,7 @@ export default function(machine) {
             this.bgLine = new Uint8Array(160);
             this.remain = this.duration(this.mode);
             this.lastSeen = 0;
+            this.origin = 0;
 
             this.statLine = 0;
 
@@ -224,6 +227,7 @@ export default function(machine) {
             this.remain = this.duration(2);
             this.lcdJustOn = true;
             this.lastSeen = this.totalMachineCycles;
+            this.origin = this.totalMachineCycles;
             this.updateStat();
         }
 
@@ -385,11 +389,12 @@ export default function(machine) {
             const LYC = this.LYC.getValue();
             const stat = this.STAT.getValue();
             this.coincidence = (this.line === LYC) ? 1 : 0;
+            const { line, mode } = this;
             const level = (this.coincidence && byte.getFlag(stat, 6)) ||
-                        (this.mode === 0 && byte.getFlag(stat, 3)) ||
-                        (this.mode === 1 && byte.getFlag(stat, 4)) ||
-                        (this.mode === 2 && byte.getFlag(stat, 5)) ||
-                        (this.line === 144 && byte.getFlag(stat, 5))
+                        (mode === 0 && byte.getFlag(stat, 3)) ||
+                        (mode === 1 && byte.getFlag(stat, 4)) ||
+                        (mode === 2 && byte.getFlag(stat, 5)) ||
+                        (line === 144 && byte.getFlag(stat, 5))
             if (level && !this.statLine) {
                 this.machine.IF |= 0b00010;
             }
@@ -443,6 +448,20 @@ export default function(machine) {
                 penality = this.mode3Penality;
             } 
             this.remain = this.duration(this.mode) + penality + overflow;
+        }
+
+        computeState(cycle = this.totalMachineCycles) {
+            let mode;
+            const elapsedDots = 4 * (cycle - this.origin);
+            const frameDot    = elapsedDots % 70224;
+            const line        = Math.floor(frameDot / 456);
+            const dotInLine   = frameDot % 456;
+            const len         = 172 + (this.SCX.getValue() & 7) + this.computeOAMPenality(line);
+            if      (line >= 144)          mode = 1;
+            else if (dotInLine < 80)       mode = 2;
+            else if (dotInLine < 80 + len) mode = 3;
+            else                           mode = 0;
+            return { line, mode };
         }
 
         check() {
