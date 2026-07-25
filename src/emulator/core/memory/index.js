@@ -171,20 +171,73 @@ function FactoryJoypadSection(joypad) {
     return JoypadStubSection;
 }
 
+class PPURamSection extends Section {
+    constructor(memory, ppu) {
+        super(memory);
+        this.ppu = ppu;
+    }
+
+    get mode() {
+        if (!this.ppu || !this.ppu.LCDC.isOn) return null;
+        return this.ppu.mode;
+    }
+}
+
+function FactoryVRAMSection(ppu) {
+    class VRAMSection extends PPURamSection {
+        constructor(memory) {
+            super(memory, ppu);
+        }
+
+        read(addr) {
+            if (this.mode === 3) return 0xFF;
+            return this.memory._read(addr);
+        }
+        write(addr, value) {
+            if (this.mode === 3) return;
+            return this.memory._write(addr, value);
+        }
+    }
+
+    return VRAMSection;
+}
+function FactoryOAMSection(ppu) {
+    class OAMSection extends PPURamSection {
+        constructor(memory) {
+            super(memory, ppu);
+        }
+        
+        read(addr) {
+            if ([2, 3].includes(this.mode)) return 0xFF;
+            return this.memory._read(addr);
+        }
+        write(addr, value) {
+            if ([2, 3].includes(this.mode)) return;
+            return this.memory._write(addr, value);
+        }
+    }
+
+    return OAMSection;
+}
+
 export default function(cartridge, serialbus, timer, ppu, joypad) {
     const memory = new Memory();
     if (arguments.length === 0) {
         memory.bindRange("flat", 0x000, 0xFFFF, Section);
         return memory;
     }
-    let overflowStart = 0;
+    let mbc = Section;
     if (cartridge?.mbc) {
-        overflowStart = 0x8000;
-        const mbc = FactoryMBCSection(cartridge.mbc);
-        memory.bindRange("MBC", 0, 0x7FFF, mbc);
+        mbc = FactoryMBCSection(cartridge.mbc);
     }
+    memory.bindRange("MBC", 0, 0x7FFF, mbc);
     // TODO: Explods for each sections
-    memory.bindRange("overflow0", overflowStart, 0xFEFF, Section);
+    const vram = FactoryVRAMSection(ppu);
+    memory.bindRange("vram", 0x8000, 0x9FFF, vram);
+    memory.bindRange("overflow0", 0xA000, 0xFDFF, Section);
+    const oam = FactoryOAMSection(ppu);
+    memory.bindRange("oam", 0xFE00, 0xFE9F, oam);
+    memory.bindRange("overflow0_1", 0xFEA0, 0xFEFF, Section);
     joypad = FactoryJoypadSection(joypad);
     memory.bindRange("joypad", 0xFF00, 0xFF00, joypad);
     serialbus = FactorySerialSection(serialbus);

@@ -85,7 +85,7 @@ class DMAregister extends Register(8) {
         const source = value << 8;
 
         for (let i = 0; i <= 0x9F; i++) {
-            this.bus.write(0xFE00 + i, this.bus.read(source + i))
+            this.bus.ppuWrite(0xFE00 + i, this.bus.ppuRead(source + i))
         }
     }
 }
@@ -136,7 +136,15 @@ export default function(machine) {
         }
 
         get bus() {
-            return this.machine.memory;
+            const self = this;
+            return {
+                ppuRead(addr) {
+                    return self.machine.memory._read(addr);
+                },
+                ppuWrite(addr, value) {
+                    return self.machine.memory._write(addr, value);
+                }
+            }
         }
         
         get totalMachineCycles() {
@@ -168,12 +176,12 @@ export default function(machine) {
             for (let x = 0; x < 160; x++) {
                 if (x < startX) continue;
                 const wx = x - startX;
-                const id = this.bus.read(card + (wrow >> 3) * 32 + (wx >> 3));
+                const id = this.bus.ppuRead(card + (wrow >> 3) * 32 + (wx >> 3));
                 const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
                     0x8000 + id * 16 :
                     0x9000 + byte.sign8(id) * 16;
-                const low = this.bus.read(tile + (wrow & 7) * 2);
-                const high = this.bus.read(tile + (wrow & 7) * 2 + 1);
+                const low = this.bus.ppuRead(tile + (wrow & 7) * 2);
+                const high = this.bus.ppuRead(tile + (wrow & 7) * 2 + 1);
                 const bit = 7 - (wx & 7)
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.bgLine[x] = teinte;
@@ -188,15 +196,15 @@ export default function(machine) {
 
             for (let i = 0; i < 40 && visibles.length < 10; i++) {
                 const addr = 0xFE00 + i * 4;
-                const y = this.bus.read(addr) - 16;
+                const y = this.bus.ppuRead(addr) - 16;
 
                 if (line >= y && line < y + h) {
                     visibles.push({
                         y,
-                        x: this.bus.read(addr+1)-8,
+                        x: this.bus.ppuRead(addr+1)-8,
                         index:i,
-                        tile: this.bus.read(addr+2),
-                        attrs: this.bus.read(addr+3)
+                        tile: this.bus.ppuRead(addr+2),
+                        attrs: this.bus.ppuRead(addr+3)
                     })
                 }
             }
@@ -220,8 +228,8 @@ export default function(machine) {
                 }
 
                 const adr = 0x8000 + tile * 16;
-                const low = this.bus.read(adr + row * 2);
-                const high = this.bus.read(adr + row * 2 + 1);
+                const low = this.bus.ppuRead(adr + row * 2);
+                const high = this.bus.ppuRead(adr + row * 2 + 1);
                 const palette = byte.getFlag(sprite.attrs, 4) ?
                     this.OBP1 :
                     this.OBP0;
@@ -251,12 +259,12 @@ export default function(machine) {
                 const dy = (line + this.SCY.getValue()) & 0xFF;
                 const card = byte.getFlag(this.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
                 const addr = card + (dy >> 3) * 32 + (dx >> 3);
-                const id = this.bus.read(addr);
+                const id = this.bus.ppuRead(addr);
                 const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
                     0x8000 + id * 16 :
                     0x9000 + byte.sign8(id) * 16;
-                const low = this.bus.read(tile + (dy % 8) * 2);
-                const high = this.bus.read(tile + (dy % 8) * 2 + 1); 
+                const low = this.bus.ppuRead(tile + (dy % 8) * 2);
+                const high = this.bus.ppuRead(tile + (dy % 8) * 2 + 1); 
                 const bit = 7 - (dx % 8);
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.bgLine[x] = teinte;
