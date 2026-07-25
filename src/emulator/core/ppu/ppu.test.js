@@ -434,7 +434,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ppu.write(0xff47, 0b1110_0100); // BGP identité
       ppu.write(0xff48, 0b1110_0100); // OBP0 identité
       ppu.write(0xff49, 0b1110_0100); // OBP1 identité
-      return { ram, ppu };
+      return { ram, ppu, machine };
     };
 
     // 8 rangées de 8 teintes → 16 octets 2bpp à 0x8000 + id*16
@@ -462,6 +462,36 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
 
     const plein = (t) => Array(8).fill(Array(8).fill(t));
     const row = (ppu, line) => Array.from(ppu.screen.slice(line * 160, line * 160 + 160));
+
+    // Chaque sprite rallonge le mode 3 : +6 dots par sprite, plus, pour chaque X
+    // UNIQUE, un alignement max(0, 5 - ((X + SCX) mod 8)). Ligne 0 sans sprite : le
+    // HBlank tombe au M-cycle 63 (dot 252). Ces tests vérifient qu'il GLISSE de la
+    // pénalité. (Base mode 3 = 172 dots ; frontière observée = ceil((252+pénalité)/4).)
+    describe('⑨ pénalité de timing : les sprites allongent le mode 3', () => {
+      const poserSprites = (ram, n, x) => {
+        for (let i = 0; i < n; i++) poseSprite(ram, i, { y: 16, x, tile: 0 }); // Y=16 → ligne 0
+      };
+
+      it('10 sprites à X=8 (mod 8 = 0, alignement max) : +6×10 + 5 = 65 dots', () => {
+        const { ram, ppu, machine } = makeRig();
+        poserSprites(ram, 10, 8);
+        // mode 3 finit au dot 252 + 65 = 317 → ceil(317/4) = M-cycle 80
+        machine.totalCycles = 79; ppu.check();
+        expect(ppu.mode, 'M-cycle 79 : encore le dessin (allongé par 10 sprites)').toBe(3);
+        machine.totalCycles = 80; ppu.check();
+        expect(ppu.mode, 'M-cycle 80 : enfin le HBlank').toBe(0);
+      });
+
+      it('10 sprites à X=13 (mod 8 = 5, alignement nul) : +60 dots seulement', () => {
+        const { ram, ppu, machine } = makeRig();
+        poserSprites(ram, 10, 13);
+        // mode 3 finit au dot 252 + 60 = 312 → 312/4 = M-cycle 78 (pile)
+        machine.totalCycles = 77; ppu.check();
+        expect(ppu.mode, 'M-cycle 77 : encore le dessin').toBe(3);
+        machine.totalCycles = 78; ppu.check();
+        expect(ppu.mode, 'M-cycle 78 : HBlank (5 dots plus tôt qu\'à X=8)').toBe(0);
+      });
+    });
 
     describe('① un sprite opaque sur le décor', () => {
       it('Y+16, X+8 : le sprite en (0,0) écran occupe les pixels 0-7 de la ligne 0', () => {
