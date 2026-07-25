@@ -90,6 +90,42 @@ class DMAregister extends Register(8) {
     }
 }
 
+class Fetcher {
+    constructor(parent) {
+        this._fifo = [];
+        this.parent = parent; 
+    }
+
+    renderFifo(line) {
+        if (line === 0) this.parent.windowLine = 0;
+        if (!byte.getFlag(this.parent.LCDC.getValue(), 0)) return this.parent.screen.fill(0, line * 160, line * 160 + 160);
+
+        for (let x = 0; x <= 159; x++) {
+            const dx = (x + this.parent.SCX.getValue()) & 0xFF;
+            const dy = (line + this.parent.SCY.getValue()) & 0xFF;
+            const card = byte.getFlag(this.parent.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
+            const addr = card + (dy >> 3) * 32 + (dx >> 3);
+            const id = this.parent.bus.ppuRead(addr);
+            const tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
+                0x8000 + id * 16 :
+                0x9000 + byte.sign8(id) * 16;
+            const low = this.parent.bus.ppuRead(tile + (dy % 8) * 2);
+            const high = this.parent.bus.ppuRead(tile + (dy % 8) * 2 + 1); 
+            const bit = 7 - (dx % 8);
+            const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
+            this.parent.bgLine[x] = teinte;
+            this.parent.screen[line * 160 + x] = (this.parent.BGP.getValue() >> (teinte * 2)) & 0b11;
+        }
+
+        if (byte.getFlag(this.parent.LCDC.getValue(), 5) && line >= this.parent.WY.getValue() && this.parent.WX.getValue() <= 166) {
+            this.parent.renderWindow(line);
+            this.parent.windowLine++;
+        }
+        if (byte.getFlag(this.parent.LCDC.getValue(), 1)) this.parent.renderSprites(line);
+        
+    }
+}
+
 export default function(machine) {
     class PPU {
         constructor() {
@@ -124,6 +160,8 @@ export default function(machine) {
             this._visibleLineSprites = {};
 
             this.coincidence = 0;
+
+            this.fetcher = new Fetcher(this);
         }
 
         sleep() {
@@ -281,31 +319,7 @@ export default function(machine) {
         }
 
         renderLine(line) {
-            if (line === 0) this.windowLine = 0;
-            if (!byte.getFlag(this.LCDC.getValue(), 0)) return this.screen.fill(0, line * 160, line * 160 + 160);
-
-            for (let x = 0; x <= 159; x++) {
-                const dx = (x + this.SCX.getValue()) & 0xFF;
-                const dy = (line + this.SCY.getValue()) & 0xFF;
-                const card = byte.getFlag(this.LCDC.getValue(), 3) ? 0x9C00 : 0x9800;
-                const addr = card + (dy >> 3) * 32 + (dx >> 3);
-                const id = this.bus.ppuRead(addr);
-                const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
-                    0x8000 + id * 16 :
-                    0x9000 + byte.sign8(id) * 16;
-                const low = this.bus.ppuRead(tile + (dy % 8) * 2);
-                const high = this.bus.ppuRead(tile + (dy % 8) * 2 + 1); 
-                const bit = 7 - (dx % 8);
-                const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
-                this.bgLine[x] = teinte;
-                this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
-            }
-
-            if (byte.getFlag(this.LCDC.getValue(), 5) && line >= this.WY.getValue() && this.WX.getValue() <= 166) {
-                this.renderWindow(line);
-                this.windowLine++;
-            }
-            if (byte.getFlag(this.LCDC.getValue(), 1)) this.renderSprites(line);
+            return this.fetcher.renderFifo(line);
         }
 
         fetchLine() {
