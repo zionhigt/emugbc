@@ -120,6 +120,7 @@ export default function(machine) {
             this.statLine = 0;
 
             this.lcdJustOn = false;
+            this.mode3Penality = 0;
         }
 
         sleep() {
@@ -324,6 +325,7 @@ export default function(machine) {
                     break;
                 case 2:
                     this.mode = 3;
+                    this.mode3Penality = this.SCX.getValue() & 7;
                     this.renderLine(this.line);
                     break;
                 case 3:
@@ -338,7 +340,14 @@ export default function(machine) {
             if (this.remain < 0) {
                 overflow = this.remain;
             }
-            this.remain = this.duration(this.mode) + overflow;
+            let penality = 0;
+            if (this.mode === 0) {
+                penality = -this.mode3Penality;
+            } 
+            if (this.mode === 3) {
+                penality = this.mode3Penality;
+            } 
+            this.remain = this.duration(this.mode) + penality + overflow;
         }
 
         check() {
