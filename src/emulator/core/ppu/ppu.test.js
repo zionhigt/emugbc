@@ -1066,6 +1066,76 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         expect(ppu.mode, 'M-cycle 65 : enfin le HBlank').toBe(0);
       });
     });
+
+    // Le bit 2 (LY==LYC) est un VERROU, pas un calcul live : sa comparaison a une
+    // horloge qui s'ARRÊTE quand le PPU est éteint. Éteint, le bit est gelé à sa
+    // dernière valeur (écrire LYC n'y change rien) ; rallumer redémarre l'horloge
+    // et recompare à LY=0. (le fix stat_lyc_onoff)
+    describe('coïncidence LY=LYC : un verrou gelé quand le PPU est éteint', () => {
+      const OFF = 0b0001_0001;
+      const ON = 0b1001_0001;
+
+      it('gelé à l\'extinction : le bit reste à sa dernière valeur (pas remis à 0)', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 5); // LYC=5
+        machine.totalCycles = 114 * 5; ppu.check(); // LY=5 → coïncidence
+        expect(ppu.read(0xff41) & 0b100, 'LY=5 == LYC=5 allumé').toBe(0b100);
+        ppu.write(0xff40, OFF); // éteindre
+        expect(ppu.read(0xff41) & 0b100, 'éteint : le bit est RETENU, pas recalculé à LY=0').toBe(0b100);
+      });
+
+      it('écrire LYC pendant off n\'a aucun effet (horloge de comparaison arrêtée)', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 5);
+        machine.totalCycles = 114 * 5; ppu.check();
+        ppu.write(0xff40, OFF);
+        ppu.write(0xff45, 99); // changer LYC pendant que c'est éteint
+        expect(ppu.read(0xff41) & 0b100, 'horloge arrêtée : le bit reste gelé').toBe(0b100);
+      });
+
+      it('rallumer recompare à LY=0 : le bit retombe si LYC != 0', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff45, 5);
+        machine.totalCycles = 114 * 5; ppu.check();
+        ppu.write(0xff40, OFF); // gelé à 1
+        ppu.write(0xff40, ON); // rallumer → recompare LY=0 vs LYC=5
+        expect(ppu.read(0xff41) & 0b100, 'LY=0 != LYC=5 : la coïncidence tombe').toBe(0);
+      });
+
+      it('rallumage, coïncidence qui MONTE (0→1) : le front frappe STAT', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0100_0000); // interruption LYC armée (bit 6)
+        ppu.write(0xff45, 99);          // LYC=99
+        machine.totalCycles = 114 * 5; ppu.check(); // LY=5 != 99 → coïncidence 0
+        ppu.write(0xff40, OFF);         // gelé à 0
+        ppu.write(0xff45, 0);           // LYC=0 (sans effet pendant off)
+        machine.IF = 0;
+        ppu.write(0xff40, ON);          // rallumer : LY=0 == LYC=0 → coïncidence MONTE 0→1
+        expect(ppu.read(0xff41) & 0b100, 'coïncidence remonte').toBe(0b100);
+        expect(machine.IF & 0b10, 'front 0→1 → STAT frappe').toBe(0b10);
+      });
+
+      it('rallumage, coïncidence qui RESTE à 1 : pas de nouvelle frappe (drapeau inchangé)', () => {
+        const { machine, ppu } = makeRig();
+        ppu.write(0xff41, 0b0100_0000); // bit 6 armé
+        ppu.write(0xff45, 5);           // LYC=5
+        machine.totalCycles = 114 * 5; ppu.check(); // LY=5 == 5 → coïncidence 1
+        ppu.write(0xff40, OFF);         // gelé à 1
+        ppu.write(0xff45, 0);           // LYC=0 (sans effet)
+        machine.IF = 0;
+        ppu.write(0xff40, ON);          // rallumer : LY=0 == LYC=0 → coïncidence RESTE 1 (pas de front)
+        expect(ppu.read(0xff41) & 0b100, 'coïncidence toujours à 1').toBe(0b100);
+        expect(machine.IF & 0b10, 'le drapeau ne monte pas → AUCUNE frappe').toBe(0);
+      });
+
+      it('éteint : les bits de mode (0-1) lisent 0, pas le mode figé', () => {
+        const { machine, ppu } = makeRig();
+        machine.totalCycles = 114 * 145; ppu.check(); // entrer dans le VBlank (mode 1)
+        expect(ppu.read(0xff41) & 0b11, 'allumé, en VBlank : mode 1').toBe(1);
+        ppu.write(0xff40, OFF); // éteindre pendant le mode 1
+        expect(ppu.read(0xff41) & 0b11, 'éteint : le mode lu est 0, pas le mode figé (1)').toBe(0);
+      });
+    });
   });
 
   describe('la machine à phases : le dessin a lieu APRÈS l\'interruption STAT — LE fix', () => {
