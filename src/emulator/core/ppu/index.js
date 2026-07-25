@@ -10,7 +10,7 @@ class LYregister extends Register(8) {
 
     getValue() {
         if (!this.parent.LCDC.isOn) return 0;
-        return this.parent.computeState(this.parent.totalMachineCycles + 1).line;
+        return this.parent.computeState(this.parent.totalMachineCycles, 4).line;
     }
 }
 class LYCregister extends Register(8) {
@@ -62,7 +62,7 @@ class STATregister extends Register(8) {
         const lyc = this.parent.LYC.getValue();
         const coincidence = this.parent.coincidence;
         const mode = this.parent.LCDC.isOn ?
-                this.parent.mode :
+                this.parent.computeState(this.parent.totalMachineCycles, 3).mode :
                 0;
         return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
     }
@@ -325,7 +325,8 @@ export default function(machine) {
                     if (o.x >= 160) continue;
                     if (!tmp.includes(o.x)) {
                         tmp.push(o.x);
-                        penality += Math.max(0, 5 - ((o.x + scx) & 7));
+                        if (o.x === -8) penality += 5;
+                        else penality += Math.max(0, 5 - ((o.x + scx) & 7));
                     };
                     penality += 6;
                 }
@@ -450,9 +451,9 @@ export default function(machine) {
             this.remain = this.duration(this.mode) + penality + overflow;
         }
 
-        computeState(cycle = this.totalMachineCycles) {
+        computeState(cycle = this.totalMachineCycles, dotOffset=0) {
             let mode;
-            const elapsedDots = 4 * (cycle - this.origin);
+            const elapsedDots = 4 * (cycle - this.origin) + dotOffset;
             const frameDot    = elapsedDots % 70224;
             const line        = Math.floor(frameDot / 456);
             const dotInLine   = frameDot % 456;
@@ -461,6 +462,11 @@ export default function(machine) {
             else if (dotInLine < 80)       mode = 2;
             else if (dotInLine < 80 + len) mode = 3;
             else                           mode = 0;
+
+            if (elapsedDots < 456) {
+                if (dotInLine < 80) mode = 0;
+            }
+
             return { line, mode };
         }
 
