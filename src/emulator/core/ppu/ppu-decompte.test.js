@@ -51,7 +51,7 @@ const makePPU = () => {
     _if: 0,
     get IF() { return this._if; },
     set IF(v) { knocks.push(v); this._if = v; },
-    memory: { read: () => 0, write: () => {} },
+    memory: { read: () => 0, write: () => {}, _read: () => 0, _write: () => {} },
   };
   const PPU = buildPPU(machine);
   return { machine, knocks, ppu: new PPU() };

@@ -56,6 +56,10 @@ const buildFakePPU = () => ({
   read: () => 0,
   write: () => {},
   check: () => {},
+  // le verrou VRAM/OAM consulte le mode et l'état LCD ; écran éteint = accès
+  // toujours ouvert, ce qui rend ce mock inoffensif pour les tests machine.
+  mode: 0,
+  LCDC: { isOn: false },
 });
 
 // Un joypad factice : 0xFF = aucune touche pressée (actif bas).
