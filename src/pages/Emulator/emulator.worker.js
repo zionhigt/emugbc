@@ -13,6 +13,9 @@ import CanvasRenderer from '../../components/Canvas/CanvasRenderer.js';
 import Profiler from '../../components/DebugOverlay/Profiler.js';
 
 const FRAME_MS = 1000 / 59.7275;
+// Retard rattrapable au plus 2 trames : au-delà, on abandonne le temps perdu
+// plutôt que de fast-forwarder une rafale de trames (glitch visible à l'appui).
+const MAX_CATCHUP = 2 * FRAME_MS;
 const Cartridge = buildCartridge();
 // Un worker n'a PAS toujours requestAnimationFrame : Chrome/Android oui (avec
 // OffscreenCanvas), sinon on retombe sur setTimeout — l'OffscreenCanvas lisse
@@ -33,10 +36,13 @@ function schedule() {
 function loop() {
   if (!machine) return;
   const now = performance.now();
-  let delta = now - last;
+  const delta = now - last;
   last = now;
-  if (delta > 250) delta = 250; // garde-fou : pas de rattrapage lunaire
   acc += delta;
+  // Anti-rattrapage express : après un accroc (compositeur occupé par un appui,
+  // GC, onglet masqué), on ne fast-forward PAS une rafale de trames d'un coup —
+  // ça se voit comme un bond/glitch. On plafonne le retard rattrapable à 2 trames.
+  if (acc > MAX_CATCHUP) acc = MAX_CATCHUP;
   while (acc >= FRAME_MS) {
     profiler.tickStart();
     machine.handleTick({ detail: 'tick' }); // 1 trame GB (+ dessin via onTick)

@@ -65,6 +65,7 @@ export default class DebugOverlay extends React.Component {
       <div className="dbg" onClick={this.toggle} role="status" aria-live="off" title="tap = replier">
         <div className={`dbg__row dbg__fps${dropping ? ' dbg__bad' : ''}`}>
           <b>{val('fps')}</b> fps <span className="dbg__budget">/ 60</span>
+          {this.props.mode && <span className="dbg__min">{this.props.mode}</span>}
         </div>
         <div className="dbg__row">
           trame <span className={heavy ? 'dbg__bad' : ''}>{val('total', ' ms')}</span>

@@ -33,6 +33,9 @@ const KEYMAP = {
 // se cale sur l'écran (60/90/120 Hz), et un accumulateur ramène l'émulation à
 // CETTE fréquence, quel que soit le taux de rafraîchissement de l'écran.
 const FRAME_MS = 1000 / 59.7275;
+// Retard rattrapable au plus 2 trames : au-delà, on abandonne le temps perdu
+// plutôt que de fast-forwarder une rafale de trames (glitch visible à l'appui).
+const MAX_CATCHUP = 2 * FRAME_MS;
 
 // FileReader plutôt que file.arrayBuffer() : même résultat, mais compatible
 // avec tous les environnements (jsdom des tests compris)
@@ -83,8 +86,11 @@ class Emulator extends React.Component {
   // thread principal ne fait que transmettre les touches → il ne peut plus
   // retarder l'émulation ni le rendu. Un profiler DISTANT reçoit les métriques.
   startWorker = (canvasEl, bytes) => {
-    const offscreen = canvasEl.transferControlToOffscreen();
+    // Le worker D'ABORD : si sa construction échoue, le canvas n'est pas encore
+    // détaché → l'appelant peut retomber proprement sur le main-thread. Le
+    // transfert, lui, ne détache le canvas que s'il réussit.
     this.worker = new Worker(new URL('./emulator.worker.js', import.meta.url), { type: 'module' });
+    const offscreen = canvasEl.transferControlToOffscreen();
     this.profiler = { _stats: null, stats() { return this._stats; } };
     this.worker.onmessage = ({ data }) => {
       if (data.type === 'metrics') this.profiler._stats = data.stats;
@@ -119,10 +125,14 @@ class Emulator extends React.Component {
     this._acc = 0;
     this._last = performance.now();
     const loop = (now) => {
-      let delta = now - this._last;
+      const delta = now - this._last;
       this._last = now;
-      if (delta > 250) delta = 250; // garde-fou : onglet revenu / gros accroc → pas de rattrapage lunaire
       this._acc += delta;
+      // Anti-rattrapage express : après un accroc (compositeur occupé par un appui,
+      // GC, onglet revenu), on ne fast-forward PAS une rafale de trames d'un coup —
+      // ça se voit comme un bond/glitch. On plafonne le retard rattrapable à 2 trames ;
+      // le temps perdu au-delà est abandonné (dérive infime, invisible).
+      if (this._acc > MAX_CATCHUP) this._acc = MAX_CATCHUP;
       while (this._acc >= FRAME_MS) {
         this.profiler.tickStart();
         this.machine.handleTick({ detail: 'tick' }); // 1 trame GB (+ dessin via onTick)
@@ -268,7 +278,7 @@ class Emulator extends React.Component {
             role="switch"
             aria-checked={debug}
             className={`emu-toggle${debug ? ' emu-toggle--on' : ''}`}
-            onClick={debugToggled}
+            onClick={() => debugToggled()}
           >
             <span className="emu-toggle__track" aria-hidden="true">
               <span className="emu-toggle__thumb" />
@@ -297,13 +307,26 @@ class Emulator extends React.Component {
     // OffscreenCanvas dispo ? → worker (émulation+rendu hors thread principal).
     // Sinon → repli main-thread (Safari < 16.4, jsdom des tests).
     const canvasEl = this.canvasRef.current && this.canvasRef.current.getElement();
-    const canWorker =
-      typeof Worker !== 'undefined' &&
-      canvasEl &&
-      typeof canvasEl.transferControlToOffscreen === 'function';
+    const reason =
+      typeof Worker === 'undefined' ? 'no-Worker'
+      : !canvasEl ? 'no-canvas'
+      : typeof canvasEl.transferControlToOffscreen !== 'function' ? 'no-offscreen'
+      : 'ok';
+    this._workerReason = reason; // diagnostic affiché dans l'overlay
 
-    if (canWorker) this.startWorker(canvasEl, bytes);
-    else this.startMainThread(canvasEl, bytes);
+    if (reason === 'ok') {
+      try {
+        this.startWorker(canvasEl, bytes);
+      } catch (e) {
+        // Worker refusé malgré la détection (CSP, module, transfert impossible) :
+        // repli. Le canvas n'a pas été détaché → le main-thread peut y dessiner.
+        this._workerReason = 'error';
+        this.teardown();
+        this.startMainThread(canvasEl, bytes);
+      }
+    } else {
+      this.startMainThread(canvasEl, bytes);
+    }
 
     this.props.cartridgeLoaded({ fileName: file.name, size });
     this.setState({ dockOpen: false }); // cartouche insérée, le volet se referme
@@ -312,7 +335,12 @@ class Emulator extends React.Component {
   render() {
     return (
       <div className="emu-page">
-        {this.props.debug && <DebugOverlay profiler={this.profiler} />}
+        {this.props.debug && (
+          <DebugOverlay
+            profiler={this.profiler}
+            mode={this.worker ? 'WK' : `MT ${this._workerReason || ''}`}
+          />
+        )}
         <header className="emu-page__header">
           <h1 className="emu-page__title" aria-label="emugbc">
             {this.renderLogo()}
