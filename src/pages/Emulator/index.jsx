@@ -12,6 +12,7 @@ import { MachineBuilder } from '../../emulator/core/index.js';
 
 import DebugOverlay from '../../components/DebugOverlay';
 import Profiler from '../../components/DebugOverlay/Profiler';
+import CanvasRenderer from '../../components/Canvas/CanvasRenderer';
 
 import './Emulator.css';
 
@@ -68,8 +69,47 @@ class Emulator extends React.Component {
     document.body.classList.remove('emu-immersion');
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
-    if (this._raf) cancelAnimationFrame(this._raf);
+    this.teardown();
   }
+
+  // Coupe la partie en cours : la boucle main-thread OU le worker.
+  teardown = () => {
+    if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+    if (this.worker) { this.worker.terminate(); this.worker = null; }
+    this.machine = null;
+  };
+
+  // CHEMIN OPTIMAL : émulation + rendu dans un worker (OffscreenCanvas). Le
+  // thread principal ne fait que transmettre les touches → il ne peut plus
+  // retarder l'émulation ni le rendu. Un profiler DISTANT reçoit les métriques.
+  startWorker = (canvasEl, bytes) => {
+    const offscreen = canvasEl.transferControlToOffscreen();
+    this.worker = new Worker(new URL('./emulator.worker.js', import.meta.url), { type: 'module' });
+    this.profiler = { _stats: null, stats() { return this._stats; } };
+    this.worker.onmessage = ({ data }) => {
+      if (data.type === 'metrics') this.profiler._stats = data.stats;
+    };
+    this.worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
+    const buf = bytes.buffer; // transféré (bytes est détaché ensuite, on n'en a plus besoin)
+    this.worker.postMessage({ type: 'load', bytes: buf }, [buf]);
+  };
+
+  // REPLI : émulation + rendu sur le thread principal (OffscreenCanvas absent).
+  startMainThread = (canvasEl, bytes) => {
+    const Cartridge = buildCartridge();
+    this.cartridge = new Cartridge(bytes);
+    const renderer = canvasEl ? new CanvasRenderer(canvasEl) : null;
+    this.profiler = new Profiler();
+    this.machine = MachineBuilder();
+    this.machine.plugCartridge(this.cartridge);
+    this.machine.onTick((mach) => {
+      if (!renderer) return;
+      const t = performance.now();
+      renderer.draw(mach.ppu.screen);
+      this.profiler.recordDraw(performance.now() - t);
+    });
+    this.startLoop();
+  };
 
   // Boucle de trames AU FRONT : rAF cale sur l'écran ; l'accumulateur convertit
   // le temps réel écoulé en trames Game Boy à 59,73 Hz (indépendant du taux écran).
@@ -97,24 +137,28 @@ class Emulator extends React.Component {
   // le point d'entrée unique vers la manette : clavier ET boutons de coque y
   // passent. Inerte tant qu'aucune cartouche n'est insérée (this.machine créé
   // au chargement du .gb).
+  // Les touches passent au worker (postMessage) OU à la machine main-thread selon
+  // le chemin actif. Inerte tant qu'aucune cartouche n'est chargée.
   pressButton = (gb) => {
-    if (this.machine) this.machine.joypad.onPress(gb);
+    if (this.worker) this.worker.postMessage({ type: 'press', key: gb });
+    else if (this.machine) this.machine.joypad.onPress(gb);
   };
 
   releaseButton = (gb) => {
-    if (this.machine) this.machine.joypad.onRelease(gb);
+    if (this.worker) this.worker.postMessage({ type: 'release', key: gb });
+    else if (this.machine) this.machine.joypad.onRelease(gb);
   };
 
   handleKeyDown = (event) => {
     const gb = KEYMAP[event.key.toLowerCase()];
-    if (!gb || !this.machine) return;
+    if (!gb) return;
     event.preventDefault(); // pas de scroll sur Espace, pas de submit sur Entrée
     this.pressButton(gb);
   };
 
   handleKeyUp = (event) => {
     const gb = KEYMAP[event.key.toLowerCase()];
-    if (!gb || !this.machine) return;
+    if (!gb) return;
     event.preventDefault();
     this.releaseButton(gb);
   };
@@ -246,29 +290,22 @@ class Emulator extends React.Component {
     if (!file) return;
 
     const bytes = await readBytes(file);
+    const size = bytes.length; // capturé AVANT un éventuel transfert du buffer
 
-    // l'instance vit sur le composant, pas dans le store (non sérialisable)
-    const Cartridge = buildCartridge();
-    this.cartridge = new Cartridge(bytes);
-    this.machine = MachineBuilder();
-    this.machine.plugCartridge(this.cartridge);
+    this.teardown(); // coupe une partie précédente (worker ou boucle)
 
-    this.profiler = new Profiler();
-    this.machine.onTick(function(machine) {
-      // repaint impératif : on parle au canvas directement, sans setState —
-      // sinon tout l'arbre React se re-rend à chaque trame (voir Canvas).
-      const canvas = this.canvasRef.current;
-      if (!canvas) return;
-      const t = performance.now();
-      canvas.draw(machine.ppu.screen);
-      this.profiler.recordDraw(performance.now() - t); // draw seul ; ému = total − draw
-    }.bind(this));
+    // OffscreenCanvas dispo ? → worker (émulation+rendu hors thread principal).
+    // Sinon → repli main-thread (Safari < 16.4, jsdom des tests).
+    const canvasEl = this.canvasRef.current && this.canvasRef.current.getElement();
+    const canWorker =
+      typeof Worker !== 'undefined' &&
+      canvasEl &&
+      typeof canvasEl.transferControlToOffscreen === 'function';
 
-    // On NE lance PAS machine.start() (= le setInterval du cœur) : le cadencement
-    // est au front, en rAF + accumulateur (voir startLoop). Le cœur reste agnostique.
-    this.startLoop();
+    if (canWorker) this.startWorker(canvasEl, bytes);
+    else this.startMainThread(canvasEl, bytes);
 
-    this.props.cartridgeLoaded({ fileName: file.name, size: bytes.length });
+    this.props.cartridgeLoaded({ fileName: file.name, size });
     this.setState({ dockOpen: false }); // cartouche insérée, le volet se referme
   };
 
