@@ -60,10 +60,10 @@ class STATregister extends Register(8) {
     getValue() {
         const ly = this.parent.LY.getValue();
         const lyc = this.parent.LYC.getValue();
-        const coincidence = this.parent.coincidence;
-        const mode = this.parent.LCDC.isOn ?
-                this.parent.computeState(this.parent.totalMachineCycles, 3).mode :
-                0;
+        const { mode, line } = this.parent.LCDC.isOn ?
+            this.parent.computeState(this.parent.totalMachineCycles, 3) :
+            { line: null, mode: 0 };
+        const coincidence = this.parent.computeCoincidence();
         return 0x80 | (super.getValue() & 0x78) | (coincidence << 2) | mode;
     }
 
@@ -383,6 +383,23 @@ export default function(machine) {
                 this.line = 0;
                 this.mode = 2;
             }
+        }
+
+        computeCoincidence(cycles=this.totalMachineCycles) {
+            let coincidence = this.coincidence;
+            if (this.LCDC.isOn) {
+                const line = this.computeState(cycles, 4).line;
+                const prev = this.computeState(cycles, 0).line;
+                if (line !== prev) {
+                    coincidence = 0;
+                } else {
+                    const ly = this.LY.getValue();
+                    const lyc = this.LYC.getValue();
+                    coincidence = +(ly === lyc);
+                }
+            }
+            return coincidence;
+
         }
 
         updateStat() {

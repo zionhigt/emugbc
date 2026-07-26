@@ -178,9 +178,18 @@ class PPURamSection extends Section {
     }
 
     get mode() {
-        if (!this.ppu || !this.ppu.LCDC.isOn) return null;
-        return this.ppu.mode;
+        return this.getMode(3);
     }
+    get nextMode() {
+        return this.getMode(7);
+    }
+
+    getMode(offset) {
+        if (!this.ppu || !this.ppu.LCDC.isOn) return null;
+        const { mode } = this.ppu.computeState(this.ppu.totalMachineCycles, offset);
+        return mode;
+    }
+
 }
 
 function FactoryVRAMSection(ppu) {
@@ -190,11 +199,11 @@ function FactoryVRAMSection(ppu) {
         }
 
         read(addr) {
-            if (this.mode === 3) return 0xFF;
+            if (this.mode === 3 || this.mode === 2 && this.nextMode === 3) return 0xFF;
             return this.memory._read(addr);
         }
         write(addr, value) {
-            if (this.mode === 3) return;
+            if (this.getMode(0) === 3) return;
             return this.memory._write(addr, value);
         }
     }
@@ -208,11 +217,11 @@ function FactoryOAMSection(ppu) {
         }
         
         read(addr) {
-            if ([2, 3].includes(this.mode)) return 0xFF;
+            if ([2, 3].includes(this.mode) || this.mode === 0 && this.nextMode === 2) return 0xFF;
             return this.memory._read(addr);
         }
         write(addr, value) {
-            if ([2, 3].includes(this.mode)) return;
+            if (this.mode === 3 || (this.mode === 2 && this.nextMode !== 3)) return;
             return this.memory._write(addr, value);
         }
     }
