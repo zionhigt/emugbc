@@ -26,12 +26,14 @@ const buildFakeCartridge = () => {
 
 describe('Blocage VRAM/OAM : le PPU verrouille l\'accès CPU selon son mode', () => {
   // Une mémoire avec un PPU PILOTABLE : on force son mode et l'état LCD.
+  // La section lit le mode via `computeState` (dot-précis) ; ici on le rend
+  // constant quel que soit l'offset, donc le blocage se réduit à « ce mode bloque-t-il ? ».
   // (serial/timer/joypad restent undefined : les tests ne touchent que VRAM/OAM.)
   const buildMem = (mode, isOn = true) => buildMemory(
     buildFakeCartridge(),
     undefined,
     undefined,
-    { mode, LCDC: { isOn }, read: () => 0, write: () => {}, check: () => {} },
+    { computeState: () => ({ mode }), totalMachineCycles: 0, LCDC: { isOn }, read: () => 0, write: () => {}, check: () => {} },
     undefined,
   );
 
