@@ -15,6 +15,9 @@ export default class CanvasRenderer {
     // à chaque trame — on n'en réalloue jamais.
     this.image = this.ctx.createImageData(SCREEN_WIDTH, SCREEN_HEIGHT);
     this.buf32 = new Uint32Array(this.image.data.buffer);
+    this.palette32 = Object.values(this.palette).map(([r, g, b, a]) =>
+      (a << 24) | (b << 16) | (g << 8) | r
+    );
   }
 
   get palette() {
@@ -24,12 +27,6 @@ export default class CanvasRenderer {
       0b10: [48, 98, 48, 255],
       0b11: [15, 56, 15, 255],
     }
-  }
-
-  get palette32() {
-    return Object.values(this.palette).map(([r, g, b, a]) =>
-      (a << 24) | (b << 16) | (g << 8) | r
-    );
   }
 
   draw(screen) {

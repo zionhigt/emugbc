@@ -5,10 +5,13 @@ import Console from '../../components/Console';
 import Canvas from '../../components/Canvas';
 import buildCartridge from '../../emulator/core/cartridge/Cartridge';
 import { cartridgeLoaded } from '../../store/slices/emulatorSlice';
-import { shellChanged } from '../../store/slices/settingsSlice';
+import { shellChanged, debugToggled } from '../../store/slices/settingsSlice';
 import { SHELLS, SHELL_KEYS } from '../../theme/shells';
 
 import { MachineBuilder } from '../../emulator/core/index.js';
+
+import DebugOverlay from '../../components/DebugOverlay';
+import Profiler from '../../components/DebugOverlay/Profiler';
 
 import './Emulator.css';
 
@@ -24,6 +27,11 @@ const KEYMAP = {
   enter: 'start',
   ' ': 'select',
 };
+
+// Période d'une trame Game Boy (59,7275 Hz). Le cadencement vit au FRONT : rAF
+// se cale sur l'écran (60/90/120 Hz), et un accumulateur ramène l'émulation à
+// CETTE fréquence, quel que soit le taux de rafraîchissement de l'écran.
+const FRAME_MS = 1000 / 59.7275;
 
 // FileReader plutôt que file.arrayBuffer() : même résultat, mais compatible
 // avec tous les environnements (jsdom des tests compris)
@@ -60,7 +68,31 @@ class Emulator extends React.Component {
     document.body.classList.remove('emu-immersion');
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
+    if (this._raf) cancelAnimationFrame(this._raf);
   }
+
+  // Boucle de trames AU FRONT : rAF cale sur l'écran ; l'accumulateur convertit
+  // le temps réel écoulé en trames Game Boy à 59,73 Hz (indépendant du taux écran).
+  // Idempotente : on annule toute boucle en cours avant d'en relancer une.
+  startLoop = () => {
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._acc = 0;
+    this._last = performance.now();
+    const loop = (now) => {
+      let delta = now - this._last;
+      this._last = now;
+      if (delta > 250) delta = 250; // garde-fou : onglet revenu / gros accroc → pas de rattrapage lunaire
+      this._acc += delta;
+      while (this._acc >= FRAME_MS) {
+        this.profiler.tickStart();
+        this.machine.handleTick({ detail: 'tick' }); // 1 trame GB (+ dessin via onTick)
+        this.profiler.tickEnd();
+        this._acc -= FRAME_MS;
+      }
+      this._raf = requestAnimationFrame(loop);
+    };
+    this._raf = requestAnimationFrame(loop);
+  };
 
   // le point d'entrée unique vers la manette : clavier ET boutons de coque y
   // passent. Inerte tant qu'aucune cartouche n'est insérée (this.machine créé
@@ -158,7 +190,7 @@ class Emulator extends React.Component {
   }
 
   renderOptions() {
-    const { shell, shellChanged } = this.props;
+    const { shell, shellChanged, debug, debugToggled } = this.props;
     return (
       <div
         className="emu-panel"
@@ -184,6 +216,22 @@ class Emulator extends React.Component {
           </div>
           <p className="emu-options__current">{SHELLS[shell].nom}</p>
         </fieldset>
+
+        <fieldset className="emu-options__group">
+          <legend className="emu-options__legend">Débogage</legend>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={debug}
+            className={`emu-toggle${debug ? ' emu-toggle--on' : ''}`}
+            onClick={debugToggled}
+          >
+            <span className="emu-toggle__track" aria-hidden="true">
+              <span className="emu-toggle__thumb" />
+            </span>
+            Overlay de métriques (FPS)
+          </button>
+        </fieldset>
       </div>
     );
   }
@@ -204,13 +252,21 @@ class Emulator extends React.Component {
     this.cartridge = new Cartridge(bytes);
     this.machine = MachineBuilder();
     this.machine.plugCartridge(this.cartridge);
+
+    this.profiler = new Profiler();
     this.machine.onTick(function(machine) {
       // repaint impératif : on parle au canvas directement, sans setState —
       // sinon tout l'arbre React se re-rend à chaque trame (voir Canvas).
       const canvas = this.canvasRef.current;
-      if (canvas) canvas.draw(machine.ppu.screen);
+      if (!canvas) return;
+      const t = performance.now();
+      canvas.draw(machine.ppu.screen);
+      this.profiler.recordDraw(performance.now() - t); // draw seul ; ému = total − draw
     }.bind(this));
-    this.machine.start();
+
+    // On NE lance PAS machine.start() (= le setInterval du cœur) : le cadencement
+    // est au front, en rAF + accumulateur (voir startLoop). Le cœur reste agnostique.
+    this.startLoop();
 
     this.props.cartridgeLoaded({ fileName: file.name, size: bytes.length });
     this.setState({ dockOpen: false }); // cartouche insérée, le volet se referme
@@ -219,6 +275,7 @@ class Emulator extends React.Component {
   render() {
     return (
       <div className="emu-page">
+        {this.props.debug && <DebugOverlay profiler={this.profiler} />}
         <header className="emu-page__header">
           <h1 className="emu-page__title" aria-label="emugbc">
             {this.renderLogo()}
@@ -259,11 +316,13 @@ class Emulator extends React.Component {
 const mapStateToProps = (state) => ({
   cartridge: state.emulator.cartridge,
   shell: state.settings.shell,
+  debug: state.settings.debug,
 });
 
 const mapDispatchToProps = {
   cartridgeLoaded,
   shellChanged,
+  debugToggled,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(Emulator);

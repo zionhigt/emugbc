@@ -200,6 +200,49 @@
   color: var(--theme-accent, #35aadc);
 }
 
+/* ── l'interrupteur (overlay debug) ── */
+
+.emu-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+}
+
+.emu-toggle__track {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: rgba(0, 0, 0, 0.28);
+  transition: background 0.15s ease;
+}
+
+.emu-toggle__thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+
+.emu-toggle--on .emu-toggle__track {
+  background: var(--theme-accent, #35aadc);
+}
+
+.emu-toggle--on .emu-toggle__thumb {
+  transform: translateX(18px);
+}
+
 /* ── la cartouche-bouton ── */
 
 .emu-cart {
@@ -339,6 +382,9 @@
   body.emu-immersion {
     margin: 0;
     overflow-x: hidden;
+    /* coupe le "pull-to-refresh" et le rebond d'overscroll : un geste vers le bas
+       sur la croix ne doit PAS recharger la page (retour à l'état initial). */
+    overscroll-behavior: none;
   }
 
   .emu-page__header {

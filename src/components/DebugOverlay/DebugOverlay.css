@@ -1,0 +1,60 @@
+.dbg {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 6px);
+  left: calc(env(safe-area-inset-left, 0px) + 6px);
+  z-index: 9999;
+  padding: 5px 8px;
+  min-width: 96px;
+  font: 600 11px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: #cde7a0;
+  background: rgba(8, 18, 8, 0.82);
+  border: 1px solid rgba(155, 188, 15, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.dbg__row {
+  white-space: nowrap;
+}
+
+.dbg__fps b {
+  font-size: 15px;
+  color: #b7e05a;
+}
+
+.dbg__min,
+.dbg__budget {
+  opacity: 0.6;
+  margin-left: 4px;
+}
+
+.dbg__split {
+  opacity: 0.9;
+}
+
+.dbg__split b {
+  color: #e6f2c8;
+}
+
+.dbg__bad,
+.dbg__bad b {
+  color: #ff6b5e;
+}
+
+.dbg__verdict {
+  margin-top: 3px;
+  max-width: 150px;
+  white-space: normal;
+  font-weight: 700;
+  color: #ff6b5e;
+}
+
+.dbg--pill {
+  font-weight: 700;
+  min-width: 0;
+}

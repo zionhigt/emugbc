@@ -3,6 +3,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import { DEFAULT_SHELL, isShell } from '../../theme/shells';
 
 const STORAGE_KEY = 'emugbc.shell';
+const DEBUG_KEY = 'emugbc.debug';
 
 // Le réglage survit au rechargement. On garde une valeur inconnue (ancienne clé,
 // stockage bricolé à la main) hors du store : on retombe sur le défaut.
@@ -15,8 +16,17 @@ const chargerCoque = () => {
   }
 };
 
+const chargerDebug = () => {
+  try {
+    return window.localStorage.getItem(DEBUG_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
 const initialState = {
   shell: chargerCoque(),
+  debug: chargerDebug(), // overlay de métriques : masqué par défaut
 };
 
 const settingsSlice = createSlice({
@@ -32,9 +42,17 @@ const settingsSlice = createSlice({
         // pas de persistance possible : le choix vaut pour la session
       }
     },
+    debugToggled(state) {
+      state.debug = !state.debug;
+      try {
+        window.localStorage.setItem(DEBUG_KEY, state.debug ? '1' : '0');
+      } catch {
+        // pas de persistance : le choix vaut pour la session
+      }
+    },
   },
 });
 
-export const { shellChanged } = settingsSlice.actions;
+export const { shellChanged, debugToggled } = settingsSlice.actions;
 
 export default settingsSlice.reducer;
