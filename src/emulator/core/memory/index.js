@@ -7,15 +7,12 @@ import byte from "../../lib/byte";
 class Memory {
     constructor() {
         this.ram = new Uint8Array(0x10000);
-        this._sections = {}; 
+        this._sections = {};
+        this._ram = {};
     }
 
     _section(addr) {
-        for (let tag in this._sections) {
-            const section = this.getSectionByTag(tag);
-            if (section.start <= addr && section.stop >= addr) return section.instance;
-        }
-        return null;
+        return this._ram[addr] || null;
     }
 
     getSectionByTag(tag) {
@@ -43,10 +40,15 @@ class Memory {
     }
 
     bindRange(tag, start, stop, cls) {
+        const instance = new cls(this);
         this._sections[tag] = {
             start: start,
             stop: stop,
-            instance: new cls(this),
+            instance,
+        }
+
+        for (let s = start; s <= stop; s++) {
+            this._ram[s] = instance;
         }
     }
 }
