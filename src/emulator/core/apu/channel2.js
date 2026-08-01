@@ -9,15 +9,50 @@ const DUTY_PATTERNS = [
     [0, 1, 1, 1, 1, 1, 1, 0], // duty 3 - 75 %
 ];
 
+class NRegister extends Register(8) {
+    constructor(parent) {
+        super();
+        this.parent = parent;
+    }
+}
+
+class NRegister24 extends NRegister {
+    setValue(val) {
+        super.setValue(val);
+        if (byte.getFlag(val, 7)) {
+            this.parent._triggeredAt = this.parent.apu.totalMachineCycles;
+            this.parent._isEnabled = this.parent.isDacOn;
+        }
+    }
+}
+class NRegister22 extends NRegister {
+    setValue(val) {
+        super.setValue(val);
+        if (!this.parent.isDacOn) this.parent._isEnabled = false;
+    }
+}
+
 export default function(apu) {
     function ChanFactory(start, Parent) {
         const Registers = [
-            class NR21 extends Register(8) {},
-            class NR22 extends Register(8) {},
-            class NR23 extends Register(8) {},
-            class NR24 extends Register(8) {},
+            class NR21 extends NRegister {},
+            class NR22 extends NRegister22 {},
+            class NR23 extends NRegister {},
+            class NR24 extends NRegister24 {},
         ]
         class Chan extends Parent {
+            constructor() {
+                super(...arguments);
+                this._isEnabled = false;
+                this._triggeredAt = null;
+            }
+
+            get isEnabled() {
+                return this._isEnabled;
+            }
+            get triggeredAt() {
+                return this._triggeredAt;
+            }
             get NR21() {
                 return this.registers[this.start + 0];
             }
@@ -62,7 +97,7 @@ export default function(apu) {
             }
 
             addReg(offset) {
-                this.registers[this.start + offset] = new Registers[offset % 4];
+                this.registers[this.start + offset] = new Registers[offset % 4](this);
             }
 
             dutyStep(cycle) {
@@ -76,7 +111,7 @@ export default function(apu) {
             }
 
             amplitude(cycle) {
-                if (!this.isDacOn) return 0;
+                if (!this.isDacOn || !this.isEnabled) return 0;
                 return this.dutyOutput(cycle) * this.volume;
             }
         }
