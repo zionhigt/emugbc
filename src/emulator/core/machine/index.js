@@ -31,6 +31,9 @@ export default function(memory, cpu, decoder, clock, serial) {
             this._tickObservers = [];
 
             this.cpu.onCyclesUpdate(this.cyclesUpdate.bind(this));
+
+            this._timerTickCallback = this.onTimer.bind(this);
+            this.initTimer();
         }
 
         cyclesUpdate(cpu, n) {
@@ -42,6 +45,10 @@ export default function(memory, cpu, decoder, clock, serial) {
             for (let o of this._observersCyclesUpdate) {
                 o.call(null, this);
             }
+        }
+
+        get timer() {
+            return this._timer;
         }
 
         get IE() {
@@ -59,6 +66,17 @@ export default function(memory, cpu, decoder, clock, serial) {
 
         get memory() {
             return this._memory;
+        }
+
+        onTimer(machine) {
+            this.timer.check();
+        }
+
+        initTimer() {
+            const timer = new (Timer(this));
+            this._timer = timer;
+            this.unsubscribeCycleUpdate(this._timerTickCallback);
+            this.subscribeCycleUpdate(this._timerTickCallback);
         }
 
         start() {
@@ -98,6 +116,14 @@ export default function(memory, cpu, decoder, clock, serial) {
 
         subscribeCycleUpdate(cb) {
             this._observersCyclesUpdate.push(cb);
+        }
+
+        unsubscribeCycleUpdate(cb) {
+            this._observersCyclesUpdate = this._observersCyclesUpdate.filter(
+                function(item) {
+                    return item !== cb;
+                }
+            );
         }
 
         postStep() {
@@ -148,10 +174,8 @@ export default function(memory, cpu, decoder, clock, serial) {
         }
 
         plugCartridge(cartridge) {
-            const timer = new (Timer(this));
-            this.subscribeCycleUpdate(function(machine) {
-                timer.check();
-            })
+            this.initTimer();
+            const timer = this.timer;
             const newMemory = MemoryBuilder(
                 cartridge,
                 serial,
