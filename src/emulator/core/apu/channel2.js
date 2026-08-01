@@ -31,6 +31,10 @@ export default function(apu) {
                 return this.registers[this.start + 3];
             }
 
+            get DAC() {
+                return (this.NR22.getValue() & 0xF8) >> 3;
+            }
+
             get duty() {
                 return (this.NR21.getValue() & 0xC0) >> 6;
             }
@@ -45,6 +49,18 @@ export default function(apu) {
                 return 2048 - this.frequency;
             }
 
+            get isDacOn() {
+                return this.DAC > 0;
+            }
+
+            get initialVolume() {
+                return (this.NR22.getValue() & 0xF0) >> 4;
+            }
+
+            get volume() {
+                return this.initialVolume;
+            }
+
             addReg(offset) {
                 this.registers[this.start + offset] = new Registers[offset % 4];
             }
@@ -57,6 +73,10 @@ export default function(apu) {
             dutyOutput(cycle) {
                 const step = this.dutyStep(cycle);
                 return DUTY_PATTERNS[this.duty % 4][step];
+            }
+
+            amplitude(cycle) {
+                return this.dutyOutput(cycle) * this.volume;
             }
         }
     
