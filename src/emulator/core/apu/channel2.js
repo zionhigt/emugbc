@@ -76,6 +76,7 @@ export default function(apu) {
             }
 
             amplitude(cycle) {
+                if (!this.isDacOn) return 0;
                 return this.dutyOutput(cycle) * this.volume;
             }
         }

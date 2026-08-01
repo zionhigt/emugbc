@@ -44,6 +44,27 @@ export default function(machine) {
             return reg.setValue(value);
         };
 
+        frameTicks(cycle) {
+            return Math.floor(this.machine.timer.innerCyclesAt(cycle) / 8192); // 8192 = 2 ^ (12 + 1) : Effondrement du bit 12
+        }
+
+        frameStep(cycle) {
+            return this.frameTicks(cycle) % 8;
+        }
+
+        lengthTicks(cycle) {
+            return Math.floor(this.frameTicks(cycle) / 2);
+        }
+        
+        sweepTicks(cycle) {
+            const v = this.frameTicks(cycle) + 2; 
+            return Math.floor(v / 4);
+        }
+
+        envelopeTicks(cycle) {
+            const v = this.frameTicks(cycle) + 1; 
+            return Math.floor(v / 8);
+        }
     }
 
     return APU;

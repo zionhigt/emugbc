@@ -163,8 +163,12 @@ export default function(machine) {
             this.cranBase = 0;
         }
 
+        innerCyclesAt(cycle) {
+            return 4 * (cycle - this._innerCycles);
+        }
+
         get innerCycles() {
-            return 4 * (this.totalMachineCycles - this._innerCycles);
+            return this.innerCyclesAt(this.totalMachineCycles);
         }
         
         get totalMachineCycles() {
