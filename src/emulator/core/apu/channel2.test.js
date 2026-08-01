@@ -47,6 +47,16 @@ const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
     return chan;
 };
 
+/**
+ * Appuie sur le bouton sans perdre les bits hauts de frequency déjà posés dans NR24.
+ * Depuis le cran du trigger, un canal non déclenché ne sort rien : les tests d'amplitude
+ * doivent donc démarrer la note, alors que ceux du rouleau (dutyStep/dutyOutput) non.
+ */
+const trigger = (chan) => {
+    const high = chan.NR24.getValue() & 0x07;
+    chan.NR24.setValue(0x80 | high);
+};
+
 /** Règle le canal sur une période donnée, sans passer par l'arithmétique de frequency. */
 const buildWithPeriod = (period, duty = 0) => {
     const frequency = 2048 - period;
@@ -227,6 +237,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         const period = 64;
         const chan = buildWithPeriod(period, 2);
         chan.NR22.setValue(0xA0); // volume 10
+        trigger(chan);
 
         const tour = [];
         for (let step = 0; step < 8; step++) {
@@ -240,6 +251,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         const chan = buildWithPeriod(period, 1); // pochoir 1 : picots aux crans 0 et 7
 
         chan.NR22.setValue(0x30); // volume 3
+        trigger(chan);
         expect(chan.amplitude(0), 'cran 0, un picot').toBe(3);
         expect(chan.amplitude(period), 'cran 1, un creux').toBe(0);
 
@@ -252,6 +264,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         const period = 100;
         const chan = buildWithPeriod(period, 3); // pochoir 3 : le cran 1 est un picot
         chan.NR22.setValue(0x70); // volume 7
+        trigger(chan);
         for (let offset = 0; offset < period; offset++) {
             expect(chan.amplitude(period + offset), `offset ${offset} dans le cran 1`).toBe(7);
         }
