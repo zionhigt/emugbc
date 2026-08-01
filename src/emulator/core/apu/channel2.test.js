@@ -269,6 +269,29 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         expect(chan.dutyOutput(3 * period), 'et son cran porte toujours un picot').toBe(1);
     });
 
+    it('le disjoncteur coupe EN AMONT du volume, pas seulement par coïncidence', () => {
+        const period = 64;
+        const chan = buildWithPeriod(period, 3); // pochoir 3 : le cran 1 porte un picot
+        chan.NR22.setValue(0x00);                // disjoncteur baissé
+
+        // Aujourd'hui, DAC coupé implique volume nul — les mêmes bits nourrissent les deux,
+        // donc le produit tombe à 0 tout seul et aucun test noir ne peut distinguer une
+        // garde explicite d'une absence de garde. On force donc ici l'état que l'enveloppe
+        // rendra atteignable : un volume courant HÉRITÉ d'avant la coupure, pendant que
+        // NR22 vient d'être remis à zéro.
+        //
+        // À REMPLACER AU CRAN DE L'ENVELOPPE. L'assertion est le vrai contrat du matériel,
+        // mais la mise en scène est fabriquée : cette propriété d'instance masquera le
+        // getter `volume` même quand il deviendra un vrai calcul, donc ce test ne pourra
+        // plus tomber. Le chemin authentique sera : volume haut, trigger, laisser
+        // l'enveloppe tourner, puis écrire 0x00 dans NR22.
+        Object.defineProperty(chan, 'volume', { get: () => 10 });
+
+        expect(chan.volume, 'le volume courant a survécu à l\'écriture de NR22').toBe(10);
+        expect(chan.dutyOutput(period), 'et le cran porte bien un picot').toBe(1);
+        expect(chan.amplitude(period), 'rien ne sort quand même : le DAC coupe avant').toBe(0);
+    });
+
     it('amplitude ne sort jamais de la plage 0..15, quelles que soient les manettes', () => {
         const chan = build({ nr21: 0xFF, nr22: 0xFF, nr23: 0xFF, nr24: 0xFF });
         for (let cycle = 0; cycle < 1000; cycle++) {

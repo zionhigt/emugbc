@@ -337,3 +337,53 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
     });
   });
 });
+
+/**
+ * LE COMPTEUR PARTAGÉ.
+ *
+ * Le compteur 16 bits du timer n'appartient pas au timer : sur le matériel, l'APU s'y
+ * branche aussi pour cadencer son frame sequencer. L'APU ayant besoin de l'interroger
+ * à une DATE CHOISIE (et pas seulement à l'instant présent), `innerCycles` se généralise
+ * en `innerCyclesAt(cycle)`, dont il devient le cas particulier « maintenant ».
+ *
+ * L'unité ne change pas : `innerCyclesAt` rend des T-CYCLES, alors que `cycle` est une
+ * date en cycles machine — le facteur 4 reste à l'intérieur, exactement comme aujourd'hui.
+ */
+describe('Timer : innerCyclesAt, le compteur interrogeable à une date', () => {
+
+  it('innerCycles n\'est que innerCyclesAt à l\'instant présent', () => {
+    const { machine, timer } = makeTimer();
+    for (const date of [0, 1, 64, 5000]) {
+      machine.totalCycles = date;
+      expect(timer.innerCyclesAt(date), `date ${date}`).toBe(timer.innerCycles);
+    }
+  });
+
+  it('rend des T-cycles : quatre par cycle machine écoulé', () => {
+    const { timer } = makeTimer();
+    expect(timer.innerCyclesAt(0), 'à l\'origine').toBe(0);
+    expect(timer.innerCyclesAt(1), 'un cycle machine').toBe(4);
+    expect(timer.innerCyclesAt(64), 'un cran de DIV').toBe(256);
+    expect(timer.innerCyclesAt(2048), 'un tic de frame sequencer').toBe(8192);
+  });
+
+  it('répond pour une date quelconque, sans que l\'horloge y soit', () => {
+    const { machine, timer } = makeTimer();
+    machine.totalCycles = 10;
+    expect(timer.innerCyclesAt(1000), 'une date à venir').toBe(4000);
+    expect(timer.innerCyclesAt(2), 'une date passée').toBe(8);
+    expect(machine.totalCycles, 'et l\'interrogation ne déplace pas l\'horloge').toBe(10);
+  });
+
+  it('l\'écriture de DIV déplace l\'origine : c\'est ce décalage que l\'APU doit voir', () => {
+    const { machine, timer } = makeTimer();
+    machine.totalCycles = 3000;
+    expect(timer.innerCyclesAt(3000), 'avant remise à zéro').toBe(12000);
+
+    timer.write(DIV, 0x00);
+    expect(timer.innerCyclesAt(3000), 'la date du reset devient la nouvelle origine').toBe(0);
+
+    machine.totalCycles = 3500;
+    expect(timer.innerCyclesAt(3500), '500 cycles machine après le reset').toBe(2000);
+  });
+});
