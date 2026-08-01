@@ -68,12 +68,20 @@ const buildFakeJoypad = () => ({
   write: () => {},
 });
 
+// Un APU factice : les tests machine ne produisent pas de son, mais la section
+// 0xFF10-0xFF26 réclame son contrôleur dès la construction du bus.
+const buildFakeAPU = () => ({
+  read: () => 0,
+  write: () => {},
+  check: () => {},
+});
+
 const buildAll = () => {
   const serial = buildFakeSerial();
   const timer = buildFakeTimer();
   // Le bus NU : la machine (et donc le PPU) le reçoit tel quel, le CPU en reçoit une vue
   // qui facture. Sans ça, chaque lecture de VRAM du PPU serait débitée au CPU.
-  const memory = buildMemory(undefined, serial, timer, buildFakePPU(), buildFakeJoypad());
+  const memory = buildMemory(undefined, serial, timer, buildFakePPU(), buildFakeJoypad(), buildFakeAPU());
   const cpu = new CPU(memory);
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();

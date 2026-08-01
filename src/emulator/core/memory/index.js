@@ -108,6 +108,30 @@ function FactoryTimerSection(timer) {
     }
     return TimerSection;
 }
+
+function FactoryAPUSection(apu) {
+    class APUSection extends Section {
+        constructor(memory) {
+            super(memory);
+            this.apu = apu;
+        }
+    
+        write(addr, value) {
+            if (addr !== 0xFF04) {
+                super.write(addr, value);
+            } else {
+                value = 0;
+            }
+            return this.apu.write(addr, value);
+        }
+
+        read(addr) {
+            return this.apu.read(addr);
+        }
+    }
+    return APUSection;
+}
+
 function FactoryPPUSection(ppu) {
     class PPUSection extends Section {
         constructor(memory) {
@@ -231,7 +255,7 @@ function FactoryOAMSection(ppu) {
     return OAMSection;
 }
 
-export default function(cartridge, serialbus, timer, ppu, joypad) {
+export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
     const memory = new Memory();
     if (arguments.length === 0) {
         memory.bindRange("flat", 0x000, 0xFFFF, Section);
@@ -252,12 +276,17 @@ export default function(cartridge, serialbus, timer, ppu, joypad) {
     joypad = FactoryJoypadSection(joypad);
     memory.bindRange("joypad", 0xFF00, 0xFF00, joypad);
     serialbus = FactorySerialSection(serialbus);
-    timer = FactoryTimerSection(timer);
-    ppu = FactoryPPUSection(ppu);
     memory.bindRange("serial", 0xFF01, 0xFF02, serialbus);
     memory.bindRange("overflow1", 0xFF03, 0xFF03, Section);
+    timer = FactoryTimerSection(timer);
     memory.bindRange("timer", 0xFF04, 0xFF07, timer);
-    memory.bindRange("overflow2", 0xFF08, 0xFF3F, Section);
+    // 0xFF0F (IF) vit dans cette plage : la laisser orpheline en découpant
+    // pour l'APU coupe toutes les interruptions qui transitent par le bus.
+    memory.bindRange("overflow2", 0xFF08, 0xFF0F, Section);
+    apu = FactoryAPUSection(apu);
+    memory.bindRange("apu", 0xFF10, 0xFF26, apu);
+    memory.bindRange("overflow2_1", 0xFF27, 0xFF3F, Section);
+    ppu = FactoryPPUSection(ppu);
     memory.bindRange("ppu", 0xFF40, 0xFF4B, ppu);
     memory.bindRange("overflow3", 0xFF4C, 0xFFFF, Section);
     return memory;

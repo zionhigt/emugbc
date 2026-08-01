@@ -1202,7 +1202,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         start() {}, stop() {},
         tick() { cbs.forEach((cb) => cb({ detail: 'tick' })); },
       };
-      const memory = buildMemory(undefined, serial, timer, undefined, joypad);
+      const apu = { read: () => 0, write() {}, check() {} };
+      const memory = buildMemory(undefined, serial, timer, undefined, joypad, apu);
       const cpu = new CPU(memory);
       const Decoder = buildDecoder(cpu, buildInstructions());
       const Machine = buildMachine(memory, cpu, new Decoder(), clock, serial, timer);

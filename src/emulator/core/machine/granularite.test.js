@@ -35,7 +35,7 @@ const neutre = () => ({ read: () => 0, write: () => {}, check: () => {} });
  */
 const datesDesAcces = (program, at = 0xc000, setup = () => {}) => {
   const serial = buildFakeSerial();
-  const raw = buildMemory(undefined, serial, neutre(), neutre(), neutre());
+  const raw = buildMemory(undefined, serial, neutre(), neutre(), neutre(), neutre());
   program.forEach((b, i) => raw.write(at + i, b));
 
   const dates = [];

@@ -1,6 +1,7 @@
 import MemoryBuilder from "../memory/index.js";
 import Timer from "../timer/index.js";
 import PPU from "../ppu/index.js"
+import APU from "../apu/index.js"
 import Joypad from "../joypad/index.js"
 
 const MACHINE_FREQUENCE = 1048576; // Hz
@@ -20,9 +21,11 @@ export default function(memory, cpu, decoder, clock, serial) {
             this.totalCycles = 0;
             this._observersCyclesUpdate = [];
             this.ppu = new (PPU(this));
+            this.apu = new (APU(this));
             this.joypad = new (Joypad())
             this.subscribeCycleUpdate(function() {
                 this.ppu.check();
+                this.apu.check();
             }.bind(this));
 
             this._tickObservers = [];
@@ -154,7 +157,8 @@ export default function(memory, cpu, decoder, clock, serial) {
                 serial,
                 timer,
                 this.ppu,
-                this.joypad
+                this.joypad,
+                this.apu
             );
             this._memory = newMemory;
             this.cpu.initMemory(newMemory);

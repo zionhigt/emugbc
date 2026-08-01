@@ -24,6 +24,11 @@ const buildFakeCartridge = () => {
   };
 };
 
+// L'APU : même contrat read/write que le timer et le PPU. Sa section est
+// construite quelle que soit la plage testée, elle a donc toujours besoin
+// d'un contrôleur, même muet.
+const buildFakeAPU = () => ({ read: () => 0, write: () => {}, check: () => {} });
+
 describe('Blocage VRAM/OAM : le PPU verrouille l\'accès CPU selon son mode', () => {
   // Une mémoire avec un PPU PILOTABLE : on force son mode et l'état LCD.
   // La section lit le mode via `computeState` (dot-précis) ; ici on le rend
@@ -35,6 +40,7 @@ describe('Blocage VRAM/OAM : le PPU verrouille l\'accès CPU selon son mode', ()
     undefined,
     { computeState: () => ({ mode }), totalMachineCycles: 0, LCDC: { isOn }, read: () => 0, write: () => {}, check: () => {} },
     undefined,
+    buildFakeAPU(),
   );
 
   it('VRAM : lecture CPU rend 0xFF en mode 3 (dessin)', () => {
@@ -113,6 +119,28 @@ describe('Memory sans cartouche : le tableau plat de secours', () => {
   });
 });
 
+describe('La carte du bus : découpée sans trou de 0x0000 à 0xFFFF', () => {
+  // Une adresse sans section est un trou noir SILENCIEUX : Memory.read rend
+  // null et Memory.write ne fait rien, sans lever la moindre erreur. Le piège
+  // se referme quand on découpe une plage existante pour loger un nouveau
+  // contrôleur et qu'on oublie les adresses du milieu — 0xFF0F (IF) s'est déjà
+  // fait avaler comme ça en insérant l'APU dans l'ancien overflow 0xFF08-0xFF3F.
+  it('aucune adresse n\'est orpheline', () => {
+    const serial = { read: () => 0, write: () => {}, echo: () => {} };
+    const timer = { read: () => 0, write: () => {} };
+    const ppu = { read: () => 0, write: () => {}, check: () => {} };
+    const joypad = { read: () => 0xff, write: () => {} };
+    const memory = buildMemory(buildFakeCartridge(), serial, timer, ppu, joypad, buildFakeAPU());
+
+    const orphelines = [];
+    for (let addr = 0x0000; addr <= 0xffff; addr++) {
+      if (!memory._section(addr)) orphelines.push(hex(addr));
+    }
+
+    expect(orphelines, 'toute adresse doit tomber dans une section').toEqual([]);
+  });
+});
+
 describe('Memory avec MBC : la plage 0x0000-0x7FFF appartient à la cartouche', () => {
   it('la section MBC est récupérable par son tag et couvre les 32 Ko entiers', () => {
     const memory = buildMemory(buildFakeCartridge());
@@ -188,13 +216,13 @@ describe('Memory + joypad : 0xFF00 est routé vers le contrôleur manette', () =
 
   it('lire 0xFF00 délègue au contrôleur (ici 0xFF : aucune touche pressée)', () => {
     const joypad = buildFakeJoypad();
-    const memory = buildMemory(undefined, serial, timer, ppu, joypad);
+    const memory = buildMemory(undefined, serial, timer, ppu, joypad, buildFakeAPU());
     expect(hex(memory.read(0xff00), 2), 'le contrôleur répond, pas la ram plate').toBe('0xFF');
   });
 
   it('écrire 0xFF00 (la sélection de colonne) est transmis au contrôleur', () => {
     const joypad = buildFakeJoypad();
-    const memory = buildMemory(undefined, serial, timer, ppu, joypad);
+    const memory = buildMemory(undefined, serial, timer, ppu, joypad, buildFakeAPU());
     memory.write(0xff00, 0x20); // le jeu sélectionne une colonne de la matrice
     expect(
       joypad.writes,
@@ -294,6 +322,7 @@ describe('Memory + série : la section 0xFF01-0xFF02 parle le protocole, le maî
       { read: () => 0, write: () => {} },        // timer
       { read: () => 0, write: () => {}, check: () => {} }, // ppu
       { read: () => 0xff, write: () => {} },      // joypad
+      buildFakeAPU(),
     );
     expect(memory.getSectionByTag('serial'), 'le tag doit exister').toBeDefined();
     // les voisins ne débordent pas sur la série : 0xFF00 (joypad) et 0xFF03 (ram plate)
