@@ -8,7 +8,7 @@ export default function(machine) {
     class APU {
         constructor() {
             this.machine = machine;
-            this.channel2 = channel2();
+            this.channel2 = channel2(this);
         }
         
         get bus() {

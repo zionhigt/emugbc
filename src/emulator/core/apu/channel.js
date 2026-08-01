@@ -2,7 +2,8 @@ import { Register } from "../../lib/register";
 
 
 class Channel {
-    constructor(start) {
+    constructor(apu, start) {
+        this.apu = apu;
         this.start = start;
         this.registers = {};
     }

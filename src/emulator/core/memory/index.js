@@ -280,8 +280,6 @@ export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
     memory.bindRange("overflow1", 0xFF03, 0xFF03, Section);
     timer = FactoryTimerSection(timer);
     memory.bindRange("timer", 0xFF04, 0xFF07, timer);
-    // 0xFF0F (IF) vit dans cette plage : la laisser orpheline en découpant
-    // pour l'APU coupe toutes les interruptions qui transitent par le bus.
     memory.bindRange("overflow2", 0xFF08, 0xFF0F, Section);
     apu = FactoryAPUSection(apu);
     memory.bindRange("apu", 0xFF10, 0xFF26, apu);
