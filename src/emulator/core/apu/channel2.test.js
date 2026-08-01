@@ -178,6 +178,107 @@ describe('Canal 2 - les pochoirs : dutyOutput', () => {
     });
 });
 
+describe('Canal 2 - le volume : la hauteur de la marche (NR22)', () => {
+
+    it('initialVolume est le quartet de tête de NR22', () => {
+        expect(build({ nr22: 0x00 }).initialVolume, 'silence').toBe(0);
+        expect(build({ nr22: 0x10 }).initialVolume, 'la plus petite marche').toBe(1);
+        expect(build({ nr22: 0xA0 }).initialVolume).toBe(10);
+        expect(build({ nr22: 0xF0 }).initialVolume, 'la plus haute').toBe(15);
+    });
+
+    it('le quartet de queue appartient à l\'enveloppe : il ne déborde pas sur le volume', () => {
+        expect(build({ nr22: 0xAF }).initialVolume, 'queue au maximum, volume inchangé').toBe(10);
+        expect(build({ nr22: 0x0F }).initialVolume, 'rien que la queue : aucun volume').toBe(0);
+    });
+
+    it('tant qu\'il n\'y a pas d\'enveloppe, le volume courant recopie le volume réglé', () => {
+        const chan = build({ nr22: 0xA0 });
+        expect(chan.volume, 'les deux ne divergeront qu\'au cran de l\'enveloppe').toBe(chan.initialVolume);
+        expect(chan.volume).toBe(10);
+    });
+});
+
+describe('Canal 2 - le disjoncteur : le DAC', () => {
+
+    it('les cinq bits de tête de NR22 alimentent le DAC, et un seul suffit', () => {
+        expect(build({ nr22: 0x08 }).isDacOn, 'le bit de direction seul : alimenté malgré un volume nul').toBe(true);
+        expect(build({ nr22: 0x10 }).isDacOn, 'volume 1').toBe(true);
+        expect(build({ nr22: 0xF0 }).isDacOn, 'volume maximum').toBe(true);
+        expect(build({ nr22: 0xFF }).isDacOn, 'tout allumé').toBe(true);
+    });
+
+    it('les trois bits de queue n\'alimentent rien : ce n\'est que la période de l\'enveloppe', () => {
+        expect(build({ nr22: 0x00 }).isDacOn, 'NR22 à zéro : disjoncteur baissé').toBe(false);
+        expect(build({ nr22: 0x07 }).isDacOn, 'queue au maximum, toujours rien pour alimenter').toBe(false);
+    });
+
+    it('écrire 0x00 dans NR22 en vol baisse le disjoncteur', () => {
+        const chan = build({ nr22: 0xA0 });
+        expect(chan.isDacOn, 'le canal était alimenté').toBe(true);
+        chan.NR22.setValue(0x00);
+        expect(chan.isDacOn, 'coupé, et pas seulement mis en sourdine').toBe(false);
+    });
+});
+
+describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
+
+    it('amplitude est la marche du rouleau, portée à la hauteur du volume', () => {
+        const period = 64;
+        const chan = buildWithPeriod(period, 2);
+        chan.NR22.setValue(0xA0); // volume 10
+
+        const tour = [];
+        for (let step = 0; step < 8; step++) {
+            tour.push(chan.amplitude(step * period));
+        }
+        expect(tour, 'le pochoir 2 mis à l\'échelle 10').toEqual([10, 0, 0, 0, 0, 10, 10, 10]);
+    });
+
+    it('changer le volume change la hauteur, jamais la forme', () => {
+        const period = 64;
+        const chan = buildWithPeriod(period, 1); // pochoir 1 : picots aux crans 0 et 7
+
+        chan.NR22.setValue(0x30); // volume 3
+        expect(chan.amplitude(0), 'cran 0, un picot').toBe(3);
+        expect(chan.amplitude(period), 'cran 1, un creux').toBe(0);
+
+        chan.NR22.setValue(0xF0); // volume 15
+        expect(chan.amplitude(0), 'le même picot, plus haut').toBe(15);
+        expect(chan.amplitude(period), 'un creux reste un creux, quel que soit le volume').toBe(0);
+    });
+
+    it('amplitude est un escalier : elle ne bouge pas à l\'intérieur d\'un cran', () => {
+        const period = 100;
+        const chan = buildWithPeriod(period, 3); // pochoir 3 : le cran 1 est un picot
+        chan.NR22.setValue(0x70); // volume 7
+        for (let offset = 0; offset < period; offset++) {
+            expect(chan.amplitude(period + offset), `offset ${offset} dans le cran 1`).toBe(7);
+        }
+    });
+
+    it('disjoncteur baissé, le rouleau tourne dans le vide', () => {
+        const period = 32;
+        const chan = buildWithPeriod(period, 3); // pochoir 3 : 6 picots sur 8
+        chan.NR22.setValue(0x00);
+
+        for (let cycle = 0; cycle < 8 * period; cycle++) {
+            expect(chan.amplitude(cycle), `cycle ${cycle}`).toBe(0);
+        }
+        expect(chan.dutyStep(3 * period), 'le rouleau, lui, n\'a pas cessé de tourner').toBe(3);
+        expect(chan.dutyOutput(3 * period), 'et son cran porte toujours un picot').toBe(1);
+    });
+
+    it('amplitude ne sort jamais de la plage 0..15, quelles que soient les manettes', () => {
+        const chan = build({ nr21: 0xFF, nr22: 0xFF, nr23: 0xFF, nr24: 0xFF });
+        for (let cycle = 0; cycle < 1000; cycle++) {
+            const value = chan.amplitude(cycle);
+            expect(value, `cycle ${cycle}`).toBeGreaterThanOrEqual(0);
+            expect(value, `cycle ${cycle}`).toBeLessThanOrEqual(15);
+        }
+    });
+});
+
 describe('Canal 2 - la note produite', () => {
 
     it('frequency = 1750 fait tourner le rouleau 440 fois par seconde : un la 440', () => {
