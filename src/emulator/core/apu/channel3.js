@@ -1,7 +1,6 @@
 import { Register } from "../../lib/register";
 import byte from "../../lib/byte";
 import { Channel, NRegister, NRegister1 } from "./channel";
-import { faSearch } from "@fortawesome/free-solid-svg-icons";
 
 class NR30 extends NRegister {
     setValue(val) {
@@ -14,6 +13,8 @@ class NR31 extends NRegister1 {
         return this.parent._maxLength - val;
     }
 }
+
+const OFFSETS = [4, 0, 1, 2];
 
 export default function(apu) {
     function ChanFactory(start, Parent) {
@@ -28,6 +29,34 @@ export default function(apu) {
 
             get volume() {
                 return this.NR2.getValue();
+            }
+
+            get outputLevel() {
+                return (this.NR2.getValue() >> 5) & 0x03;
+            }
+
+            waveStep(cycle) {
+                return Math.floor(
+                    2 * (cycle - this.triggeredAt) / this.period
+                ) % 32
+            }
+
+            waveSample(cycle) {
+                const position = this.waveStep(cycle);
+                const addr = 0xFF30 + Math.floor(position / 2);
+                let o = this.apu.read(addr);
+                if (position % 2 === 0) {
+                    o >>= 4;
+                } else {
+                    o &= 0x0F;
+                }
+                return o;
+            }
+
+            amplitude(cycle) {
+                if (!this.isDacOn || !this.isEnabledAt(cycle)) return 0;
+                const sample = this.waveSample(cycle);
+                return sample >> OFFSETS[this.outputLevel];
             }
 
             addReg(offset) {
