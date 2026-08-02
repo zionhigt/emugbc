@@ -51,6 +51,47 @@ const buildSerial = () => ({
   echo(buffer) { this.output = String.fromCharCode(...buffer); },
 });
 
+/**
+ * `18 FE` = `JR -2`, un saut sur lui-même : la boucle d'abandon de blargg. Une ROM qui y
+ * tombe n'écrira plus jamais rien, donc l'attendre 3000 trames ne fait que perdre du temps.
+ * La reconnaître fait passer le fichier de quatre minutes à quelques secondes.
+ */
+const estBoucleDAbandon = (memory, pc) =>
+  memory.read(pc) === 0x18 && memory.read(pc + 1) === 0xFE;
+
+/**
+ * Le seul diagnostic qu'on obtienne de ces ROMs.
+ *
+ * Blargg saute à cette boucle dès qu'une lecture de registre ne rend pas ce qu'il attend,
+ * et cette routine — `LD A,0` / `LDH (FF26),A` / `JR -2` — coupe l'APU et se fige sans
+ * rien imprimer. Le texte accumulé n'est jamais vidé sur le port série, donc pas de
+ * « Failed #N ».
+ *
+ * En revanche le dernier échange avec l'APU avant le blocage désigne le registre fautif
+ * et la valeur qui a déçu : c'est aussi précis qu'un numéro d'erreur.
+ */
+const brancherJournal = (apu, taille = 6) => {
+  const journal = [];
+  const hex = (n, largeur = 2) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(largeur, '0');
+  const pousser = (entree) => {
+    journal.push(entree);
+    if (journal.length > taille) journal.shift();
+  };
+
+  const read = apu.read.bind(apu);
+  const write = apu.write.bind(apu);
+  apu.read = (addr) => {
+    const value = read(addr);
+    pousser(`R ${hex(addr, 4)}->${hex(value)}`);
+    return value;
+  };
+  apu.write = (addr, value) => {
+    pousser(`W ${hex(addr, 4)}=${hex(value)}`);
+    return write(addr, value);
+  };
+  return journal;
+};
+
 const runRom = (fileName, maxFrames = 3000) => {
   const serial = buildSerial();
   const clock = buildManivelle();
@@ -63,23 +104,32 @@ const runRom = (fileName, maxFrames = 3000) => {
 
   const bytes = new Uint8Array(readFileSync(join(FIXTURES_DIR, fileName)));
   machine.plugCartridge(new Cartridge(bytes));
+  const journal = brancherJournal(machine.apu);
 
   let frames = 0;
+  let abandon = false;
   while (frames < maxFrames && !/Passed|Failed/.test(serial.output)) {
     clock.tick();
     frames++;
+    if (estBoucleDAbandon(machine.memory, cpu.registers.PC.getValue())) {
+      abandon = true;
+      break;
+    }
   }
-  return { output: serial.output, frames };
+  return { output: serial.output, frames, abandon, journal };
 };
 
 describe('Blargg dmg_sound : l\'oracle de l\'APU, ROM par ROM', () => {
   it.skipIf(roms.length === 0).each(roms)(
     '%s écrit « Passed » sur le port série',
     (fileName) => {
-      const { output, frames } = runRom(fileName);
+      const { output, frames, abandon, journal } = runRom(fileName);
+      const fin = abandon
+        ? `blocage après ${frames} trames`
+        : `plafond de ${frames} trames atteint`;
       expect(
         output,
-        `après ${frames} trames, la bande série dit ceci`,
+        `${fin}\n  derniers échanges APU : ${journal.join('  ')}\n  bande série`,
       ).toContain('Passed');
     },
     60000,

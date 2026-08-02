@@ -134,6 +134,65 @@ describe('Minuteur - il tourne', () => {
     });
 });
 
+/**
+ * Trouvé par blargg `02-len ctr`, pas par les tests ci-dessus : basculer le bit 6 en
+ * cours de note change le RÉFÉRENTIEL du minuteur. Sans capture au moment de la bascule,
+ * activer la longueur après coup consomme d'un seul coup toutes les cloches passées
+ * pendant qu'elle était débranchée, et la note meurt instantanément.
+ *
+ * Même principe que `_capture()` dans le timer, y compris le piège d'ordre : la valeur
+ * doit être matérialisée AVANT que le registre ne prenne sa nouvelle valeur, sinon on la
+ * relit déjà à travers le nouveau référentiel.
+ */
+describe('Minuteur - basculer l\'interrupteur en vol', () => {
+
+    it('activer la longueur ne consomme pas les cloches passées', () => {
+        const { machine, chan } = buildPlayable();
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER);     // déclenché, longueur DÉBRANCHÉE
+
+        expect(chan.lengthRemaining(10 * CLOCHE), 'débranché, rien ne bouge').toBe(4);
+
+        machine.totalCycles = 10 * CLOCHE;
+        chan.NR4.setValue(LENGTH_ENABLE); // on branche, sans redéclencher
+
+        expect(chan.lengthRemaining(10 * CLOCHE), 'le minuteur est intact').toBe(4);
+        expect(chan.lengthRemaining(11 * CLOCHE), 'et il repart d\'ici, pas d\'avant').toBe(3);
+        expect(chan.isEnabledAt(11 * CLOCHE), 'la note joue encore').toBe(true);
+    });
+
+    it('débrancher la longueur ne ressuscite pas une note déjà éteinte', () => {
+        // blargg 02-len ctr, sous-test « Disabling length shouldn't re-enable channel ».
+        // L'épuisement du minuteur ÉTEINT le canal : c'est un état verrouillé, pas une
+        // condition qu'on recalcule à chaque lecture — sinon retirer la condition la lève.
+        const { machine, chan } = buildPlayable();
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.isEnabledAt(4 * CLOCHE), 'minuteur à sec').toBe(false);
+
+        machine.totalCycles = 4 * CLOCHE;
+        chan.NR4.setValue(0x00); // on débranche la longueur
+
+        expect(chan.isEnabledAt(4 * CLOCHE), 'la note reste morte').toBe(false);
+        expect(chan.isEnabled, 'à l\'heure courante aussi').toBe(false);
+    });
+
+    it('désactiver la longueur fige le minuteur là où il en est', () => {
+        const { machine, chan } = buildPlayable();
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(2 * CLOCHE), 'deux crans consommés').toBe(2);
+
+        machine.totalCycles = 2 * CLOCHE;
+        chan.NR4.setValue(0x00); // on débranche
+
+        expect(chan.lengthRemaining(2 * CLOCHE), 'figé à 2, pas revenu à 4').toBe(2);
+        expect(chan.lengthRemaining(20 * CLOCHE), 'et il ne bouge plus').toBe(2);
+    });
+});
+
 describe('Minuteur - il coupe la note', () => {
 
     const buildCounting = () => {
