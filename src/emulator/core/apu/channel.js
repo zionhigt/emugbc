@@ -17,14 +17,15 @@ export class NRegister extends Register(8) {
 
 export class NRegister4 extends NRegister {
     setValue(val) {
+        const now = this.parent.apu.totalMachineCycles;
+        let remain = this.parent.lengthRemaining(now);
+        this.parent._lastLengthRemaining = remain;
+        this.parent._lastLengthAt = now;
         super.setValue(val);
         if (byte.getFlag(val, 7)) {
-            const now = this.parent.apu.totalMachineCycles;
-            let remain = this.parent.lengthRemaining(now);
             if (remain === 0) remain = 64;
             this.parent._lastLengthRemaining = remain;
             this.parent._triggeredAt = now;
-            this.parent._lastLengthAt = now;
             this.parent._lastVolumeAt = now;
             this.parent._lastVolume = this.parent.initialVolume;
             this.parent._isEnabled = this.parent.isDacOn;
@@ -152,7 +153,10 @@ export function Channel(start, chanController) {
 
         isEnabledAt(cycle) {
             if (!this._isEnabled) return false;
-            if (this.isLengthEnabled && this.lengthRemaining(cycle) === 0) return false;
+            if (this.isLengthEnabled && this.lengthRemaining(cycle) === 0) {
+                this._isEnabled = false;
+                return false;
+            };
             return true;
         }
 
