@@ -123,8 +123,11 @@ describe('Masques - NR24 : seul le length enable ressort', () => {
 describe('Masques - la table, pour les registres qui existent', () => {
 
     const TABLE = [
-        // canal 1 :  0xFF10 NR10 0x80 | 0xFF11 NR11 0x3F | 0xFF12 NR12 0x00
-        //            0xFF13 NR13 0xFF | 0xFF14 NR14 0xBF
+        { addr: 0xFF10, nom: 'NR10', masque: 0x80 },
+        { addr: 0xFF11, nom: 'NR11', masque: 0x3F },
+        { addr: 0xFF12, nom: 'NR12', masque: 0x00 },
+        { addr: 0xFF13, nom: 'NR13', masque: 0xFF },
+        { addr: 0xFF14, nom: 'NR14', masque: 0xBF },
         { addr: 0xFF15, nom: 'non câblé', masque: 0xFF },
         { addr: 0xFF16, nom: 'NR21', masque: 0x3F },
         { addr: 0xFF17, nom: 'NR22', masque: 0x00 },
