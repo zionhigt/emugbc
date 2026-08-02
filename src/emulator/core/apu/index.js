@@ -2,6 +2,7 @@ import byte from "../../lib/byte";
 import { Register } from "../../lib/register";
 
 import channel2 from "./channel2";
+import Nr52 from "./nr52";
 
 
 export default function(machine) {
@@ -9,6 +10,13 @@ export default function(machine) {
         constructor() {
             this.machine = machine;
             this.channel2 = channel2(this);
+            this._isPowered = true;
+            this.nr52 = Nr52(this);
+
+        }
+
+        get isPowered() {
+            return this._isPowered;
         }
         
         get bus() {
@@ -20,6 +28,7 @@ export default function(machine) {
 
         get registersMapping() {
             return {
+                0xFF26: this.nr52,
                 ...this.channel2.registers,
             }
         }
@@ -37,6 +46,7 @@ export default function(machine) {
         };
 
         write (addr, value) {
+            if (!this.isPowered && addr !== 0xFF26) return;
             const reg = this.registersMapping[addr];
             if (!reg) {
                 return this.bus._write(addr, value);
