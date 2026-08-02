@@ -231,6 +231,54 @@ describe('Canal 3 - NR52 le voit sur le bit 2', () => {
     });
 });
 
+/**
+ * La wave RAM, 0xFF30-0xFF3F : 16 octets, 32 échantillons de 4 bits lus en boucle par le
+ * canal 3. Ce cran ne la fait pas encore sonner — il vérifie seulement qu'elle existe,
+ * qu'elle se relit sans masque, et surtout qu'elle est le SEUL endroit de l'APU qui
+ * survive à une extinction. Blargg le vérifie sous le nom « Powering APU shouldn't
+ * affect wave ».
+ */
+describe('Canal 3 - la wave RAM', () => {
+
+    const ADRESSES = Array.from({ length: 16 }, (_, i) => 0xFF30 + i);
+
+    it.each(ADRESSES)('%i se relit exactement comme on l\'écrit', (addr) => {
+        const { apu } = buildHarness();
+        apu.write(addr, 0xA5);
+        expect(apu.read(addr), 'aucun masque sur la wave RAM').toBe(0xA5);
+        apu.write(addr, 0x00);
+        expect(apu.read(addr)).toBe(0x00);
+    });
+
+    it('les seize octets sont distincts', () => {
+        const { apu } = buildHarness();
+        ADRESSES.forEach((addr, i) => apu.write(addr, i * 0x11));
+        ADRESSES.forEach((addr, i) => {
+            expect(apu.read(addr), `octet ${i}`).toBe(i * 0x11);
+        });
+    });
+
+    it('elle survit à l\'extinction de l\'APU, contrairement à tout le reste', () => {
+        const { apu } = buildHarness();
+        ADRESSES.forEach((addr, i) => apu.write(addr, 0xF0 | i));
+        apu.write(NR33, 0x34); // un registre ordinaire, pour comparaison
+
+        apu.write(NR52, 0x00);
+
+        expect(apu.read(NR33), 'NR33 est effacé').toBe(0xFF); // masque write-only
+        ADRESSES.forEach((addr, i) => {
+            expect(apu.read(addr), `octet ${i} intact`).toBe(0xF0 | i);
+        });
+    });
+
+    it('elle reste écrivable pendant que l\'APU est éteint', () => {
+        const { apu } = buildHarness();
+        apu.write(NR52, 0x00);
+        apu.write(0xFF30, 0x5A);
+        expect(apu.read(0xFF30)).toBe(0x5A);
+    });
+});
+
 describe('Canal 3 - il est indépendant des autres', () => {
 
     it('sa fréquence et son minuteur lui appartiennent', () => {

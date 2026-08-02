@@ -138,10 +138,13 @@ describe('Masques - la table, pour les registres qui existent', () => {
         { addr: 0xFF1C, nom: 'NR32', masque: 0x9F },
         { addr: 0xFF1D, nom: 'NR33', masque: 0xFF },
         { addr: 0xFF1E, nom: 'NR34', masque: 0xBF },
-        // 0xFF1F est le slot 0 fantôme du CANAL 4, pas la fin du canal 3 : il arrivera avec lui.
-        // canal 4 :  0xFF20 NR41 0xFF | 0xFF21 NR42 0x00 | 0xFF22 NR43 0x00
-        //            0xFF23 NR44 0xBF
-        // mixage  :  0xFF24 NR50 0x00 | 0xFF25 NR51 0x00
+        { addr: 0xFF1F, nom: 'non câblé', masque: 0xFF },
+        { addr: 0xFF20, nom: 'NR41', masque: 0xFF },
+        { addr: 0xFF21, nom: 'NR42', masque: 0x00 },
+        { addr: 0xFF22, nom: 'NR43', masque: 0x00 },
+        { addr: 0xFF23, nom: 'NR44', masque: 0xBF },
+        { addr: 0xFF24, nom: 'NR50', masque: 0x00 },
+        { addr: 0xFF25, nom: 'NR51', masque: 0x00 },
     ];
 
     it.each(TABLE)('$nom : écrit 0x00, relu son masque', ({ addr, masque }) => {
@@ -163,6 +166,18 @@ describe('Masques - la table, pour les registres qui existent', () => {
             const valeur = 0xA5 & ~masque & 0xFF; // que des bits lisibles
             apu.write(addr, valeur);
             expect(apu.read(addr)).toBe(valeur | masque);
+        },
+    );
+
+    it.each([0xFF27, 0xFF28, 0xFF29, 0xFF2A, 0xFF2B, 0xFF2C, 0xFF2D, 0xFF2E, 0xFF2F])(
+        '%i n\'est pas câblée : elle rend 0xFF et n\'oublie rien, elle ne retient rien',
+        (addr) => {
+            const { apu } = buildHarness();
+            expect(apu.read(addr), 'avant toute écriture').toBe(0xFF);
+            apu.write(addr, 0x00);
+            expect(apu.read(addr), 'écrire n\'y change rien').toBe(0xFF);
+            apu.write(addr, 0xA5);
+            expect(apu.read(addr)).toBe(0xFF);
         },
     );
 
