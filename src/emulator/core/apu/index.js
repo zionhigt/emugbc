@@ -3,6 +3,7 @@ import { Register } from "../../lib/register";
 
 import channel1 from "./channel1";
 import channel2 from "./channel2";
+import channel3 from "./channel3";
 import Nr52 from "./nr52";
 
 
@@ -12,6 +13,7 @@ export default function(machine) {
             this.machine = machine;
             this.channel1 = channel1(this);
             this.channel2 = channel2(this);
+            this.channel3 = channel3(this);
             this._isPowered = true;
             this.nr52 = Nr52(this);
             this.ff15 = new (Register(8));
@@ -34,6 +36,7 @@ export default function(machine) {
                 0xFF26: this.nr52,
                 ...this.channel1.registers,
                 ...this.channel2.registers,
+                ...this.channel3.registers,
             }
         }
         get maskRegistersMapping() {
@@ -45,6 +48,12 @@ export default function(machine) {
                 0xFF16: 0x3F,
                 0xFF18: 0xFF,
                 0xFF19: 0xBF,
+                0xFF1A: 0x7F,
+                0xFF1B: 0xFF,
+                0xFF1C: 0x9F,
+                0xFF1D: 0xFF,
+                0xFF1E: 0xBF,
+                0xFF1F: 0xFF,
             }
         }
 

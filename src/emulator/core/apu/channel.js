@@ -23,7 +23,7 @@ export class NRegister4 extends NRegister {
         this.parent._lastLengthAt = now;
         super.setValue(val);
         if (byte.getFlag(val, 7)) {
-            if (remain === 0) remain = 64;
+            if (remain === 0) remain = this.parent._maxLength;
             this.parent._lastLengthRemaining = remain;
             this.parent._triggeredAt = now;
             this.parent._lastVolumeAt = now;
@@ -40,9 +40,12 @@ export class NRegister2 extends NRegister {
     }
 }
 export class NRegister1 extends NRegister {
+    lengthRemaining(val) {
+        return this.parent._maxLength - (val & 0x3F);
+    }
     setValue(val) {
         super.setValue(val);
-        this.parent._lastLengthRemaining = 64 - (val & 0x3F);
+        this.parent._lastLengthRemaining = this.lengthRemaining(val);
         this.parent._lastLengthAt = this.parent.apu.totalMachineCycles;
         this.parent._lastVolume = this.parent.volume;
         this.parent._lastVolumeAt = this.parent.apu.totalMachineCycles;
@@ -76,6 +79,7 @@ export function Channel(start, chanController) {
             this._lastLengthAt = 0;
             this._lastVolume = 0;
             this._lastVolumeAt = 0;
+            this._maxLength = 64;
         }
 
         get isLengthEnabled() {
