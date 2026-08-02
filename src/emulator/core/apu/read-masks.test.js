@@ -169,9 +169,12 @@ describe('Masques - la table, pour les registres qui existent', () => {
         },
     );
 
-    it.each([0xFF27, 0xFF28, 0xFF29, 0xFF2A, 0xFF2B, 0xFF2C, 0xFF2D, 0xFF2E, 0xFF2F])(
-        '%i n\'est pas câblée : elle rend 0xFF et n\'oublie rien, elle ne retient rien',
-        (addr) => {
+    it.each(
+        [0xFF27, 0xFF28, 0xFF29, 0xFF2A, 0xFF2B, 0xFF2C, 0xFF2D, 0xFF2E, 0xFF2F]
+            .map((addr) => ({ addr, nom: '0x' + addr.toString(16).toUpperCase() })),
+    )(
+        '$nom n\'est pas câblée : elle rend 0xFF et ne retient rien',
+        ({ addr }) => {
             const { apu } = buildHarness();
             expect(apu.read(addr), 'avant toute écriture').toBe(0xFF);
             apu.write(addr, 0x00);

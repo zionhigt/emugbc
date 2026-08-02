@@ -70,7 +70,7 @@ const estBoucleDAbandon = (memory, pc) =>
  * En revanche le dernier échange avec l'APU avant le blocage désigne le registre fautif
  * et la valeur qui a déçu : c'est aussi précis qu'un numéro d'erreur.
  */
-const brancherJournal = (apu, taille = 6) => {
+const brancherJournal = (apu, taille = 14) => {
   const journal = [];
   const hex = (n, largeur = 2) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(largeur, '0');
   const pousser = (entree) => {

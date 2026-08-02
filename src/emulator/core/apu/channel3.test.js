@@ -241,8 +241,9 @@ describe('Canal 3 - NR52 le voit sur le bit 2', () => {
 describe('Canal 3 - la wave RAM', () => {
 
     const ADRESSES = Array.from({ length: 16 }, (_, i) => 0xFF30 + i);
+    const nommees = ADRESSES.map((addr) => ({ addr, nom: '0x' + addr.toString(16).toUpperCase() }));
 
-    it.each(ADRESSES)('%i se relit exactement comme on l\'écrit', (addr) => {
+    it.each(nommees)('$nom se relit exactement comme on l\'écrit', ({ addr }) => {
         const { apu } = buildHarness();
         apu.write(addr, 0xA5);
         expect(apu.read(addr), 'aucun masque sur la wave RAM').toBe(0xA5);
