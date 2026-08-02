@@ -36,6 +36,8 @@ const MACHINE_FREQUENCE = 1048576;
 const buildAPUStub = () => ({
     totalMachineCycles: 0,
     bus: { _read: () => 0xFF, _write: () => {} },
+    // La cloche longueur, sans reset de DIV : un coup tous les 4096 cycles machine.
+    lengthTicks: (cycle) => Math.floor(cycle / 4096),
 });
 
 const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
