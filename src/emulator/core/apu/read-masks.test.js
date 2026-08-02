@@ -133,8 +133,12 @@ describe('Masques - la table, pour les registres qui existent', () => {
         { addr: 0xFF17, nom: 'NR22', masque: 0x00 },
         { addr: 0xFF18, nom: 'NR23', masque: 0xFF },
         { addr: 0xFF19, nom: 'NR24', masque: 0xBF },
-        // canal 3 :  0xFF1A NR30 0x7F | 0xFF1B NR31 0xFF | 0xFF1C NR32 0x9F
-        //            0xFF1D NR33 0xFF | 0xFF1E NR34 0xBF | 0xFF1F non câblé 0xFF
+        { addr: 0xFF1A, nom: 'NR30', masque: 0x7F },
+        { addr: 0xFF1B, nom: 'NR31', masque: 0xFF },
+        { addr: 0xFF1C, nom: 'NR32', masque: 0x9F },
+        { addr: 0xFF1D, nom: 'NR33', masque: 0xFF },
+        { addr: 0xFF1E, nom: 'NR34', masque: 0xBF },
+        // 0xFF1F est le slot 0 fantôme du CANAL 4, pas la fin du canal 3 : il arrivera avec lui.
         // canal 4 :  0xFF20 NR41 0xFF | 0xFF21 NR42 0x00 | 0xFF22 NR43 0x00
         //            0xFF23 NR44 0xBF
         // mixage  :  0xFF24 NR50 0x00 | 0xFF25 NR51 0x00
