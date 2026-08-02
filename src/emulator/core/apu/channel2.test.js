@@ -44,10 +44,10 @@ const buildAPUStub = () => ({
 
 const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
     const chan = channel2(buildAPUStub());
-    chan.NR21.setValue(nr21);
-    chan.NR22.setValue(nr22);
-    chan.NR23.setValue(nr23);
-    chan.NR24.setValue(nr24);
+    chan.NR1.setValue(nr21);
+    chan.NR2.setValue(nr22);
+    chan.NR3.setValue(nr23);
+    chan.NR4.setValue(nr24);
     return chan;
 };
 
@@ -57,8 +57,8 @@ const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
  * doivent donc démarrer la note, alors que ceux du rouleau (dutyStep/dutyOutput) non.
  */
 const trigger = (chan) => {
-    const high = chan.NR24.getValue() & 0x07;
-    chan.NR24.setValue(0x80 | high);
+    const high = chan.NR4.getValue() & 0x07;
+    chan.NR4.setValue(0x80 | high);
 };
 
 /** Règle le canal sur une période donnée, sans passer par l'arithmétique de frequency. */
@@ -185,7 +185,7 @@ describe('Canal 2 - les pochoirs : dutyOutput', () => {
         const date = 3 * period + 40; // quelque part dans le cran 3
 
         expect(chan.dutyStep(date)).toBe(3);
-        chan.NR21.setValue((3 << 6) | 0x1F); // on passe au duty 3, longueur au passage
+        chan.NR1.setValue((3 << 6) | 0x1F); // on passe au duty 3, longueur au passage
         expect(chan.duty, 'le nouveau pochoir est bien pris en compte').toBe(3);
         expect(chan.dutyStep(date), 'mais le rouleau est resté exactement où il était').toBe(3);
         expect(chan.dutyOutput(date), 'seule la sortie change : cran 3 du pochoir 3 est un picot').toBe(1);
@@ -232,7 +232,7 @@ describe('Canal 2 - le disjoncteur : le DAC', () => {
     it('écrire 0x00 dans NR22 en vol baisse le disjoncteur', () => {
         const chan = build({ nr22: 0xA0 });
         expect(chan.isDacOn, 'le canal était alimenté').toBe(true);
-        chan.NR22.setValue(0x00);
+        chan.NR2.setValue(0x00);
         expect(chan.isDacOn, 'coupé, et pas seulement mis en sourdine').toBe(false);
     });
 });
@@ -242,7 +242,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
     it('amplitude est la marche du rouleau, portée à la hauteur du volume', () => {
         const period = 64;
         const chan = buildWithPeriod(period, 2);
-        chan.NR22.setValue(0xA0); // volume 10
+        chan.NR2.setValue(0xA0); // volume 10
         trigger(chan);
 
         const tour = [];
@@ -256,12 +256,12 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         const period = 64;
         const chan = buildWithPeriod(period, 1); // pochoir 1 : picots aux crans 0 et 7
 
-        chan.NR22.setValue(0x30); // volume 3
+        chan.NR2.setValue(0x30); // volume 3
         trigger(chan);
         expect(chan.amplitude(0), 'cran 0, un picot').toBe(3);
         expect(chan.amplitude(period), 'cran 1, un creux').toBe(0);
 
-        chan.NR22.setValue(0xF0); // volume 15
+        chan.NR2.setValue(0xF0); // volume 15
         trigger(chan);            // seul le trigger recharge le volume courant
         expect(chan.amplitude(0), 'le même picot, plus haut').toBe(15);
         expect(chan.amplitude(period), 'un creux reste un creux, quel que soit le volume').toBe(0);
@@ -270,7 +270,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
     it('amplitude est un escalier : elle ne bouge pas à l\'intérieur d\'un cran', () => {
         const period = 100;
         const chan = buildWithPeriod(period, 3); // pochoir 3 : le cran 1 est un picot
-        chan.NR22.setValue(0x70); // volume 7
+        chan.NR2.setValue(0x70); // volume 7
         trigger(chan);
         for (let offset = 0; offset < period; offset++) {
             expect(chan.amplitude(period + offset), `offset ${offset} dans le cran 1`).toBe(7);
@@ -280,7 +280,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
     it('disjoncteur baissé, le rouleau tourne dans le vide', () => {
         const period = 32;
         const chan = buildWithPeriod(period, 3); // pochoir 3 : 6 picots sur 8
-        chan.NR22.setValue(0x00);
+        chan.NR2.setValue(0x00);
 
         for (let cycle = 0; cycle < 8 * period; cycle++) {
             expect(chan.amplitude(cycle), `cycle ${cycle}`).toBe(0);
@@ -297,9 +297,9 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         // trigger, PUIS on coupe le DAC. Écrire NR22 ne recharge pas le volume courant,
         // donc il vaut toujours 10 alors que le disjoncteur est baissé — l'unique état où
         // une garde explicite sur isDacOn se distingue de son absence.
-        chan.NR22.setValue(0xA0); // volume 10, enveloppe débranchée
+        chan.NR2.setValue(0xA0); // volume 10, enveloppe débranchée
         trigger(chan);
-        chan.NR22.setValue(0x00); // disjoncteur baissé
+        chan.NR2.setValue(0x00); // disjoncteur baissé
 
         expect(chan.volume, 'le volume courant a survécu à l\'écriture de NR22').toBe(10);
         expect(chan.dutyOutput(period), 'et le cran porte bien un picot').toBe(1);

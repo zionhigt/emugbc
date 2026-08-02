@@ -36,9 +36,9 @@ const buildHarness = () => {
 /** Un canal prêt à jouer : DAC alimenté, volume 15, période connue. */
 const buildPlayable = () => {
     const { apu, chan } = buildHarness();
-    chan.NR21.setValue(0x80); // pochoir 2
-    chan.NR22.setValue(0xF0); // volume 15, DAC alimenté
-    chan.NR23.setValue(0x00);
+    chan.NR1.setValue(0x80); // pochoir 2
+    chan.NR2.setValue(0xF0); // volume 15, DAC alimenté
+    chan.NR3.setValue(0x00);
     return { apu, chan };
 };
 
@@ -60,13 +60,13 @@ describe('Canal 2 - appuyer sur le bouton', () => {
 
     it('écrire NR24 avec le bit 7 levé allume le canal', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.isEnabled).toBe(true);
     });
 
     it('écrire NR24 sans le bit 7 ne déclenche rien', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(0x7F); // tout sauf le trigger
+        chan.NR4.setValue(0x7F); // tout sauf le trigger
         expect(chan.isEnabled, 'aucun bouton pressé').toBe(false);
         expect(chan.triggeredAt).toBe(null);
     });
@@ -74,24 +74,24 @@ describe('Canal 2 - appuyer sur le bouton', () => {
     it('le trigger note l\'heure qu\'il est', () => {
         const { apu, chan } = buildPlayable();
         apu.totalMachineCycles = 12345;
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt).toBe(12345);
     });
 
     it('un second trigger remplace la date du premier', () => {
         const { apu, chan } = buildPlayable();
         apu.totalMachineCycles = 1000;
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
 
         apu.totalMachineCycles = 9000;
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt, 'seule la dernière compte').toBe(9000);
     });
 
     it('déclencher n\'empêche pas NR24 de faire son autre métier', () => {
         const { chan } = buildPlayable();
-        chan.NR23.setValue(0x34);
-        chan.NR24.setValue(TRIGGER | 0x05); // trigger ET les 3 bits hauts de frequency
+        chan.NR3.setValue(0x34);
+        chan.NR4.setValue(TRIGGER | 0x05); // trigger ET les 3 bits hauts de frequency
         expect(chan.isEnabled, 'le bouton a été pressé').toBe(true);
         expect(chan.frequency, 'et la fréquence est bien passée').toBe(0x534);
     });
@@ -101,36 +101,36 @@ describe('Canal 2 - le disjoncteur a le dernier mot', () => {
 
     it('DAC coupé, le trigger n\'allume pas le canal', () => {
         const { chan } = buildHarness();
-        chan.NR22.setValue(0x00); // disjoncteur baissé
-        chan.NR24.setValue(TRIGGER);
+        chan.NR2.setValue(0x00); // disjoncteur baissé
+        chan.NR4.setValue(TRIGGER);
         expect(chan.isEnabled, 'appuyer ne sert à rien, disjoncteur baissé').toBe(false);
     });
 
     it('mais le bouton a bien été pressé : la date est notée quand même', () => {
         const { apu, chan } = buildHarness();
-        chan.NR22.setValue(0x00);
+        chan.NR2.setValue(0x00);
         apu.totalMachineCycles = 700;
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt, 'l\'événement a eu lieu, seul l\'allumage est refusé').toBe(700);
     });
 
     it('couper le DAC en vol éteint le canal', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.isEnabled, 'le canal jouait').toBe(true);
 
-        chan.NR22.setValue(0x00);
+        chan.NR2.setValue(0x00);
         expect(chan.isEnabled, 'le disjoncteur saute, la note s\'arrête').toBe(false);
     });
 
     it('rallumer le DAC ne rallume PAS le canal : il faut redéclencher', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(TRIGGER);
-        chan.NR22.setValue(0x00); // coupé
-        chan.NR22.setValue(0xF0); // réalimenté
+        chan.NR4.setValue(TRIGGER);
+        chan.NR2.setValue(0x00); // coupé
+        chan.NR2.setValue(0xF0); // réalimenté
 
         expect(chan.isEnabled, 'le disjoncteur ne remonte pas la note avec lui').toBe(false);
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.isEnabled, 'il faut réappuyer sur le bouton').toBe(true);
     });
 });
@@ -147,7 +147,7 @@ describe('Canal 2 - un canal éteint ne sort rien', () => {
 
     it('une fois déclenché, le signal sort', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         const period = chan.period;
         // pochoir 2 : picots aux crans 0, 5, 6, 7 — volume 15
         expect(chan.amplitude(0), 'cran 0, un picot').toBe(15);

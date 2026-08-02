@@ -42,8 +42,8 @@ const buildHarness = () => {
 /** Un canal alimenté, volume 15, pochoir 3 (6 picots sur 8) — prêt à être déclenché. */
 const buildPlayable = () => {
     const harness = buildHarness();
-    harness.chan.NR21.setValue(0xC0); // pochoir 3, minuteur à 0 donc compteur à 64
-    harness.chan.NR22.setValue(0xF0); // DAC alimenté, volume 15
+    harness.chan.NR1.setValue(0xC0); // pochoir 3, minuteur à 0 donc compteur à 64
+    harness.chan.NR2.setValue(0xF0); // DAC alimenté, volume 15
     return harness;
 };
 
@@ -57,20 +57,20 @@ describe('Minuteur - le remonter', () => {
         { ecrit: 0x3F, reste: 1 },
     ])('NR21 = $ecrit remonte le minuteur à $reste crans', ({ ecrit, reste }) => {
         const { chan } = buildHarness();
-        chan.NR21.setValue(ecrit);
+        chan.NR1.setValue(ecrit);
         expect(chan.lengthRemaining(0)).toBe(reste);
     });
 
     it('les bits de duty ne perturbent pas le remontage', () => {
         const { chan } = buildHarness();
-        chan.NR21.setValue(0xC1); // pochoir 3 ET retrait de 1
+        chan.NR1.setValue(0xC1); // pochoir 3 ET retrait de 1
         expect(chan.duty, 'le pochoir est bien passé').toBe(3);
         expect(chan.lengthRemaining(0), 'et le minuteur aussi').toBe(63);
     });
 
     it('écrire NR21 remonte le minuteur même sans déclencher', () => {
         const { chan } = buildHarness();
-        chan.NR21.setValue(0x3C); // retrait de 60
+        chan.NR1.setValue(0x3C); // retrait de 60
         expect(chan.isEnabled, 'aucune note ne joue').toBe(false);
         expect(chan.lengthRemaining(0), 'le minuteur est pourtant remonté').toBe(4);
     });
@@ -81,15 +81,15 @@ describe('Minuteur - l\'interrupteur du four (NR24 bit 6)', () => {
     it('isLengthEnabled suit le bit 6 de NR24', () => {
         const { chan } = buildHarness();
         expect(chan.isLengthEnabled, 'au repos').toBe(false);
-        chan.NR24.setValue(LENGTH_ENABLE);
+        chan.NR4.setValue(LENGTH_ENABLE);
         expect(chan.isLengthEnabled).toBe(true);
-        chan.NR24.setValue(0x00);
+        chan.NR4.setValue(0x00);
         expect(chan.isLengthEnabled).toBe(false);
     });
 
     it('le trigger n\'allume pas l\'interrupteur tout seul', () => {
         const { chan } = buildPlayable();
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.isLengthEnabled, 'bit 7 levé, bit 6 non').toBe(false);
     });
 });
@@ -99,8 +99,8 @@ describe('Minuteur - il tourne', () => {
     /** Minuteur à 4 crans, four relié, note lancée à la date 0. */
     const buildCounting = () => {
         const harness = buildPlayable();
-        harness.chan.NR21.setValue(0xC0 | 0x3C); // pochoir 3, retrait 60, donc 4 crans
-        harness.chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        harness.chan.NR1.setValue(0xC0 | 0x3C); // pochoir 3, retrait 60, donc 4 crans
+        harness.chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         return harness;
     };
 
@@ -126,8 +126,8 @@ describe('Minuteur - il tourne', () => {
 
     it('four débranché, le minuteur ne tourne pas du tout', () => {
         const { chan } = buildPlayable();
-        chan.NR21.setValue(0xC0 | 0x3C); // 4 crans
-        chan.NR24.setValue(TRIGGER);     // sans le bit 6
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER);     // sans le bit 6
 
         expect(chan.lengthRemaining(0)).toBe(4);
         expect(chan.lengthRemaining(10 * CLOCHE), 'figé, aucune cloche ne l\'atteint').toBe(4);
@@ -138,8 +138,8 @@ describe('Minuteur - il coupe la note', () => {
 
     const buildCounting = () => {
         const harness = buildPlayable();
-        harness.chan.NR21.setValue(0xC0 | 0x3C); // 4 crans
-        harness.chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        harness.chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        harness.chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         return harness;
     };
 
@@ -168,8 +168,8 @@ describe('Minuteur - il coupe la note', () => {
 
     it('four débranché, la note ne s\'arrête jamais', () => {
         const { chan } = buildPlayable();
-        chan.NR21.setValue(0xC0 | 0x3F); // un seul cran
-        chan.NR24.setValue(TRIGGER);     // sans le bit 6
+        chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
+        chan.NR4.setValue(TRIGGER);     // sans le bit 6
         expect(chan.isEnabledAt(1000 * CLOCHE), 'aucun minuteur ne la coupe').toBe(true);
     });
 
@@ -187,24 +187,24 @@ describe('Minuteur - le trigger le remonte, mais seulement à sec', () => {
 
     it('déclencher un minuteur à sec le remonte au maximum', () => {
         const { machine, chan } = buildPlayable();
-        chan.NR21.setValue(0xC0 | 0x3F); // un seul cran
-        chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(CLOCHE), 'à sec après une cloche').toBe(0);
 
         machine.totalCycles = CLOCHE;
-        chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(CLOCHE), 'remonté à fond, pas à 1').toBe(64);
         expect(chan.isEnabledAt(CLOCHE), 'et la note repart').toBe(true);
     });
 
     it('déclencher un minuteur encore plein ne le remonte pas', () => {
         const { machine, chan } = buildPlayable();
-        chan.NR21.setValue(0xC0 | 0x3C); // 4 crans
-        chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(2 * CLOCHE), 'deux crans consommés').toBe(2);
 
         machine.totalCycles = 2 * CLOCHE;
-        chan.NR24.setValue(TRIGGER | LENGTH_ENABLE);
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(2 * CLOCHE), 'il reprend là où il en était').toBe(2);
         expect(chan.lengthRemaining(3 * CLOCHE), 'et repart de là').toBe(1);
     });

@@ -46,9 +46,9 @@ const buildHarness = () => {
 /** Règle NR22 puis déclenche la note à la date 0. */
 const buildNote = (nr22) => {
     const harness = buildHarness();
-    harness.chan.NR21.setValue(0xC0); // pochoir 3
-    harness.chan.NR22.setValue(nr22);
-    harness.chan.NR24.setValue(TRIGGER);
+    harness.chan.NR1.setValue(0xC0); // pochoir 3
+    harness.chan.NR2.setValue(nr22);
+    harness.chan.NR4.setValue(TRIGGER);
     return harness;
 };
 
@@ -62,21 +62,21 @@ describe('Enveloppe - les deux champs de queue de NR22', () => {
         { nr22: 0xF8, periode: 0 },
     ])('NR22 = $nr22 donne une période de $periode', ({ nr22, periode }) => {
         const { chan } = buildHarness();
-        chan.NR22.setValue(nr22);
+        chan.NR2.setValue(nr22);
         expect(chan.envelopePeriod).toBe(periode);
     });
 
     it('le bit 3 donne le sens', () => {
         const { chan } = buildHarness();
-        chan.NR22.setValue(0x00);
+        chan.NR2.setValue(0x00);
         expect(chan.isEnvelopeIncreasing, 'bit 3 bas : descend').toBe(false);
-        chan.NR22.setValue(0x08);
+        chan.NR2.setValue(0x08);
         expect(chan.isEnvelopeIncreasing, 'bit 3 levé : monte').toBe(true);
     });
 
     it('le volume de tête ne déborde pas sur le sens ni sur la période', () => {
         const { chan } = buildHarness();
-        chan.NR22.setValue(0xF0);
+        chan.NR2.setValue(0xF0);
         expect(chan.initialVolume).toBe(15);
         expect(chan.isEnvelopeIncreasing, 'aucun bit de queue levé').toBe(false);
         expect(chan.envelopePeriod).toBe(0);
@@ -153,14 +153,14 @@ describe('Enveloppe - écrire NR22 ne recharge pas le volume', () => {
         const { chan } = buildNote(0xA0); // volume 10, enveloppe débranchée
         expect(chan.volumeAt(0)).toBe(10);
 
-        chan.NR22.setValue(0x20); // réglage à 2
+        chan.NR2.setValue(0x20); // réglage à 2
         expect(chan.initialVolume, 'le réglage a changé').toBe(2);
         expect(chan.volumeAt(0), 'mais la note joue toujours à 10').toBe(10);
     });
 
     it('avant tout trigger, le volume vaut zéro même si NR22 est réglé haut', () => {
         const { chan } = buildHarness();
-        chan.NR22.setValue(0xF0);
+        chan.NR2.setValue(0xF0);
         expect(chan.initialVolume, 'le réglage est bien là').toBe(15);
         expect(chan.volumeAt(0), 'mais rien ne l\'a chargé').toBe(0);
     });
@@ -173,14 +173,14 @@ describe('Enveloppe - le trigger la recharge et la relance', () => {
         expect(chan.volumeAt(cloche(6)), 'deux pas consommés').toBe(13);
 
         machine.totalCycles = cloche(6);
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.volumeAt(cloche(6)), 'rechargé au réglage').toBe(15);
     });
 
     it('et elle repart à compter depuis le nouveau trigger', () => {
         const { machine, chan } = buildNote(0xF3);
         machine.totalCycles = cloche(6);
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
 
         expect(chan.volumeAt(cloche(8)), 'deux cloches après le trigger, pas encore trois').toBe(15);
         expect(chan.volumeAt(cloche(9)), 'trois cloches après : un pas').toBe(14);
@@ -188,10 +188,10 @@ describe('Enveloppe - le trigger la recharge et la relance', () => {
 
     it('redéclencher prend le NOUVEAU réglage si NR22 a changé entre-temps', () => {
         const { machine, chan } = buildNote(0xF3);
-        chan.NR22.setValue(0x50); // réglage à 5, enveloppe débranchée
+        chan.NR2.setValue(0x50); // réglage à 5, enveloppe débranchée
 
         machine.totalCycles = cloche(6);
-        chan.NR24.setValue(TRIGGER);
+        chan.NR4.setValue(TRIGGER);
         expect(chan.volumeAt(cloche(6))).toBe(5);
         expect(chan.volumeAt(cloche(200)), 'période 0 : plus rien ne bouge').toBe(5);
     });
