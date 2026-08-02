@@ -30,7 +30,6 @@ export default function(machine) {
         get registersMapping() {
             return {
                 0xFF26: this.nr52,
-                0xFF15: this.ff15,
                 ...this.channel2.registers,
             }
         }
@@ -47,7 +46,6 @@ export default function(machine) {
         }
 
         read (addr) {
-            if (addr === 0xFF15) return 0xFF;
             const reg = this.registersMapping[addr];
             if (!reg) {
                 return this.bus._read(addr);
