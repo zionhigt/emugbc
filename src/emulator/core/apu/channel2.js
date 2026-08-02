@@ -26,6 +26,8 @@ class NRegister24 extends NRegister {
             this.parent._lastLengthRemaining = remain;
             this.parent._triggeredAt = now;
             this.parent._lastLengthAt = now;
+            this.parent._lastVolumeAt = now;
+            this.parent._lastVolume = this.parent.initialVolume;
             this.parent._isEnabled = this.parent.isDacOn;
         }
     }
@@ -41,6 +43,8 @@ class NRegister21 extends NRegister {
         super.setValue(val);
         this.parent._lastLengthRemaining = 64 - (val & 0x3F);
         this.parent._lastLengthAt = this.parent.apu.totalMachineCycles;
+        this.parent._lastVolume = this.parent.volume;
+        this.parent._lastVolumeAt = this.parent.apu.totalMachineCycles;
     }
 }
 
@@ -59,6 +63,8 @@ export default function(apu) {
                 this._triggeredAt = null;
                 this._lastLengthRemaining = 0;
                 this._lastLengthAt = 0;
+                this._lastVolume = 0;
+                this._lastVolumeAt = 0;
             }
 
             get isLengthEnabled() {
@@ -111,7 +117,24 @@ export default function(apu) {
             }
 
             get volume() {
-                return this.initialVolume;
+                return this.volumeAt(this.apu.totalMachineCycles);
+            }
+
+            get envelopePeriod() {
+                return this.NR22.getValue() & 0x07;
+            }
+
+            get isEnvelopeIncreasing() {
+                return byte.getFlag(this.NR22.getValue(), 3);
+            }
+
+            volumeAt(cycle) {
+                if (this.envelopePeriod === 0) return this._lastVolume;
+                const step = Math.floor(
+                    (this.apu.envelopeTicks(cycle) - this.apu.envelopeTicks(this._lastVolumeAt)) / this.envelopePeriod
+                );
+                const value = this.isEnvelopeIncreasing ? this._lastVolume + step : this._lastVolume - step;
+                return Math.min(15, Math.max(value, 0));
             }
 
             isEnabledAt(cycle) {
@@ -136,7 +159,7 @@ export default function(apu) {
 
             amplitude(cycle) {
                 if (!this.isDacOn || !this.isEnabledAt(cycle)) return 0;
-                return this.dutyOutput(cycle) * this.volume;
+                return this.dutyOutput(cycle) * this.volumeAt(cycle);
             }
 
             lengthRemaining(cycle) {
