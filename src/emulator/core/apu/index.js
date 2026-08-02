@@ -1,6 +1,7 @@
 import byte from "../../lib/byte";
 import { Register } from "../../lib/register";
 
+import channel1 from "./channel1";
 import channel2 from "./channel2";
 import Nr52 from "./nr52";
 
@@ -9,6 +10,7 @@ export default function(machine) {
     class APU {
         constructor() {
             this.machine = machine;
+            this.channel1 = channel1(this);
             this.channel2 = channel2(this);
             this._isPowered = true;
             this.nr52 = Nr52(this);
@@ -30,11 +32,16 @@ export default function(machine) {
         get registersMapping() {
             return {
                 0xFF26: this.nr52,
+                ...this.channel1.registers,
                 ...this.channel2.registers,
             }
         }
         get maskRegistersMapping() {
             return {
+                0xFF10: 0x80,
+                0xFF11: 0x3F,
+                0xFF13: 0xFF,
+                0xFF14: 0xBF,
                 0xFF16: 0x3F,
                 0xFF18: 0xFF,
                 0xFF19: 0xBF,
