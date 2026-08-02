@@ -12,6 +12,7 @@ export default function(machine) {
             this.channel2 = channel2(this);
             this._isPowered = true;
             this.nr52 = Nr52(this);
+            this.ff15 = new (Register(8));
 
         }
 
@@ -29,7 +30,15 @@ export default function(machine) {
         get registersMapping() {
             return {
                 0xFF26: this.nr52,
+                0xFF15: this.ff15,
                 ...this.channel2.registers,
+            }
+        }
+        get maskRegistersMapping() {
+            return {
+                0xFF16: 0x3F,
+                0xFF18: 0xFF,
+                0xFF19: 0xBF,
             }
         }
 
@@ -38,11 +47,13 @@ export default function(machine) {
         }
 
         read (addr) {
+            if (addr === 0xFF15) return 0xFF;
             const reg = this.registersMapping[addr];
             if (!reg) {
                 return this.bus._read(addr);
             }
-            return reg.getValue();
+            const mask = this.maskRegistersMapping?.[addr] || 0;
+            return reg.getValue() | mask;
         };
 
         write (addr, value) {
