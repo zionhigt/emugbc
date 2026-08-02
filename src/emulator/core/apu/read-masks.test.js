@@ -107,41 +107,34 @@ describe('Masques - NR24 : seul le length enable ressort', () => {
 });
 
 /**
- * LA TABLE COMPLÈTE, exigée par blargg 01-registers.
+ * LA TABLE DES MASQUES, limitée à ce qui existe.
  *
- * La ROM écrit puis relit CHAQUE adresse de 0xFF10 à 0xFF26 et compare au masque. Elle
- * abandonne dès la première : elle commence par NR10, qui n'appartient à aucun canal
- * écrit aujourd'hui. Les registres des canaux 1, 3 et 4 n'ont donc besoin de rien d'autre
- * que d'exister, de retenir ce qu'on leur écrit, et de porter leur masque en lecture.
+ * La table complète que blargg `01-registers` exige couvre 0xFF10 à 0xFF26. Les lignes
+ * des canaux 1, 3 et 4 sont commentées ci-dessous : on les décommente quand le canal
+ * arrive, pas avant — un registre qui n'appartient à personne n'a rien à faire ici.
+ *
+ * À savoir : `01-registers` abandonne à la PREMIÈRE adresse qui ne correspond pas, en
+ * commençant par NR10. Elle restera donc rouge jusqu'au dernier registre écrit, et ne
+ * donnera aucun signal intermédiaire.
  *
  * NR52 est absent du tableau : son écriture ne retient que le bit 7, il a ses propres
  * tests dans nr52.test.js.
  */
-describe('Masques - la table complète de 0xFF10 à 0xFF25', () => {
+describe('Masques - la table, pour les registres qui existent', () => {
 
     const TABLE = [
-        { addr: 0xFF10, nom: 'NR10', masque: 0x80 },
-        { addr: 0xFF11, nom: 'NR11', masque: 0x3F },
-        { addr: 0xFF12, nom: 'NR12', masque: 0x00 },
-        { addr: 0xFF13, nom: 'NR13', masque: 0xFF },
-        { addr: 0xFF14, nom: 'NR14', masque: 0xBF },
+        // canal 1 :  0xFF10 NR10 0x80 | 0xFF11 NR11 0x3F | 0xFF12 NR12 0x00
+        //            0xFF13 NR13 0xFF | 0xFF14 NR14 0xBF
         { addr: 0xFF15, nom: 'non câblé', masque: 0xFF },
         { addr: 0xFF16, nom: 'NR21', masque: 0x3F },
         { addr: 0xFF17, nom: 'NR22', masque: 0x00 },
         { addr: 0xFF18, nom: 'NR23', masque: 0xFF },
         { addr: 0xFF19, nom: 'NR24', masque: 0xBF },
-        { addr: 0xFF1A, nom: 'NR30', masque: 0x7F },
-        { addr: 0xFF1B, nom: 'NR31', masque: 0xFF },
-        { addr: 0xFF1C, nom: 'NR32', masque: 0x9F },
-        { addr: 0xFF1D, nom: 'NR33', masque: 0xFF },
-        { addr: 0xFF1E, nom: 'NR34', masque: 0xBF },
-        { addr: 0xFF1F, nom: 'non câblé', masque: 0xFF },
-        { addr: 0xFF20, nom: 'NR41', masque: 0xFF },
-        { addr: 0xFF21, nom: 'NR42', masque: 0x00 },
-        { addr: 0xFF22, nom: 'NR43', masque: 0x00 },
-        { addr: 0xFF23, nom: 'NR44', masque: 0xBF },
-        { addr: 0xFF24, nom: 'NR50', masque: 0x00 },
-        { addr: 0xFF25, nom: 'NR51', masque: 0x00 },
+        // canal 3 :  0xFF1A NR30 0x7F | 0xFF1B NR31 0xFF | 0xFF1C NR32 0x9F
+        //            0xFF1D NR33 0xFF | 0xFF1E NR34 0xBF | 0xFF1F non câblé 0xFF
+        // canal 4 :  0xFF20 NR41 0xFF | 0xFF21 NR42 0x00 | 0xFF22 NR43 0x00
+        //            0xFF23 NR44 0xBF
+        // mixage  :  0xFF24 NR50 0x00 | 0xFF25 NR51 0x00
     ];
 
     it.each(TABLE)('$nom : écrit 0x00, relu son masque', ({ addr, masque }) => {
@@ -166,9 +159,9 @@ describe('Masques - la table complète de 0xFF10 à 0xFF25', () => {
         },
     );
 
-    it('aucune adresse de la plage ne descend jusqu\'au bus nu', () => {
+    it('aucune adresse détenue ne descend jusqu\'au bus nu', () => {
         const { apu } = buildHarness();
-        for (let addr = 0xFF10; addr <= 0xFF26; addr++) {
+        for (const { addr } of [...TABLE, { addr: 0xFF26 }]) {
             expect(apu.read(addr), `0x${addr.toString(16)} répond 0x42, le bus a parlé`).not.toBe(0x42);
         }
     });
