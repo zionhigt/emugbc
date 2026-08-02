@@ -28,6 +28,7 @@ export class NRegister4 extends NRegister {
             this.parent._lastVolumeAt = now;
             this.parent._lastVolume = this.parent.initialVolume;
             this.parent._isEnabled = this.parent.isDacOn;
+            this.parent.onTrigger();
         }
     }
 }
@@ -154,6 +155,12 @@ export function Channel(start, chanController) {
             if (this.isLengthEnabled && this.lengthRemaining(cycle) === 0) return false;
             return true;
         }
+
+        frequencyAt(cycle) {
+            return 1024;
+        }
+
+        onTrigger() { }
 
         addReg(offset) {
             this.registers[this.start + offset] = new Registers[offset % 5](this);
