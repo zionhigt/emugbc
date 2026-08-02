@@ -282,8 +282,8 @@ export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
     memory.bindRange("timer", 0xFF04, 0xFF07, timer);
     memory.bindRange("overflow2", 0xFF08, 0xFF0F, Section);
     apu = FactoryAPUSection(apu);
-    memory.bindRange("apu", 0xFF10, 0xFF26, apu);
-    memory.bindRange("overflow2_1", 0xFF27, 0xFF3F, Section);
+    memory.bindRange("apu", 0xFF10, 0xFF3F, apu);
+    // memory.bindRange("overflow2_1", 0xFF27, 0xFF3F, Section);
     ppu = FactoryPPUSection(ppu);
     memory.bindRange("ppu", 0xFF40, 0xFF4B, ppu);
     memory.bindRange("overflow3", 0xFF4C, 0xFFFF, Section);

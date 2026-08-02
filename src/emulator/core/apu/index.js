@@ -7,6 +7,12 @@ import channel3 from "./channel3";
 import channel4 from "./channel4";
 import Nr52 from "./nr52";
 
+class NilRegister extends Register(8) {
+    setValue(value) {};
+    getValue() {
+        return 0xFF;
+    }
+}
 
 export default function(machine) {
     class APU {
@@ -20,6 +26,15 @@ export default function(machine) {
             this.nr52 = Nr52(this);
             this.nr50 = new (Register(8));
             this.nr51 = new (Register(8));
+
+            this._nilRegisters = {};
+            for (let i = 0xFF27; i <= 0xFF2F; i++) {
+                this._nilRegisters[i] = new NilRegister();
+            }
+            this._WaveRAM = {};
+            for (let i = 0xFF30; i <= 0xFF3F; i++) {
+                this._WaveRAM[i] = new (Register(8));
+            }
 
         }
 
@@ -43,6 +58,7 @@ export default function(machine) {
                 ...this.channel2.registers,
                 ...this.channel3.registers,
                 ...this.channel4.registers,
+                ...this._nilRegisters,
             }
         }
         get maskRegistersMapping() {
@@ -70,7 +86,10 @@ export default function(machine) {
         }
 
         read (addr) {
-            const reg = this.registersMapping[addr];
+            let reg = this._WaveRAM[addr];
+            if (!reg) {
+                reg = this.registersMapping[addr];
+            }
             if (!reg) {
                 return this.bus._read(addr);
             }
@@ -79,8 +98,11 @@ export default function(machine) {
         };
 
         write (addr, value) {
-            if (!this.isPowered && addr !== 0xFF26) return;
-            const reg = this.registersMapping[addr];
+            let reg = this._WaveRAM[addr];
+            if (!reg) {
+                if (!this.isPowered && addr !== 0xFF26) return;
+                reg = this.registersMapping[addr];
+            }
             if (!reg) {
                 return this.bus._write(addr, value);
             }
