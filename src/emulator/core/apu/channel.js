@@ -18,7 +18,7 @@ class Channel {
 }
 export default function(start, chanController) {
     const chan = chanController(start, Channel);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
         chan.addReg(i);
     }
     return chan;

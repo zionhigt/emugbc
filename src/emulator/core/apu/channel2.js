@@ -16,7 +16,7 @@ class NRegister extends Register(8) {
     }
 }
 
-class NRegister24 extends NRegister {
+class NRegister4 extends NRegister {
     setValue(val) {
         super.setValue(val);
         if (byte.getFlag(val, 7)) {
@@ -32,13 +32,13 @@ class NRegister24 extends NRegister {
         }
     }
 }
-class NRegister22 extends NRegister {
+class NRegister2 extends NRegister {
     setValue(val) {
         super.setValue(val);
         if (!this.parent.isDacOn) this.parent._isEnabled = false;
     }
 }
-class NRegister21 extends NRegister {
+class NRegister1 extends NRegister {
     setValue(val) {
         super.setValue(val);
         this.parent._lastLengthRemaining = 64 - (val & 0x3F);
@@ -47,14 +47,23 @@ class NRegister21 extends NRegister {
         this.parent._lastVolumeAt = this.parent.apu.totalMachineCycles;
     }
 }
+class NRegister0 extends Register(8) {
+    setValue(val) {
+        return;
+    }
+    getValue() {
+        return 0xFF;
+    }
+}
 
 export default function(apu) {
     function ChanFactory(start, Parent) {
         const Registers = [
-            class NR21 extends NRegister21 {},
-            class NR22 extends NRegister22 {},
-            class NR23 extends NRegister {},
-            class NR24 extends NRegister24 {},
+            class NR0 extends NRegister0 {},
+            class NR1 extends NRegister1 {},
+            class NR2 extends NRegister2 {},
+            class NR3 extends NRegister {},
+            class NR4 extends NRegister4 {},
         ]
         class Chan extends Parent {
             constructor() {
@@ -68,7 +77,7 @@ export default function(apu) {
             }
 
             get isLengthEnabled() {
-                return byte.getFlag(this.NR24.getValue(), 6);
+                return byte.getFlag(this.NR4.getValue(), 6);
             }
 
             get isEnabled() {
@@ -77,30 +86,33 @@ export default function(apu) {
             get triggeredAt() {
                 return this._triggeredAt;
             }
-            get NR21() {
+            get NR0() {
                 return this.registers[this.start + 0];
             }
-            get NR22() {
+            get NR1() {
                 return this.registers[this.start + 1];
             }
-            get NR23() {
+            get NR2() {
                 return this.registers[this.start + 2];
             }
-            get NR24() {
+            get NR3() {
                 return this.registers[this.start + 3];
+            }
+            get NR4() {
+                return this.registers[this.start + 4];
             }
 
             get DAC() {
-                return (this.NR22.getValue() & 0xF8) >> 3;
+                return (this.NR2.getValue() & 0xF8) >> 3;
             }
 
             get duty() {
-                return (this.NR21.getValue() & 0xC0) >> 6;
+                return (this.NR1.getValue() & 0xC0) >> 6;
             }
 
             get frequency() {
-                const low = this.NR23.getValue();
-                let high = (this.NR24.getValue() & 0x7) << 8;
+                const low = this.NR3.getValue();
+                let high = (this.NR4.getValue() & 0x7) << 8;
                 return (high | low) & 0x7FF;
             }
 
@@ -113,7 +125,7 @@ export default function(apu) {
             }
 
             get initialVolume() {
-                return (this.NR22.getValue() & 0xF0) >> 4;
+                return (this.NR2.getValue() & 0xF0) >> 4;
             }
 
             get volume() {
@@ -121,11 +133,11 @@ export default function(apu) {
             }
 
             get envelopePeriod() {
-                return this.NR22.getValue() & 0x07;
+                return this.NR2.getValue() & 0x07;
             }
 
             get isEnvelopeIncreasing() {
-                return byte.getFlag(this.NR22.getValue(), 3);
+                return byte.getFlag(this.NR2.getValue(), 3);
             }
 
             volumeAt(cycle) {
@@ -144,7 +156,7 @@ export default function(apu) {
             }
 
             addReg(offset) {
-                this.registers[this.start + offset] = new Registers[offset % 4](this);
+                this.registers[this.start + offset] = new Registers[offset % 5](this);
             }
 
             dutyStep(cycle) {
@@ -171,5 +183,5 @@ export default function(apu) {
     
         return new Chan(apu, start);
     }
-    return Channel(0xFF16, ChanFactory);
+    return Channel(0xFF15, ChanFactory);
 }
