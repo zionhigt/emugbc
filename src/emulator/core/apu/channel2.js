@@ -40,7 +40,7 @@ class NRegister21 extends NRegister {
     setValue(val) {
         super.setValue(val);
         this.parent._lastLengthRemaining = 64 - (val & 0x3F);
-        this.parent._lastLengthAt = this.parent.totalMachineCycles;
+        this.parent._lastLengthAt = this.parent.apu.totalMachineCycles;
     }
 }
 
@@ -58,7 +58,7 @@ export default function(apu) {
                 this._isEnabled = false;
                 this._triggeredAt = null;
                 this._lastLengthRemaining = 0;
-                this._lastLengthAt = this.totalMachineCycles;
+                this._lastLengthAt = 0;
             }
 
             get isLengthEnabled() {
@@ -141,7 +141,7 @@ export default function(apu) {
 
             lengthRemaining(cycle) {
                 if (!this.isLengthEnabled) return this._lastLengthRemaining;
-                const value = this._lastLengthRemaining - (this.apu.lengthTicks(cycle) - this.apu.lengthTicks(this.triggeredAt));
+                const value = this._lastLengthRemaining - (this.apu.lengthTicks(cycle) - this.apu.lengthTicks(this._lastLengthAt));
                 return Math.max(0, value);
             }
         }
