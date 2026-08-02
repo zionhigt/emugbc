@@ -20,7 +20,12 @@ class NRegister24 extends NRegister {
     setValue(val) {
         super.setValue(val);
         if (byte.getFlag(val, 7)) {
-            this.parent._triggeredAt = this.parent.apu.totalMachineCycles;
+            const now = this.parent.apu.totalMachineCycles;
+            let remain = this.parent.lengthRemaining(now);
+            if (remain === 0) remain = 64;
+            this.parent._lastLengthRemaining = remain;
+            this.parent._triggeredAt = now;
+            this.parent._lastLengthAt = now;
             this.parent._isEnabled = this.parent.isDacOn;
         }
     }
@@ -31,11 +36,18 @@ class NRegister22 extends NRegister {
         if (!this.parent.isDacOn) this.parent._isEnabled = false;
     }
 }
+class NRegister21 extends NRegister {
+    setValue(val) {
+        super.setValue(val);
+        this.parent._lastLengthRemaining = 64 - (val & 0x3F);
+        this.parent._lastLengthAt = this.parent.totalMachineCycles;
+    }
+}
 
 export default function(apu) {
     function ChanFactory(start, Parent) {
         const Registers = [
-            class NR21 extends NRegister {},
+            class NR21 extends NRegister21 {},
             class NR22 extends NRegister22 {},
             class NR23 extends NRegister {},
             class NR24 extends NRegister24 {},
@@ -45,10 +57,16 @@ export default function(apu) {
                 super(...arguments);
                 this._isEnabled = false;
                 this._triggeredAt = null;
+                this._lastLengthRemaining = 0;
+                this._lastLengthAt = this.totalMachineCycles;
+            }
+
+            get isLengthEnabled() {
+                return byte.getFlag(this.NR24.getValue(), 6);
             }
 
             get isEnabled() {
-                return this._isEnabled;
+                return this.isEnabledAt(this.apu.totalMachineCycles);
             }
             get triggeredAt() {
                 return this._triggeredAt;
@@ -96,6 +114,12 @@ export default function(apu) {
                 return this.initialVolume;
             }
 
+            isEnabledAt(cycle) {
+                if (!this._isEnabled) return false;
+                if (this.isLengthEnabled && this.lengthRemaining(cycle) === 0) return false;
+                return true;
+            }
+
             addReg(offset) {
                 this.registers[this.start + offset] = new Registers[offset % 4](this);
             }
@@ -111,8 +135,14 @@ export default function(apu) {
             }
 
             amplitude(cycle) {
-                if (!this.isDacOn || !this.isEnabled) return 0;
+                if (!this.isDacOn || !this.isEnabledAt(cycle)) return 0;
                 return this.dutyOutput(cycle) * this.volume;
+            }
+
+            lengthRemaining(cycle) {
+                if (!this.isLengthEnabled) return this._lastLengthRemaining;
+                const value = this._lastLengthRemaining - (this.apu.lengthTicks(cycle) - this.apu.lengthTicks(this.triggeredAt));
+                return Math.max(0, value);
             }
         }
     
