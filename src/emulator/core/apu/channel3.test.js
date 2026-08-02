@@ -40,7 +40,8 @@ const LENGTH_ENABLE = 0x40;
 const DAC_ON = 0x80;
 
 const TIC = 2048;
-const CLOCHE = 2 * TIC; // la cloche longueur, 256 Hz
+/** Date du n-ième coup de la cloche longueur : elle frappe aux tics impairs. */
+const clocheLongueur = (n) => (2 * n - 1) * TIC;
 
 const buildHarness = () => {
     const machine = {
@@ -160,9 +161,9 @@ describe('Canal 3 - le minuteur compte sur 8 bits', () => {
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
 
         expect(chan3.lengthRemaining(0)).toBe(4);
-        expect(chan3.lengthRemaining(2 * CLOCHE)).toBe(2);
-        expect(chan3.isEnabledAt(3 * CLOCHE), 'il reste un cran').toBe(true);
-        expect(chan3.isEnabledAt(4 * CLOCHE), 'à sec').toBe(false);
+        expect(chan3.lengthRemaining(clocheLongueur(2))).toBe(2);
+        expect(chan3.isEnabledAt(clocheLongueur(3)), 'il reste un cran').toBe(true);
+        expect(chan3.isEnabledAt(clocheLongueur(4)), 'à sec').toBe(false);
     });
 
     it('four débranché, le minuteur ne tourne pas', () => {
@@ -171,8 +172,8 @@ describe('Canal 3 - le minuteur compte sur 8 bits', () => {
         apu.write(NR31, 0xFC);
         apu.write(NR34, TRIGGER); // sans le bit 6
 
-        expect(chan3.lengthRemaining(10 * CLOCHE)).toBe(4);
-        expect(chan3.isEnabledAt(10 * CLOCHE)).toBe(true);
+        expect(chan3.lengthRemaining(clocheLongueur(10))).toBe(4);
+        expect(chan3.isEnabledAt(clocheLongueur(10))).toBe(true);
     });
 
     it('déclencher un minuteur à sec le remonte à 256, pas à 64', () => {
@@ -180,11 +181,11 @@ describe('Canal 3 - le minuteur compte sur 8 bits', () => {
         apu.write(NR30, DAC_ON);
         apu.write(NR31, 0xFF); // un seul cran
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
-        expect(chan3.lengthRemaining(CLOCHE), 'à sec').toBe(0);
+        expect(chan3.lengthRemaining(clocheLongueur(1)), 'à sec').toBe(0);
 
-        machine.totalCycles = CLOCHE;
+        machine.totalCycles = clocheLongueur(1);
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
-        expect(chan3.lengthRemaining(CLOCHE), 'le maximum du canal 3').toBe(256);
+        expect(chan3.lengthRemaining(clocheLongueur(1)), 'le maximum du canal 3').toBe(256);
     });
 
     it('débrancher la longueur ne ressuscite pas une note éteinte', () => {
@@ -192,11 +193,11 @@ describe('Canal 3 - le minuteur compte sur 8 bits', () => {
         apu.write(NR30, DAC_ON);
         apu.write(NR31, 0xFC); // 4 crans
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
-        expect(chan3.isEnabledAt(4 * CLOCHE), 'à sec').toBe(false);
+        expect(chan3.isEnabledAt(clocheLongueur(4)), 'à sec').toBe(false);
 
-        machine.totalCycles = 4 * CLOCHE;
+        machine.totalCycles = clocheLongueur(4);
         apu.write(NR34, 0x00);
-        expect(chan3.isEnabledAt(4 * CLOCHE), 'toujours morte').toBe(false);
+        expect(chan3.isEnabledAt(clocheLongueur(4)), 'toujours morte').toBe(false);
     });
 });
 
@@ -313,6 +314,6 @@ describe('Canal 3 - il est indépendant des autres', () => {
         apu.write(NR33, 0x00);
         apu.write(NR34, TRIGGER | 0x04);
         expect(chan3.frequencyAt(0)).toBe(1024);
-        expect(chan3.frequencyAt(100 * CLOCHE), 'rien ne la balaie').toBe(1024);
+        expect(chan3.frequencyAt(clocheLongueur(100)), 'rien ne la balaie').toBe(1024);
     });
 });

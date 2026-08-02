@@ -118,16 +118,17 @@ export default function(machine) {
         }
 
         lengthTicks(cycle) {
-            return Math.floor(this.frameTicks(cycle) / 2);
+            const v = this.frameTicks(cycle) + 1;
+            return Math.floor(v / 2);
         }
         
         sweepTicks(cycle) {
-            const v = this.frameTicks(cycle) + 2; 
+            const v = this.frameTicks(cycle) + 1;
             return Math.floor(v / 4);
         }
 
         envelopeTicks(cycle) {
-            const v = this.frameTicks(cycle) + 1; 
+            const v = this.frameTicks(cycle);
             return Math.floor(v / 8);
         }
     }

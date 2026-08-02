@@ -25,7 +25,7 @@ const TIC = 2048; // un tic de carillon, en cycles machine
  * Date du n-ième coup de la cloche enveloppe. Elle frappe en position 7 du carillon,
  * donc aux tics 7, 15, 23... — un sur huit, mais décalé.
  */
-const cloche = (n) => (8 * n - 1) * TIC;
+const cloche = (n) => 8 * n * TIC;
 
 const TRIGGER = 0x80;
 

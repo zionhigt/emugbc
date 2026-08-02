@@ -36,8 +36,9 @@ const TRIGGER = 0x80;
 const LENGTH_ENABLE = 0x40;
 
 const TIC = 2048;
-const CLOCHE = 2 * TIC;                  // cloche longueur, 256 Hz
-const cloche = (n) => (8 * n - 1) * TIC; // n-ième cloche d'enveloppe, 64 Hz
+/** Date du n-ième coup de la cloche longueur : elle frappe aux tics impairs. */
+const clocheLongueur = (n) => (2 * n - 1) * TIC;
+const cloche = (n) => 8 * n * TIC; // n-ième cloche d'enveloppe, 64 Hz
 
 const buildHarness = () => {
     const machine = {
@@ -100,9 +101,9 @@ describe('Canal 4 - la longueur, comme un canal pulse', () => {
         apu.write(NR42, 0xF0);
         apu.write(NR44, TRIGGER | LENGTH_ENABLE);
 
-        expect(chan4.lengthRemaining(2 * CLOCHE)).toBe(2);
-        expect(chan4.isEnabledAt(3 * CLOCHE), 'il reste un cran').toBe(true);
-        expect(chan4.isEnabledAt(4 * CLOCHE), 'à sec').toBe(false);
+        expect(chan4.lengthRemaining(clocheLongueur(2))).toBe(2);
+        expect(chan4.isEnabledAt(clocheLongueur(3)), 'il reste un cran').toBe(true);
+        expect(chan4.isEnabledAt(clocheLongueur(4)), 'à sec').toBe(false);
     });
 
     it('déclencher un minuteur à sec le remonte à 64, pas à 256', () => {
@@ -110,11 +111,11 @@ describe('Canal 4 - la longueur, comme un canal pulse', () => {
         apu.write(NR41, 0x3F); // un cran
         apu.write(NR42, 0xF0);
         apu.write(NR44, TRIGGER | LENGTH_ENABLE);
-        expect(chan4.lengthRemaining(CLOCHE), 'à sec').toBe(0);
+        expect(chan4.lengthRemaining(clocheLongueur(1)), 'à sec').toBe(0);
 
-        machine.totalCycles = CLOCHE;
+        machine.totalCycles = clocheLongueur(1);
         apu.write(NR44, TRIGGER | LENGTH_ENABLE);
-        expect(chan4.lengthRemaining(CLOCHE), 'le maximum d\'un canal 6 bits').toBe(64);
+        expect(chan4.lengthRemaining(clocheLongueur(1)), 'le maximum d\'un canal 6 bits').toBe(64);
     });
 });
 

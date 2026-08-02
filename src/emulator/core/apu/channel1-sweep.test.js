@@ -54,7 +54,7 @@ const TRIGGER = 0x80;
 
 const TIC = 2048;
 /** Date du n-ième coup de la cloche sweep : elle frappe aux tics 2, 6, 10, 14... */
-const clocheSweep = (n) => (4 * n - 2) * TIC;
+const clocheSweep = (n) => (4 * n - 1) * TIC;
 
 /** NR10 assemblé depuis ses trois champs. */
 const nr10 = ({ pace = 0, down = false, shift = 0 }) =>

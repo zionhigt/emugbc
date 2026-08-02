@@ -18,17 +18,18 @@ import buildTimer from '../timer/index';
  * compteur 16 bits que le timer. D'où le comportement que ce fichier vérifie en dernier,
  * et qui est toute la raison d'être de ce montage : écrire dans DIV décale le son.
  *
- * CONVENTIONS POSÉES ICI (à relire quand blargg dmg_sound arrivera dans les fixtures) :
+ * CONVENTION, arbitrée par l'oracle le 2026-08-02 :
  *
- *   - le tic n° k tombe sur la position `k % 8`, et une cloche sonne À L'ARRIVÉE sur sa
- *     position. Donc à l'origine on est en position 0 sans qu'aucune cloche n'ait sonné,
- *     et la première cloche de longueur tombe au tic 2, pas au tic 1 ;
+ *   - le tic n° k tombe sur la position `(k - 1) % 8` : le PREMIER tic tombe SUR la
+ *     position 0. Donc la première cloche de longueur sonne au tic 1, le premier sweep
+ *     au tic 3, la première enveloppe au tic 8 ;
  *   - les compteurs de cloches comptent les COUPS DÉJÀ FRAPPÉS depuis la dernière remise
  *     à zéro du compteur, pas les positions traversées.
  *
- * Ce demi-tic de phase est exactement ce que `02-len ctr` arbitre chez blargg. Sans
- * oracle sous la main on choisit, on documente, et on saura le décaler d'un cran le jour
- * où la ROM tranchera.
+ * On avait d'abord posé l'autre phase à l'aveugle — tic k sur la position `k % 8`, donc
+ * première cloche au tic 2. L'essai comparatif sur les 12 ROMs a tranché : avec celle-ci,
+ * `07-len sweep period sync` — la ROM faite pour arbitrer cette phase — passe de 35 à 46
+ * trames, `05-sweep details` gagne une trame, et aucune ne régresse.
  */
 
 const DIV = 0xFF04;
@@ -117,52 +118,51 @@ describe('Carillon - les trois cloches', () => {
 
     // Une cloche par bloc : chacune doit pouvoir rougir seule.
 
-    // positions 0, 2, 4, 6
+    // positions 0, 2, 4, 6 — donc les tics impairs
     it.each([
         { ticks: 0, coups: 0 },
-        { ticks: 1, coups: 0 },
+        { ticks: 1, coups: 1 },
         { ticks: 2, coups: 1 },
-        { ticks: 3, coups: 1 },
+        { ticks: 3, coups: 2 },
         { ticks: 4, coups: 2 },
         { ticks: 6, coups: 3 },
-        { ticks: 7, coups: 3 },
+        { ticks: 7, coups: 4 },
         { ticks: 8, coups: 4 },
         { ticks: 10, coups: 5 },
-        { ticks: 15, coups: 7 },
+        { ticks: 15, coups: 8 },
         { ticks: 16, coups: 8 },
     ])('longueur : $coups coups après $ticks tics', ({ ticks, coups }) => {
         const { apu } = buildHarness();
         expect(apu.lengthTicks(ticks * TIC)).toBe(coups);
     });
 
-    // positions 2, 6
+    // positions 2 et 6 — donc les tics 3, 7, 11, 15...
     it.each([
         { ticks: 0, coups: 0 },
-        { ticks: 1, coups: 0 },
-        { ticks: 2, coups: 1 },
-        { ticks: 5, coups: 1 },
-        { ticks: 6, coups: 2 },
-        { ticks: 9, coups: 2 },
-        { ticks: 10, coups: 3 },
-        { ticks: 13, coups: 3 },
-        { ticks: 14, coups: 4 },
+        { ticks: 2, coups: 0 },
+        { ticks: 3, coups: 1 },
+        { ticks: 6, coups: 1 },
+        { ticks: 7, coups: 2 },
+        { ticks: 10, coups: 2 },
+        { ticks: 11, coups: 3 },
+        { ticks: 14, coups: 3 },
+        { ticks: 15, coups: 4 },
         { ticks: 16, coups: 4 },
     ])('sweep : $coups coups après $ticks tics', ({ ticks, coups }) => {
         const { apu } = buildHarness();
         expect(apu.sweepTicks(ticks * TIC)).toBe(coups);
     });
 
-    // position 7
+    // position 7 — donc les tics multiples de 8
     it.each([
         { ticks: 0, coups: 0 },
-        { ticks: 6, coups: 0 },
-        { ticks: 7, coups: 1 },
+        { ticks: 7, coups: 0 },
         { ticks: 8, coups: 1 },
-        { ticks: 14, coups: 1 },
-        { ticks: 15, coups: 2 },
+        { ticks: 10, coups: 1 },
+        { ticks: 15, coups: 1 },
         { ticks: 16, coups: 2 },
-        { ticks: 22, coups: 2 },
-        { ticks: 23, coups: 3 },
+        { ticks: 23, coups: 2 },
+        { ticks: 24, coups: 3 },
     ])('enveloppe : $coups coups après $ticks tics', ({ ticks, coups }) => {
         const { apu } = buildHarness();
         expect(apu.envelopeTicks(ticks * TIC)).toBe(coups);
@@ -170,20 +170,20 @@ describe('Carillon - les trois cloches', () => {
 
     it('longueur : la cloche ne sonne pas entre deux tics', () => {
         const { apu } = buildHarness();
-        expect(apu.lengthTicks(2 * TIC - 1), 'un cycle trop tôt').toBe(0);
-        expect(apu.lengthTicks(2 * TIC), 'et le voilà').toBe(1);
+        expect(apu.lengthTicks(TIC - 1), 'un cycle trop tôt').toBe(0);
+        expect(apu.lengthTicks(TIC), 'et le voilà, au premier tic').toBe(1);
     });
 
     it('sweep : la cloche ne sonne pas entre deux tics', () => {
         const { apu } = buildHarness();
-        expect(apu.sweepTicks(2 * TIC - 1), 'un cycle trop tôt').toBe(0);
-        expect(apu.sweepTicks(2 * TIC), 'et le voilà').toBe(1);
+        expect(apu.sweepTicks(3 * TIC - 1), 'un cycle trop tôt').toBe(0);
+        expect(apu.sweepTicks(3 * TIC), 'et le voilà, au tic 3').toBe(1);
     });
 
     it('enveloppe : la cloche ne sonne pas entre deux tics', () => {
         const { apu } = buildHarness();
-        expect(apu.envelopeTicks(7 * TIC - 1), 'un cycle trop tôt').toBe(0);
-        expect(apu.envelopeTicks(7 * TIC), 'et le voilà').toBe(1);
+        expect(apu.envelopeTicks(8 * TIC - 1), 'un cycle trop tôt').toBe(0);
+        expect(apu.envelopeTicks(8 * TIC), 'et le voilà, au tic 8').toBe(1);
     });
 
     it.each([
@@ -225,15 +225,15 @@ describe('Carillon - il est monté sur DIV, pas sur son propre ressort', () => {
     it('écrire dans DIV juste avant un coup de cloche l\'ANNULE et le repousse', () => {
         const { machine, timer, apu } = buildHarness();
 
-        // Le tic 2 frappe la cloche de longueur : il est à un cycle machine d'ici.
-        machine.totalCycles = 2 * TIC - 1;
-        expect(apu.lengthTicks(2 * TIC - 1), 'pas encore sonné').toBe(0);
+        // Le tic 1 frappe la cloche de longueur : il est à un cycle machine d'ici.
+        machine.totalCycles = TIC - 1;
+        expect(apu.lengthTicks(TIC - 1), 'pas encore sonné').toBe(0);
 
         timer.write(DIV, 0x00);
 
-        expect(apu.lengthTicks(2 * TIC), 'la cloche qui allait sonner ne sonne pas').toBe(0);
-        // La nouvelle origine est 2*TIC - 1 : deux tics pleins plus tard, on est à 4*TIC - 1.
-        expect(apu.lengthTicks(4 * TIC - 1), 'elle a été repoussée de deux tics pleins').toBe(1);
+        expect(apu.lengthTicks(TIC), 'la cloche qui allait sonner ne sonne pas').toBe(0);
+        // La nouvelle origine est TIC - 1 : un tic plein plus tard, on est à 2*TIC - 1.
+        expect(apu.lengthTicks(2 * TIC - 1), 'elle a été repoussée d\'un tic plein').toBe(1);
     });
 
     it('sans écriture de DIV, aucun décalage : le carillon suit l\'horloge machine', () => {

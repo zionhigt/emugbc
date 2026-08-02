@@ -39,8 +39,8 @@ const LENGTH_ENABLE = 0x40;
 const POWER = 0x80;
 
 const TIC = 2048;             // un tic de carillon
-const CLOCHE_LONGUEUR = 2 * TIC;
-const cloche = (n) => (8 * n - 1) * TIC; // n-ième coup de la cloche enveloppe
+const clocheLongueur = (n) => (2 * n - 1) * TIC;
+const cloche = (n) => 8 * n * TIC; // n-ième coup de la cloche enveloppe
 
 const buildHarness = () => {
     const machine = {
@@ -136,9 +136,9 @@ describe('Canal 1 - le minuteur et l\'enveloppe', () => {
         apu.write(NR14, TRIGGER | LENGTH_ENABLE);
 
         expect(chan1.lengthRemaining(0)).toBe(4);
-        expect(chan1.lengthRemaining(2 * CLOCHE_LONGUEUR)).toBe(2);
-        expect(chan1.isEnabledAt(3 * CLOCHE_LONGUEUR), 'il reste un cran').toBe(true);
-        expect(chan1.isEnabledAt(4 * CLOCHE_LONGUEUR), 'à sec').toBe(false);
+        expect(chan1.lengthRemaining(clocheLongueur(2))).toBe(2);
+        expect(chan1.isEnabledAt(clocheLongueur(3)), 'il reste un cran').toBe(true);
+        expect(chan1.isEnabledAt(clocheLongueur(4)), 'à sec').toBe(false);
     });
 
     it('l\'enveloppe fait dériver le volume', () => {

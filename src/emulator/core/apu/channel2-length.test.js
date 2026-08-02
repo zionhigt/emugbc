@@ -20,7 +20,8 @@ import buildTimer from '../timer/index';
  */
 
 const TIC = 2048;        // un tic de carillon, en cycles machine
-const CLOCHE = 2 * TIC;  // la cloche longueur sonne un tic sur deux : 4096 cycles machine
+/** Date du n-ième coup de la cloche longueur : elle frappe aux tics impairs. */
+const clocheLongueur = (n) => (2 * n - 1) * TIC;
 
 const TRIGGER = 0x80;
 const LENGTH_ENABLE = 0x40;
@@ -107,21 +108,21 @@ describe('Minuteur - il tourne', () => {
     it('un cran par coup de cloche', () => {
         const { chan } = buildCounting();
         expect(chan.lengthRemaining(0), 'au départ').toBe(4);
-        expect(chan.lengthRemaining(CLOCHE), 'première cloche').toBe(3);
-        expect(chan.lengthRemaining(2 * CLOCHE), 'deuxième').toBe(2);
-        expect(chan.lengthRemaining(3 * CLOCHE), 'troisième').toBe(1);
-        expect(chan.lengthRemaining(4 * CLOCHE), 'quatrième : à sec').toBe(0);
+        expect(chan.lengthRemaining(clocheLongueur(1)), 'première cloche').toBe(3);
+        expect(chan.lengthRemaining(clocheLongueur(2)), 'deuxième').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(3)), 'troisième').toBe(1);
+        expect(chan.lengthRemaining(clocheLongueur(4)), 'quatrième : à sec').toBe(0);
     });
 
     it('il ne bouge pas entre deux cloches', () => {
         const { chan } = buildCounting();
-        expect(chan.lengthRemaining(CLOCHE - 1), 'un cycle avant la cloche').toBe(4);
-        expect(chan.lengthRemaining(CLOCHE), 'et à la cloche pile').toBe(3);
+        expect(chan.lengthRemaining(clocheLongueur(1) - 1), 'un cycle avant la cloche').toBe(4);
+        expect(chan.lengthRemaining(clocheLongueur(1)), 'et à la cloche pile').toBe(3);
     });
 
     it('il ne descend jamais sous zéro', () => {
         const { chan } = buildCounting();
-        expect(chan.lengthRemaining(100 * CLOCHE), 'longtemps après la fin').toBe(0);
+        expect(chan.lengthRemaining(clocheLongueur(100)), 'longtemps après la fin').toBe(0);
     });
 
     it('four débranché, le minuteur ne tourne pas du tout', () => {
@@ -130,7 +131,7 @@ describe('Minuteur - il tourne', () => {
         chan.NR4.setValue(TRIGGER);     // sans le bit 6
 
         expect(chan.lengthRemaining(0)).toBe(4);
-        expect(chan.lengthRemaining(10 * CLOCHE), 'figé, aucune cloche ne l\'atteint').toBe(4);
+        expect(chan.lengthRemaining(clocheLongueur(10)), 'figé, aucune cloche ne l\'atteint').toBe(4);
     });
 });
 
@@ -151,14 +152,14 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
         chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
         chan.NR4.setValue(TRIGGER);     // déclenché, longueur DÉBRANCHÉE
 
-        expect(chan.lengthRemaining(10 * CLOCHE), 'débranché, rien ne bouge').toBe(4);
+        expect(chan.lengthRemaining(clocheLongueur(10)), 'débranché, rien ne bouge').toBe(4);
 
-        machine.totalCycles = 10 * CLOCHE;
+        machine.totalCycles = clocheLongueur(10);
         chan.NR4.setValue(LENGTH_ENABLE); // on branche, sans redéclencher
 
-        expect(chan.lengthRemaining(10 * CLOCHE), 'le minuteur est intact').toBe(4);
-        expect(chan.lengthRemaining(11 * CLOCHE), 'et il repart d\'ici, pas d\'avant').toBe(3);
-        expect(chan.isEnabledAt(11 * CLOCHE), 'la note joue encore').toBe(true);
+        expect(chan.lengthRemaining(clocheLongueur(10)), 'le minuteur est intact').toBe(4);
+        expect(chan.lengthRemaining(clocheLongueur(11)), 'et il repart d\'ici, pas d\'avant').toBe(3);
+        expect(chan.isEnabledAt(clocheLongueur(11)), 'la note joue encore').toBe(true);
     });
 
     it('débrancher la longueur ne ressuscite pas une note déjà éteinte', () => {
@@ -169,12 +170,12 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
         chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
 
-        expect(chan.isEnabledAt(4 * CLOCHE), 'minuteur à sec').toBe(false);
+        expect(chan.isEnabledAt(clocheLongueur(4)), 'minuteur à sec').toBe(false);
 
-        machine.totalCycles = 4 * CLOCHE;
+        machine.totalCycles = clocheLongueur(4);
         chan.NR4.setValue(0x00); // on débranche la longueur
 
-        expect(chan.isEnabledAt(4 * CLOCHE), 'la note reste morte').toBe(false);
+        expect(chan.isEnabledAt(clocheLongueur(4)), 'la note reste morte').toBe(false);
         expect(chan.isEnabled, 'à l\'heure courante aussi').toBe(false);
     });
 
@@ -183,13 +184,13 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
         chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
 
-        expect(chan.lengthRemaining(2 * CLOCHE), 'deux crans consommés').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(2)), 'deux crans consommés').toBe(2);
 
-        machine.totalCycles = 2 * CLOCHE;
+        machine.totalCycles = clocheLongueur(2);
         chan.NR4.setValue(0x00); // on débranche
 
-        expect(chan.lengthRemaining(2 * CLOCHE), 'figé à 2, pas revenu à 4').toBe(2);
-        expect(chan.lengthRemaining(20 * CLOCHE), 'et il ne bouge plus').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(2)), 'figé à 2, pas revenu à 4').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(20)), 'et il ne bouge plus').toBe(2);
     });
 });
 
@@ -205,9 +206,9 @@ describe('Minuteur - il coupe la note', () => {
     it('la note tient jusqu\'au dernier cran, puis s\'arrête', () => {
         const { chan } = buildCounting();
         expect(chan.isEnabledAt(0), 'la note démarre').toBe(true);
-        expect(chan.isEnabledAt(3 * CLOCHE), 'il reste un cran, ça joue encore').toBe(true);
-        expect(chan.isEnabledAt(4 * CLOCHE), 'minuteur à sec : coupé').toBe(false);
-        expect(chan.isEnabledAt(50 * CLOCHE), 'et ça ne revient pas tout seul').toBe(false);
+        expect(chan.isEnabledAt(clocheLongueur(3)), 'il reste un cran, ça joue encore').toBe(true);
+        expect(chan.isEnabledAt(clocheLongueur(4)), 'minuteur à sec : coupé').toBe(false);
+        expect(chan.isEnabledAt(clocheLongueur(50)), 'et ça ne revient pas tout seul').toBe(false);
     });
 
     it('amplitude tombe en même temps que la note', () => {
@@ -215,13 +216,15 @@ describe('Minuteur - il coupe la note', () => {
         const period = chan.period;
         // pochoir 3, volume 15 : le cran 1 du rouleau porte un picot
         expect(chan.amplitude(period), 'avant la fin, le signal sort').toBe(15);
-        expect(chan.amplitude(4 * CLOCHE + period), 'après la fin, plus rien').toBe(0);
+        expect(chan.amplitude(clocheLongueur(4) + period), 'après la fin, plus rien').toBe(0);
     });
 
     it('le rouleau continue de tourner sous une note éteinte', () => {
         const { chan } = buildCounting();
-        const date = 4 * CLOCHE + 5 * chan.period;
-        expect(chan.dutyStep(date), 'la manivelle ne s\'arrête jamais').toBe(5);
+        // clocheLongueur(4) vaut 7 tics, et la période du canal vaut un tic :
+        // 7 + 5 périodes = 12, soit le cran 4 du rouleau.
+        const date = clocheLongueur(4) + 5 * chan.period;
+        expect(chan.dutyStep(date), 'la manivelle ne s\'arrête jamais').toBe(4);
         expect(chan.amplitude(date), 'mais rien ne sort').toBe(0);
     });
 
@@ -229,15 +232,15 @@ describe('Minuteur - il coupe la note', () => {
         const { chan } = buildPlayable();
         chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
         chan.NR4.setValue(TRIGGER);     // sans le bit 6
-        expect(chan.isEnabledAt(1000 * CLOCHE), 'aucun minuteur ne la coupe').toBe(true);
+        expect(chan.isEnabledAt(clocheLongueur(1000)), 'aucun minuteur ne la coupe').toBe(true);
     });
 
     it('isEnabled sans date répond pour l\'heure courante', () => {
         const { machine, chan } = buildCounting();
-        machine.totalCycles = 3 * CLOCHE;
+        machine.totalCycles = clocheLongueur(3);
         expect(chan.isEnabled, 'il reste un cran').toBe(true);
 
-        machine.totalCycles = 4 * CLOCHE;
+        machine.totalCycles = clocheLongueur(4);
         expect(chan.isEnabled, 'minuteur à sec').toBe(false);
     });
 });
@@ -248,23 +251,23 @@ describe('Minuteur - le trigger le remonte, mais seulement à sec', () => {
         const { machine, chan } = buildPlayable();
         chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
-        expect(chan.lengthRemaining(CLOCHE), 'à sec après une cloche').toBe(0);
+        expect(chan.lengthRemaining(clocheLongueur(1)), 'à sec après une cloche').toBe(0);
 
-        machine.totalCycles = CLOCHE;
+        machine.totalCycles = clocheLongueur(1);
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
-        expect(chan.lengthRemaining(CLOCHE), 'remonté à fond, pas à 1').toBe(64);
-        expect(chan.isEnabledAt(CLOCHE), 'et la note repart').toBe(true);
+        expect(chan.lengthRemaining(clocheLongueur(1)), 'remonté à fond, pas à 1').toBe(64);
+        expect(chan.isEnabledAt(clocheLongueur(1)), 'et la note repart').toBe(true);
     });
 
     it('déclencher un minuteur encore plein ne le remonte pas', () => {
         const { machine, chan } = buildPlayable();
         chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
-        expect(chan.lengthRemaining(2 * CLOCHE), 'deux crans consommés').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(2)), 'deux crans consommés').toBe(2);
 
-        machine.totalCycles = 2 * CLOCHE;
+        machine.totalCycles = clocheLongueur(2);
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
-        expect(chan.lengthRemaining(2 * CLOCHE), 'il reprend là où il en était').toBe(2);
-        expect(chan.lengthRemaining(3 * CLOCHE), 'et repart de là').toBe(1);
+        expect(chan.lengthRemaining(clocheLongueur(2)), 'il reprend là où il en était').toBe(2);
+        expect(chan.lengthRemaining(clocheLongueur(3)), 'et repart de là').toBe(1);
     });
 });
