@@ -152,14 +152,17 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
         chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
         chan.NR4.setValue(TRIGGER);     // déclenché, longueur DÉBRANCHÉE
 
-        expect(chan.lengthRemaining(clocheLongueur(10)), 'débranché, rien ne bouge').toBe(4);
+        // On branche sur un tic PAIR, pour isoler ce test du cran gratuit de l'extra
+        // length clocking — qui ne frappe qu'aux tics impairs, et a son propre bloc.
+        const branchement = 20 * TIC;
+        expect(chan.lengthRemaining(branchement), 'débranché, rien ne bouge').toBe(4);
 
-        machine.totalCycles = clocheLongueur(10);
+        machine.totalCycles = branchement;
         chan.NR4.setValue(LENGTH_ENABLE); // on branche, sans redéclencher
 
-        expect(chan.lengthRemaining(clocheLongueur(10)), 'le minuteur est intact').toBe(4);
-        expect(chan.lengthRemaining(clocheLongueur(11)), 'et il repart d\'ici, pas d\'avant').toBe(3);
-        expect(chan.isEnabledAt(clocheLongueur(11)), 'la note joue encore').toBe(true);
+        expect(chan.lengthRemaining(branchement), 'le minuteur est intact').toBe(4);
+        expect(chan.lengthRemaining(21 * TIC), 'et il repart d\'ici, pas d\'avant').toBe(3);
+        expect(chan.isEnabledAt(21 * TIC), 'la note joue encore').toBe(true);
     });
 
     it('débrancher la longueur ne ressuscite pas une note déjà éteinte', () => {
@@ -191,6 +194,93 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
 
         expect(chan.lengthRemaining(clocheLongueur(2)), 'figé à 2, pas revenu à 4').toBe(2);
         expect(chan.lengthRemaining(clocheLongueur(20)), 'et il ne bouge plus').toBe(2);
+    });
+});
+
+/**
+ * L'EXTRA LENGTH CLOCKING — la bizarrerie qu'on avait mise de côté au cran 5.
+ *
+ * Brancher le four alors que la prochaine cloche n'en est pas une retire un cran TOUT DE
+ * SUITE, sans attendre. Trois conditions, toutes nécessaires :
+ *   - le bit 6 passe de 0 à 1 (un front, pas un état : le réécrire ne compte pas) ;
+ *   - le compteur n'est pas déjà à zéro ;
+ *   - la PROCHAINE cloche n'est pas une cloche de longueur.
+ *
+ * Sous notre phase, les cloches de longueur sonnent aux tics impairs. Donc la troisième
+ * condition se réduit à : le nombre de tics écoulés est impair.
+ *
+ * Et si ce cran gratuit amène le compteur à zéro sans trigger dans la même écriture,
+ * la note meurt sur-le-champ.
+ *
+ * Hors périmètre : le cas où la même écriture porte AUSSI le trigger. L'ordre exact entre
+ * le rechargement et le cran supplémentaire y est le coin le plus profond de blargg, et
+ * il mérite son propre passage.
+ */
+describe('Minuteur - le cran gratuit du branchement', () => {
+
+    /** Minuteur à 4 crans, déclenché à la date 0, four DÉBRANCHÉ. */
+    const buildArmed = (retrait = 0x3C) => {
+        const harness = buildPlayable();
+        harness.chan.NR1.setValue(0xC0 | retrait);
+        harness.chan.NR4.setValue(TRIGGER); // pas de bit 6
+        return harness;
+    };
+
+    it('brancher sur un tic IMPAIR retire un cran immédiatement', () => {
+        const { machine, chan } = buildArmed();
+        machine.totalCycles = TIC; // un tic écoulé : impair
+
+        chan.NR4.setValue(LENGTH_ENABLE);
+        expect(chan.lengthRemaining(TIC), 'un cran parti sans qu\'aucune cloche ne sonne').toBe(3);
+    });
+
+    it('brancher sur un tic PAIR ne retire rien', () => {
+        const { machine, chan } = buildArmed();
+        machine.totalCycles = 2 * TIC; // deux tics : pair
+
+        chan.NR4.setValue(LENGTH_ENABLE);
+        expect(chan.lengthRemaining(2 * TIC), 'la prochaine cloche EST une cloche de longueur').toBe(4);
+    });
+
+    it('le cran gratuit ne se répète pas : il faut un FRONT sur le bit 6', () => {
+        const { machine, chan } = buildArmed();
+        machine.totalCycles = TIC;
+        chan.NR4.setValue(LENGTH_ENABLE);
+        expect(chan.lengthRemaining(TIC)).toBe(3);
+
+        chan.NR4.setValue(LENGTH_ENABLE); // déjà à 1 : aucun front
+        expect(chan.lengthRemaining(TIC), 'réécrire le même bit ne coûte rien').toBe(3);
+    });
+
+    it('un compteur déjà à zéro ne perd rien de plus', () => {
+        const { machine, chan } = buildArmed(0x3F); // un seul cran
+        machine.totalCycles = TIC;
+        chan.NR4.setValue(LENGTH_ENABLE);
+        expect(chan.lengthRemaining(TIC), 'le cran gratuit l\'a vidé').toBe(0);
+
+        chan.NR4.setValue(0x00);
+        machine.totalCycles = 3 * TIC;
+        chan.NR4.setValue(LENGTH_ENABLE); // nouveau front, mais compteur à zéro
+        expect(chan.lengthRemaining(3 * TIC)).toBe(0);
+    });
+
+    it('le cran gratuit peut tuer la note', () => {
+        const { machine, chan } = buildArmed(0x3F); // un seul cran
+        expect(chan.isEnabledAt(0), 'elle jouait').toBe(true);
+
+        machine.totalCycles = TIC;
+        chan.NR4.setValue(LENGTH_ENABLE); // sans trigger
+
+        expect(chan.lengthRemaining(TIC), 'à sec').toBe(0);
+        expect(chan.isEnabledAt(TIC), 'et morte, sans qu\'aucune cloche n\'ait sonné').toBe(false);
+    });
+
+    it('four déjà branché au trigger : pas de front, pas de cran gratuit', () => {
+        const { chan } = buildPlayable();
+        chan.NR1.setValue(0xC0 | 0x3C);
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE); // le bit 6 arrive AVEC le trigger
+
+        expect(chan.lengthRemaining(0), 'les 4 crans sont intacts').toBe(4);
     });
 });
 

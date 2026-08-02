@@ -25,10 +25,11 @@ const buildHarness = () => {
     const apu = {
         totalMachineCycles: 0,
         bus: { _read: () => 0xFF, _write: () => {} },
-        // Les cloches du carillon, sans reset de DIV. Longueur : un coup tous les 4096
-        // cycles machine. Enveloppe : en position 7 du carillon, donc aux tics 7, 15, 23...
-        lengthTicks: (cycle) => Math.floor(cycle / 4096),
-        envelopeTicks: (cycle) => Math.floor((Math.floor(cycle / 2048) + 1) / 8),
+        // Le carillon, sans reset de DIV : les cloches de longueur sonnent aux tics
+        // impairs, celles d'enveloppe aux tics multiples de 8.
+        frameTicks: (cycle) => Math.floor(cycle / 2048),
+        lengthTicks: (cycle) => Math.floor((Math.floor(cycle / 2048) + 1) / 2),
+        envelopeTicks: (cycle) => Math.floor(Math.floor(cycle / 2048) / 8),
     };
     return { apu, chan: channel2(apu) };
 };
