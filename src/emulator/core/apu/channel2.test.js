@@ -36,8 +36,10 @@ const MACHINE_FREQUENCE = 1048576;
 const buildAPUStub = () => ({
     totalMachineCycles: 0,
     bus: { _read: () => 0xFF, _write: () => {} },
-    // La cloche longueur, sans reset de DIV : un coup tous les 4096 cycles machine.
+    // Les cloches du carillon, sans reset de DIV. Longueur : un coup tous les 4096 cycles
+    // machine. Enveloppe : un coup en position 7 du carillon, donc aux tics 7, 15, 23...
     lengthTicks: (cycle) => Math.floor(cycle / 4096),
+    envelopeTicks: (cycle) => Math.floor((Math.floor(cycle / 2048) + 1) / 8),
 });
 
 const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
@@ -204,9 +206,11 @@ describe('Canal 2 - le volume : la hauteur de la marche (NR22)', () => {
         expect(build({ nr22: 0x0F }).initialVolume, 'rien que la queue : aucun volume').toBe(0);
     });
 
-    it('tant qu\'il n\'y a pas d\'enveloppe, le volume courant recopie le volume réglé', () => {
+    it('le trigger charge le volume courant depuis le volume réglé', () => {
         const chan = build({ nr22: 0xA0 });
-        expect(chan.volume, 'les deux ne divergeront qu\'au cran de l\'enveloppe').toBe(chan.initialVolume);
+        expect(chan.volume, 'rien ne l\'a encore chargé').toBe(0);
+        trigger(chan);
+        expect(chan.volume, 'le trigger recopie le réglage').toBe(chan.initialVolume);
         expect(chan.volume).toBe(10);
     });
 });
@@ -258,6 +262,7 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
         expect(chan.amplitude(period), 'cran 1, un creux').toBe(0);
 
         chan.NR22.setValue(0xF0); // volume 15
+        trigger(chan);            // seul le trigger recharge le volume courant
         expect(chan.amplitude(0), 'le même picot, plus haut').toBe(15);
         expect(chan.amplitude(period), 'un creux reste un creux, quel que soit le volume').toBe(0);
     });
@@ -287,20 +292,14 @@ describe('Canal 2 - amplitude : ce qui sort vraiment du canal', () => {
     it('le disjoncteur coupe EN AMONT du volume, pas seulement par coïncidence', () => {
         const period = 64;
         const chan = buildWithPeriod(period, 3); // pochoir 3 : le cran 1 porte un picot
-        chan.NR22.setValue(0x00);                // disjoncteur baissé
 
-        // Aujourd'hui, DAC coupé implique volume nul — les mêmes bits nourrissent les deux,
-        // donc le produit tombe à 0 tout seul et aucun test noir ne peut distinguer une
-        // garde explicite d'une absence de garde. On force donc ici l'état que l'enveloppe
-        // rendra atteignable : un volume courant HÉRITÉ d'avant la coupure, pendant que
-        // NR22 vient d'être remis à zéro.
-        //
-        // À REMPLACER AU CRAN DE L'ENVELOPPE. L'assertion est le vrai contrat du matériel,
-        // mais la mise en scène est fabriquée : cette propriété d'instance masquera le
-        // getter `volume` même quand il deviendra un vrai calcul, donc ce test ne pourra
-        // plus tomber. Le chemin authentique sera : volume haut, trigger, laisser
-        // l'enveloppe tourner, puis écrire 0x00 dans NR22.
-        Object.defineProperty(chan, 'volume', { get: () => 10 });
+        // Le chemin authentique, désormais atteignable : on charge un volume de 10 par un
+        // trigger, PUIS on coupe le DAC. Écrire NR22 ne recharge pas le volume courant,
+        // donc il vaut toujours 10 alors que le disjoncteur est baissé — l'unique état où
+        // une garde explicite sur isDacOn se distingue de son absence.
+        chan.NR22.setValue(0xA0); // volume 10, enveloppe débranchée
+        trigger(chan);
+        chan.NR22.setValue(0x00); // disjoncteur baissé
 
         expect(chan.volume, 'le volume courant a survécu à l\'écriture de NR22').toBe(10);
         expect(chan.dutyOutput(period), 'et le cran porte bien un picot').toBe(1);
