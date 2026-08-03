@@ -33,6 +33,7 @@ import buildTimer from '../timer/index';
  */
 
 const DIV = 0xFF04;
+const NR52 = 0xFF26;
 
 /** Un tic de carillon, en cycles machine : 1048576 / 512. */
 const TIC = 2048;
@@ -241,5 +242,92 @@ describe('Carillon - il est monté sur DIV, pas sur son propre ressort', () => {
         machine.totalCycles = 300 * TIC;
         expect(apu.frameTicks(300 * TIC)).toBe(300);
         expect(apu.frameStep(300 * TIC), '300 % 8').toBe(4);
+    });
+});
+
+/**
+ * L'ALLUMAGE DE L'APU REPOSE LE COMPTEUR D'ÉTAPES.
+ *
+ * Deux choses distinctes vivaient jusqu'ici dans le même calcul :
+ *
+ *   la CADENCE   — quand les tics tombent. Elle vient de DIV, l'APU n'a pas prise dessus.
+ *   l'INDEX      — quelle position est frappée. C'est un état de l'APU, remis à zéro
+ *                  quand on l'allume.
+ *
+ * Écrire NR52 bit 7 à 1 alors que l'APU était éteint repose l'index, et lui seul : les
+ * tics continuent de tomber aux mêmes dates qu'avant, imposées par DIV.
+ *
+ * PHASE, arbitrée par l'oracle le 2026-08-03 : après un allumage, la première étape à
+ * tomber est la 1, pas la 0 — l'étape 0 est réputée déjà consommée, donc le premier tic
+ * ne fait PAS avancer la longueur. Le balayage des 8 phases sur les 12 ROMs ne distingue
+ * que la parité (la longueur ne tombe que sur les positions paires) ; l'impair fait
+ * passer `07-len sweep period sync` de son sous-test 2 à son sous-test 5, sans rien
+ * coûter à `02-len ctr` ni `03-trigger`.
+ */
+describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
+
+    /** Éteint puis rallume, à la date courante de la machine. */
+    const powerCycle = (apu) => {
+        apu.write(NR52, 0x00);
+        apu.write(NR52, 0x80);
+    };
+
+    it('après l\'allumage, la prochaine étape est la 1', () => {
+        const { machine, apu } = buildHarness();
+
+        machine.totalCycles = 5 * TIC;
+        expect(apu.frameStep(5 * TIC), 'on était en position 5').toBe(5);
+
+        powerCycle(apu);
+
+        expect(apu.frameStep(5 * TIC), 'l\'étape 0 est réputée consommée').toBe(1);
+        expect(apu.nextStepClocksLength(5 * TIC), 'la 1 ne frappe pas la longueur').toBe(false);
+    });
+
+    it('le premier tic après l\'allumage ne fait pas avancer la longueur', () => {
+        const { machine, apu } = buildHarness();
+
+        machine.totalCycles = 5 * TIC;
+        powerCycle(apu);
+        const depart = apu.lengthTicks(5 * TIC);
+
+        expect(apu.lengthTicks(6 * TIC) - depart, 'le premier tic tombe sur la position 1').toBe(0);
+        expect(apu.lengthTicks(7 * TIC) - depart, 'le deuxième sur la position 2').toBe(1);
+    });
+
+    it('l\'allumage ne décale pas les dates : le prochain tic reste calé sur DIV', () => {
+        const { machine, apu } = buildHarness();
+
+        // Allumage en plein milieu d'un tic, à mi-parcours de la position 5.
+        machine.totalCycles = 5 * TIC + 1000;
+        powerCycle(apu);
+        const depart = apu.frameTicks(5 * TIC + 1000);
+
+        expect(apu.frameTicks(6 * TIC - 1) - depart, 'un cycle avant la date DIV').toBe(0);
+        expect(apu.frameTicks(6 * TIC) - depart, 'et le tic tombe à sa date DIV, pas 2048 après l\'allumage').toBe(1);
+    });
+
+    it('chaque allumage repose l\'index à son tour', () => {
+        const { machine, apu } = buildHarness();
+
+        machine.totalCycles = 5 * TIC;
+        powerCycle(apu);
+
+        machine.totalCycles = 11 * TIC;
+        powerCycle(apu);
+
+        expect(apu.frameStep(11 * TIC), 'c\'est le dernier allumage qui fait foi').toBe(1);
+    });
+
+    it('rallumer un APU déjà allumé ne repose rien', () => {
+        const { machine, apu } = buildHarness();
+
+        machine.totalCycles = 5 * TIC;
+        powerCycle(apu);
+
+        machine.totalCycles = 9 * TIC;
+        apu.write(NR52, 0x80); // il l'était déjà
+
+        expect(apu.frameStep(9 * TIC), 'quatre tics depuis l\'allumage, sur un index parti de 1').toBe(5);
     });
 });

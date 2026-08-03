@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import channel2 from './channel2';
+import buildAPU from './index';
+import buildTimer from '../timer/index';
 
 /**
  * CRAN 4 : LE TRIGGER.
@@ -20,27 +21,33 @@ import channel2 from './channel2';
 
 const TRIGGER = 0x80;
 
+/**
+ * Le vrai APU sur une machine de papier. Sa seule utilité ici : donner l'heure au moment
+ * du trigger — mais un stub devrait alors recopier le carillon, et un stub qui recopie le
+ * modèle est un modèle de plus à maintenir. L'heure se règle sur `machine.totalCycles`,
+ * dont `apu.totalMachineCycles` n'est que la lecture.
+ */
 const buildHarness = () => {
-    // L'APU vu par le canal. Sa seule utilité ici : donner l'heure au moment du trigger.
-    const apu = {
-        totalMachineCycles: 0,
-        bus: { _read: () => 0xFF, _write: () => {} },
-        // Le carillon, sans reset de DIV : les cloches de longueur sonnent aux tics
-        // impairs, celles d'enveloppe aux tics multiples de 8.
-        frameTicks: (cycle) => Math.floor(cycle / 2048),
-        lengthTicks: (cycle) => Math.floor((Math.floor(cycle / 2048) + 1) / 2),
-        envelopeTicks: (cycle) => Math.floor(Math.floor(cycle / 2048) / 8),
+    const machine = {
+        totalCycles: 0,
+        timer: null,
+        memory: { _read: () => 0xFF, _write: () => {} },
     };
-    return { apu, chan: channel2(apu) };
+    const Timer = buildTimer(machine);
+    machine.timer = new Timer();
+
+    const APU = buildAPU(machine);
+    const apu = new APU();
+    return { machine, apu, chan: apu.channel2 };
 };
 
 /** Un canal prêt à jouer : DAC alimenté, volume 15, période connue. */
 const buildPlayable = () => {
-    const { apu, chan } = buildHarness();
-    chan.NR1.setValue(0x80); // pochoir 2
-    chan.NR2.setValue(0xF0); // volume 15, DAC alimenté
-    chan.NR3.setValue(0x00);
-    return { apu, chan };
+    const harness = buildHarness();
+    harness.chan.NR1.setValue(0x80); // pochoir 2
+    harness.chan.NR2.setValue(0xF0); // volume 15, DAC alimenté
+    harness.chan.NR3.setValue(0x00);
+    return harness;
 };
 
 describe('Canal 2 - au repos', () => {
@@ -73,18 +80,18 @@ describe('Canal 2 - appuyer sur le bouton', () => {
     });
 
     it('le trigger note l\'heure qu\'il est', () => {
-        const { apu, chan } = buildPlayable();
-        apu.totalMachineCycles = 12345;
+        const { machine, chan } = buildPlayable();
+        machine.totalCycles = 12345;
         chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt).toBe(12345);
     });
 
     it('un second trigger remplace la date du premier', () => {
-        const { apu, chan } = buildPlayable();
-        apu.totalMachineCycles = 1000;
+        const { machine, chan } = buildPlayable();
+        machine.totalCycles = 1000;
         chan.NR4.setValue(TRIGGER);
 
-        apu.totalMachineCycles = 9000;
+        machine.totalCycles = 9000;
         chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt, 'seule la dernière compte').toBe(9000);
     });
@@ -108,9 +115,9 @@ describe('Canal 2 - le disjoncteur a le dernier mot', () => {
     });
 
     it('mais le bouton a bien été pressé : la date est notée quand même', () => {
-        const { apu, chan } = buildHarness();
+        const { machine, chan } = buildHarness();
         chan.NR2.setValue(0x00);
-        apu.totalMachineCycles = 700;
+        machine.totalCycles = 700;
         chan.NR4.setValue(TRIGGER);
         expect(chan.triggeredAt, 'l\'événement a eu lieu, seul l\'allumage est refusé').toBe(700);
     });

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import channel2 from './channel2';
 import buildAPU from './index';
+import buildTimer from '../timer/index';
 
 /**
  * CRAN 1 DU CANAL 2 : L'OSCILLATEUR.
@@ -29,22 +29,28 @@ const DUTY_PATTERNS = [
 const MACHINE_FREQUENCE = 1048576;
 
 /**
- * L'APU vu par un canal : `channel2(apu)` en reçoit une référence à la construction.
- * Aucun test de ce fichier n'en a besoin — les deux méthodes datées reçoivent leur date
- * en argument — mais le canal doit pouvoir se construire sans machine derrière.
+ * Le canal reçoit une référence à l'APU à la construction. Aucun test de ce fichier n'a
+ * besoin du carillon — les méthodes datées reçoivent leur date en argument — mais le
+ * canal doit pouvoir se construire, et un stub devrait alors recopier les étapes du
+ * séquenceur. On monte donc le vrai APU sur une machine de papier : le modèle du
+ * carillon n'existe qu'à un seul endroit.
  */
-const buildAPUStub = () => ({
-    totalMachineCycles: 0,
-    bus: { _read: () => 0xFF, _write: () => {} },
-    // Le carillon, sans reset de DIV : les cloches de longueur sonnent aux tics impairs,
-    // celles d'enveloppe aux tics multiples de 8.
-    frameTicks: (cycle) => Math.floor(cycle / 2048),
-    lengthTicks: (cycle) => Math.floor((Math.floor(cycle / 2048) + 1) / 2),
-    envelopeTicks: (cycle) => Math.floor(Math.floor(cycle / 2048) / 8),
-});
+const buildHarness = () => {
+    const machine = {
+        totalCycles: 0,
+        timer: null,
+        memory: { _read: () => 0xFF, _write: () => {} },
+    };
+    const Timer = buildTimer(machine);
+    machine.timer = new Timer();
+
+    const APU = buildAPU(machine);
+    const apu = new APU();
+    return { machine, apu, chan: apu.channel2 };
+};
 
 const build = ({ nr21 = 0x00, nr22 = 0x00, nr23 = 0x00, nr24 = 0x00 } = {}) => {
-    const chan = channel2(buildAPUStub());
+    const { chan } = buildHarness();
     chan.NR1.setValue(nr21);
     chan.NR2.setValue(nr22);
     chan.NR3.setValue(nr23);
