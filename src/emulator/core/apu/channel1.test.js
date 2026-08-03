@@ -264,3 +264,61 @@ describe('Canal 1 - NR10 existe, le sweep viendra', () => {
         expect(chan1.isEnabled).toBe(true);
     });
 });
+
+/**
+ * LA SÉQUENCE DE BLARGG, TRANSCRITE.
+ *
+ * `03-trigger` sous-test 8 — « Trigger that un-freezes enabled length should clock it ».
+ * Relevée au journal (`APU_JOURNAL=6000`) : sept écritures, toutes dans le même tic 483,
+ * donc sur l'étape 3 du séquenceur — celle où la prochaine étape ne frappe PAS la
+ * longueur, et où le cran gratuit s'applique donc.
+ *
+ * Après quoi blargg scrute NR52 en attendant la mort de la note, et compte les tics.
+ * Il la voit vivante au tic 608 et morte au tic 610 : c'est ce décompte qui juge.
+ */
+describe('Canal 1 - la séquence de blargg 03-trigger #8', () => {
+
+    /** Rejoue les sept écritures, toutes à la même date. */
+    const rejouer = () => {
+        const harness = buildHarness();
+        const { machine, apu } = harness;
+
+        machine.totalCycles = 483 * TIC;
+        apu.write(NR12, 0xF0);              // DAC alimenté
+        apu.write(NR11, 0xC4);              // longueur 4 : compteur à 60
+        apu.write(NR14, TRIGGER);           // déclenché, longueur débranchée
+        apu.write(NR11, 0xFF);              // longueur 63 : compteur à 1
+        apu.write(NR14, LENGTH_ENABLE);     // front : le cran gratuit vide le compteur
+        apu.write(NR14, 0x00);              // on débranche
+        apu.write(NR14, TRIGGER | LENGTH_ENABLE); // front ET trigger, compteur à sec
+        apu.write(NR14, TRIGGER | LENGTH_ENABLE); // déjà branché : pas de front
+        return harness;
+    };
+
+    it('le cran gratuit du branchement vide le compteur et tue la note', () => {
+        const { machine, apu, chan1 } = buildHarness();
+
+        machine.totalCycles = 483 * TIC;
+        apu.write(NR12, 0xF0);
+        apu.write(NR11, 0xFF);          // compteur à 1
+        apu.write(NR14, TRIGGER);
+        apu.write(NR14, LENGTH_ENABLE); // front sur l'étape 3
+
+        expect(chan1.lengthRemaining(483 * TIC), 'le cran gratuit l\'a vidé').toBe(0);
+        expect(chan1.isEnabledAt(483 * TIC), 'et la note est morte').toBe(false);
+    });
+
+    it('le trigger qui dégèle recharge à 64 PUIS reçoit son cran : 63', () => {
+        const { chan1 } = rejouer();
+        expect(chan1.lengthRemaining(483 * TIC)).toBe(63);
+    });
+
+    it('la note vit 63 coups de cloche, pas 64', () => {
+        const { chan1 } = rejouer();
+
+        // Le tic 483 est impair : sa propre cloche a déjà sonné. Les suivantes tombent
+        // aux tics 485, 487... donc la 63e est au tic 485 + 2 * 62 = 609.
+        expect(chan1.isEnabledAt(607 * TIC), 'vivante au 62e coup').toBe(true);
+        expect(chan1.isEnabledAt(609 * TIC), 'et morte au 63e').toBe(false);
+    });
+});

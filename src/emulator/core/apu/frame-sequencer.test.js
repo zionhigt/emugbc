@@ -257,12 +257,28 @@ describe('Carillon - il est monté sur DIV, pas sur son propre ressort', () => {
  * Écrire NR52 bit 7 à 1 alors que l'APU était éteint repose l'index, et lui seul : les
  * tics continuent de tomber aux mêmes dates qu'avant, imposées par DIV.
  *
- * PHASE, arbitrée par l'oracle le 2026-08-03 : après un allumage, la première étape à
- * tomber est la 1, pas la 0 — l'étape 0 est réputée déjà consommée, donc le premier tic
- * ne fait PAS avancer la longueur. Le balayage des 8 phases sur les 12 ROMs ne distingue
- * que la parité (la longueur ne tombe que sur les positions paires) ; l'impair fait
- * passer `07-len sweep period sync` de son sous-test 2 à son sous-test 5, sans rien
- * coûter à `02-len ctr` ni `03-trigger`.
+ * La séparation est documentée — wiki gbdev, section « Obscure Behavior »,
+ * https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware :
+ *
+ *   « When powered on, the frame sequencer is reset so that the next step will be 0, the
+ *     square duty units are reset to the first step of the waveform, and the wave
+ *     channel's sample buffer is reset to 0. »
+ *
+ *   « Power state does not affect wave memory, which can always be read/written. It also
+ *     does not affect the 512 Hz timer that feeds the frame sequencer. »
+ *
+ * La seconde phrase est exactement ce que ce bloc vérifie : l'allumage touche l'index,
+ * jamais la cadence.
+ *
+ * PHASE, arbitrée par l'oracle le 2026-08-03, et EN TENSION D'UN CRAN avec la première
+ * phrase : après un allumage, la première étape à tomber est chez nous la 1, pas la 0.
+ * Le balayage des 8 phases sur les 12 ROMs ne distingue que la parité (la longueur ne
+ * tombe que sur les positions paires) ; l'impair fait passer `07-len sweep period sync`
+ * de son sous-test 2 à son sous-test 5, sans rien coûter à `02-len ctr` ni `03-trigger`.
+ *
+ * Nos numéros d'étape sont donc probablement décalés d'un cran par rapport à la table du
+ * wiki. Sans conséquence tant que les trois familles gardent leur espacement — mais le
+ * jour où une règle sera formulée en NUMÉRO d'étape, c'est ici qu'il faudra revenir.
  */
 describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
 

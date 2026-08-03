@@ -15,26 +15,26 @@ export class NRegister extends Register(8) {
     }
 }
 
+
+// Deux règles obscures se croisent ici, et une seule exige un front sur le bit 6 :
+// citées et distinguées en tête de channel2-length.test.js.
 export class NRegister4 extends NRegister {
     setValue(val) {
         const now = this.parent.apu.totalMachineCycles;
-        const olLengthEnabled = this.parent.isLengthEnabled;
-        if (byte.getFlag(val, 6) && !olLengthEnabled) {
-            const isExtraClock = !this.parent.apu.nextStepClocksLength(now);
-            if (isExtraClock && this.parent._lastLengthRemaining !== 0) {
-                this.parent._lastLengthRemaining --;
-                if (this.parent._lastLengthRemaining === 0) {
-                    this.parent._isEnabled = false;
-                }
-            }
-        }
+        const isExtraClock = !this.parent.apu.nextStepClocksLength(now);
+        const trigger = byte.getFlag(val, 7);
+        let isFreeValue = byte.getFlag(val, 6) && !this.parent.isLengthEnabled;
         let remain = this.parent.lengthRemaining(now);
         this.parent._lastLengthRemaining = remain;
         this.parent._lastLengthAt = now;
         super.setValue(val);
-        if (byte.getFlag(val, 7)) {
-            if (remain === 0) remain = this.parent._maxLength;
-            this.parent._lastLengthRemaining = remain;
+        if (trigger && remain === 0) remain = this.parent._maxLength;
+        if (remain !== 0 && isFreeValue && isExtraClock) remain --;
+        if (remain === 0) {
+            this.parent._isEnabled = false;
+        }
+        this.parent._lastLengthRemaining = remain;
+        if (trigger) {
             this.parent._triggeredAt = now;
             this.parent._lastVolumeAt = now;
             this.parent._lastVolume = this.parent.initialVolume;

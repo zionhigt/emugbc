@@ -78,6 +78,36 @@ const lireVerdict = (memory) => {
 const estBoucleDAbandon = (memory, pc) =>
   memory.read(pc) === 0x18 && memory.read(pc + 1) === 0xFE;
 
+/**
+ * Le verdict nomme la règle fautive, mais pas la séquence qui l'a mise en défaut. Ce
+ * journal la donne : chaque accès APU avec sa date en tics de carillon, ce qui est la
+ * seule façon de savoir sur quelle étape du séquenceur blargg écrit.
+ *
+ * Coûteux et bruyant, donc éteint par défaut :
+ *   APU_JOURNAL=44 npx vitest run src/emulator/core/machine/dmg-sound.test.js -t "03-trigger"
+ */
+const brancherJournal = (apu, taille) => {
+  const journal = [];
+  const hex = (n, largeur = 2) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(largeur, '0');
+  const pousser = (entree) => {
+    journal.push(entree);
+    if (journal.length > taille) journal.shift();
+  };
+  const etape = () => `@tic ${apu.frameTicks(apu.totalMachineCycles)} etape ${apu.frameStep(apu.totalMachineCycles)}`;
+  const read = apu.read.bind(apu);
+  const write = apu.write.bind(apu);
+  apu.read = (addr) => {
+    const value = read(addr);
+    pousser(`R ${hex(addr, 4)} -> ${hex(value)}  ${etape()}`);
+    return value;
+  };
+  apu.write = (addr, value) => {
+    pousser(`W ${hex(addr, 4)} = ${hex(value)}  ${etape()}`);
+    return write(addr, value);
+  };
+  return journal;
+};
+
 const runRom = (fileName, maxFrames = 3000) => {
   const serial = buildSerial();
   const clock = buildManivelle();
@@ -93,6 +123,8 @@ const runRom = (fileName, maxFrames = 3000) => {
   // plugCartridge remonte la mémoire autour de la cartouche : c'est CETTE instance qui
   // porte la RAM cartouche, pas celle passée au constructeur.
   const bus = machine.memory;
+  const taille = Number(process.env.APU_JOURNAL || 0);
+  const journal = taille > 0 ? brancherJournal(machine.apu, taille) : null;
 
   // On ne lit le verdict qu'à l'arrêt : blargg pose son code AVANT d'avoir fini d'écrire
   // le texte, et c'est le texte qui a de la valeur. Réussite comme échec, il termine
@@ -103,17 +135,20 @@ const runRom = (fileName, maxFrames = 3000) => {
     frames++;
     if (estBoucleDAbandon(bus, cpu.registers.PC.getValue())) break;
   }
-  return { ...lireVerdict(bus), frames };
+  return { ...lireVerdict(bus), frames, journal };
 };
 
 describe('Blargg dmg_sound : l\'oracle de l\'APU, ROM par ROM', () => {
   it.skipIf(roms.length === 0).each(roms)(
     '%s réussit',
     (fileName) => {
-      const { code, texte, frames } = runRom(fileName);
-      const diagnostic = code === EN_COURS
+      const { code, texte, frames, journal } = runRom(fileName);
+      const entete = code === EN_COURS
         ? `aucun verdict après ${frames} trames — la ROM s'est figée sans conclure`
         : `Failed #${code} après ${frames} trames\n${texte}`;
+      const diagnostic = journal
+        ? `${entete}\n\nderniers échanges APU :\n${journal.join('\n')}`
+        : entete;
       expect(code, diagnostic).toBe(REUSSI);
     },
     60000,

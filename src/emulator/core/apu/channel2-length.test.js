@@ -14,9 +14,35 @@ import buildTimer from '../timer/index';
  *   - NR24 bit 6 (length enable) relie le minuteur au four. Baissé, le minuteur ne tourne
  *     pas du tout et la note joue indéfiniment.
  *
- * Ce cran ne couvre PAS le « extra length clocking » — le cran supplémentaire que le
- * matériel donne quand on lève le bit 6 au milieu d'une période de longueur. C'est une
- * bizarrerie que blargg `02-len ctr` arbitre, et elle attendra son propre cran.
+ * Le « extra length clocking » — le cran supplémentaire que le matériel donne quand on
+ * lève le bit 6 au milieu d'une période de longueur — a ses deux blocs en fin de fichier.
+ *
+ * Sa règle est documentée, on n'a pas à la deviner : wiki gbdev, section « Obscure
+ * Behavior », https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware
+ *
+ *   « Each length counter is clocked at 256 Hz by the frame sequencer. When clocked while
+ *     enabled by NRx4 and the counter is not zero, it is decremented. If it becomes zero,
+ *     the channel is disabled. »
+ *
+ * Deux règles obscures s'y greffent, même source. Elles se ressemblent, mais elles ne
+ * demandent PAS la même chose :
+ *
+ *   1. « Extra length clocking occurs when writing to NRx4 when the frame sequencer's
+ *      next step is one that doesn't clock the length counter. In this case, if the
+ *      length counter was PREVIOUSLY disabled and now enabled and the length counter is
+ *      not zero, it is decremented. If this decrement makes it zero and trigger is
+ *      clear, the channel is disabled. »
+ *
+ *   2. « If a channel is triggered when the frame sequencer's next step is one that
+ *      doesn't clock the length counter and the length counter is now enabled and length
+ *      is being set to 64 (256 for wave channel) because it was previously zero, it is
+ *      set to 63 instead. »
+ *
+ * La 1 exige un FRONT sur le bit 6 — « PREVIOUSLY disabled and now enabled ». La 2 ne
+ * regarde que l'état courant — « is now enabled » : un trigger sur un compteur à sec
+ * reçoit son cran même sans front. C'est ce cas que `03-trigger` exerce à son sous-test 8.
+ * Les deux ne peuvent jamais s'appliquer ensemble : la 1 veut un compteur non nul, la 2
+ * un compteur à zéro.
  */
 
 const TIC = 2048;        // un tic de carillon, en cycles machine
@@ -212,9 +238,9 @@ describe('Minuteur - basculer l\'interrupteur en vol', () => {
  * Et si ce cran gratuit amène le compteur à zéro sans trigger dans la même écriture,
  * la note meurt sur-le-champ.
  *
- * Hors périmètre : le cas où la même écriture porte AUSSI le trigger. L'ordre exact entre
- * le rechargement et le cran supplémentaire y est le coin le plus profond de blargg, et
- * il mérite son propre passage.
+ * Hors périmètre ici : le cas où la même écriture porte AUSSI le trigger. L'ordre exact
+ * entre le rechargement et le cran supplémentaire est le coin le plus profond de blargg —
+ * c'est le dernier bloc du fichier.
  */
 describe('Minuteur - le cran gratuit du branchement', () => {
 
@@ -359,5 +385,100 @@ describe('Minuteur - le trigger le remonte, mais seulement à sec', () => {
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(clocheLongueur(2)), 'il reprend là où il en était').toBe(2);
         expect(chan.lengthRemaining(clocheLongueur(3)), 'et repart de là').toBe(1);
+    });
+});
+
+/**
+ * LE COIN LE PLUS PROFOND : QUAND LA MÊME ÉCRITURE FAIT LES DEUX.
+ *
+ * Deux règles que blargg attrape et que rien au-dessus ne couvre — `02-len ctr` à son
+ * sous-test 7, `03-trigger` au sien 8. Elles ne parlent ni du carillon ni de sa phase :
+ * elles parlent de l'ORDRE des trois gestes dans une seule écriture de NR24.
+ *
+ *   1. Le rechargement à sec ne dépend PAS du bit 6. Un trigger remonte le minuteur vidé
+ *      au maximum même si la longueur est débranchée — l'état est reconstitué en silence,
+ *      et ne se voit que plus tard, quand on rebranche.
+ *
+ *   2. Quand la même écriture lève le bit 6 ET déclenche, le minuteur reçoit le cran
+ *      gratuit APRÈS son rechargement : il repart à 63, pas à 64. C'est le seul endroit
+ *      où l'ordre des deux gestes est observable, et il se lit dans cet ordre :
+ *          le cran gratuit du front, sur l'ANCIENNE valeur (à sec : rien à retirer),
+ *          puis le rechargement au maximum,
+ *          puis le cran gratuit à nouveau, sur la valeur RECHARGÉE.
+ */
+describe('Minuteur - trigger et branchement dans la même écriture', () => {
+
+    /** Un minuteur d'un seul cran, déclenché à la date 0, à sec dès la première cloche. */
+    const buildDrained = () => {
+        const harness = buildPlayable();
+        harness.chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
+        harness.chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+        return harness;
+    };
+
+    it('déclencher longueur DÉBRANCHÉE remonte quand même le minuteur à sec', () => {
+        const { machine, chan } = buildDrained();
+        expect(chan.lengthRemaining(clocheLongueur(1)), 'à sec après une cloche').toBe(0);
+
+        machine.totalCycles = 2 * TIC;
+        chan.NR4.setValue(0x00);    // on débranche la longueur
+        chan.NR4.setValue(TRIGGER); // et on déclenche SANS le bit 6
+
+        expect(chan.lengthRemaining(2 * TIC), 'remonté au maximum, pas laissé à sec').toBe(64);
+    });
+
+    it('et ce rechargement silencieux tient vraiment la durée pleine', () => {
+        const { machine, chan } = buildDrained();
+
+        machine.totalCycles = 2 * TIC;
+        chan.NR4.setValue(0x00);
+        chan.NR4.setValue(TRIGGER);
+
+        // On rebranche sur un tic PAIR : pas de cran gratuit, le minuteur part à 64.
+        machine.totalCycles = 4 * TIC;
+        chan.NR4.setValue(LENGTH_ENABLE);
+
+        // Les cloches de longueur tombent maintenant aux tics 5, 7, 9... : la 64e est au 131.
+        expect(chan.isEnabledAt(129 * TIC), 'encore vivante au 63e coup').toBe(true);
+        expect(chan.isEnabledAt(131 * TIC), 'et elle s\'arrête au 64e').toBe(false);
+    });
+
+    it('trigger ET branchement à sec : le minuteur repart à 63, pas à 64', () => {
+        const { machine, chan } = buildDrained();
+
+        machine.totalCycles = 2 * TIC;
+        chan.NR4.setValue(0x00); // on débranche, pour avoir un FRONT à la prochaine écriture
+
+        // Tic 3 : la prochaine étape est la 3, elle ne frappe pas la longueur — le cran
+        // gratuit s'applique donc, et il s'applique au minuteur DÉJÀ rechargé.
+        machine.totalCycles = 3 * TIC;
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(3 * TIC), 'rechargé à 64, puis le cran gratuit').toBe(63);
+        expect(chan.isEnabledAt(3 * TIC), 'la note repart bel et bien').toBe(true);
+    });
+
+    it('sur un tic où la longueur va sonner, le même geste laisse 64', () => {
+        const { machine, chan } = buildDrained();
+
+        machine.totalCycles = 2 * TIC;
+        chan.NR4.setValue(0x00);
+
+        // Tic 4 : la prochaine étape EST une étape de longueur, pas de cran gratuit.
+        machine.totalCycles = 4 * TIC;
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(4 * TIC), 'rechargé, et rien ne lui est retiré').toBe(64);
+    });
+
+    it('sur un minuteur encore plein, le trigger ne recharge pas mais le cran tombe', () => {
+        const { machine, chan } = buildPlayable();
+        chan.NR1.setValue(0xC0 | 0x3C); // 4 crans
+        chan.NR4.setValue(TRIGGER);     // déclenché, longueur DÉBRANCHÉE : rien ne bouge
+
+        machine.totalCycles = 3 * TIC;
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(3 * TIC), 'pas de rechargement, mais le cran gratuit').toBe(3);
     });
 });

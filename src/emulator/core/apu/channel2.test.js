@@ -340,14 +340,8 @@ describe('Canal 2 - la note produite', () => {
 
 describe('Canal 2 - le raccordement au bus', () => {
 
-    const buildMachineStub = () => ({
-        totalCycles: 0,
-        memory: { _read: () => 0xFF, _write: () => {} },
-    });
-
     it('l\'APU route 0xFF16-0xFF19 vers les registres du canal 2', () => {
-        const APU = buildAPU(buildMachineStub());
-        const apu = new APU();
+        const { apu } = buildHarness();
 
         apu.write(0xFF16, 0x80); // NR21 : duty 2
         apu.write(0xFF18, 0x34); // NR23 : 8 bits bas
@@ -358,8 +352,7 @@ describe('Canal 2 - le raccordement au bus', () => {
     });
 
     it('une adresse hors du canal ne passe pas par ses registres', () => {
-        const APU = buildAPU(buildMachineStub());
-        const apu = new APU();
+        const { apu } = buildHarness();
 
         expect(() => apu.write(0xFF10, 0x80), 'NR10 n\'existe pas encore : le bus nu encaisse').not.toThrow();
         expect(apu.channel2.duty, 'et le canal 2 n\'a pas bougé').toBe(0);
