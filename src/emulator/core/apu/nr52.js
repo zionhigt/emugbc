@@ -17,9 +17,12 @@ export default function(apu) {
         }
 
         setValue(val) {
+            const wasPowered = this.apu._isPowered;
             this.apu._isPowered = byte.getFlag(val, 7);
             if (!this.apu._isPowered) {
                 this.setRegistersZero();
+            } else if (!wasPowered) {
+                this.apu.powerOn();
             }
         }
 

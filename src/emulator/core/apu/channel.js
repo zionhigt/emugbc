@@ -20,7 +20,8 @@ export class NRegister4 extends NRegister {
         const now = this.parent.apu.totalMachineCycles;
         const olLengthEnabled = this.parent.isLengthEnabled;
         if (byte.getFlag(val, 6) && !olLengthEnabled) {
-            if (this.parent.apu.frameTicks(now) % 2 === 1 && this.parent._lastLengthRemaining !== 0) {
+            const isExtraClock = !this.parent.apu.nextStepClocksLength(now);
+            if (isExtraClock && this.parent._lastLengthRemaining !== 0) {
                 this.parent._lastLengthRemaining --;
                 if (this.parent._lastLengthRemaining === 0) {
                     this.parent._isEnabled = false;

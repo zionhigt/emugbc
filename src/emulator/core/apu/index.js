@@ -7,6 +7,18 @@ import channel3 from "./channel3";
 import channel4 from "./channel4";
 import Nr52 from "./nr52";
 
+const FRAME_PERIOD = 8192; // 8192 = 2 ^ (12 + 1) : Effondrement du bit 12 de DIV
+const LENGTH_STEPS = [0, 2, 4, 6];
+const SWEEP_STEPS = [2, 6];
+const ENVELOPE_STEPS = [7];
+
+const executedSteps = (ticks, steps) => {
+    const rounds = Math.floor(ticks / 8);
+    const rest = ticks % 8;
+    const inLastRound = steps.filter((step) => step < rest).length;
+    return rounds * steps.length + inLastRound;
+};
+
 class NilRegister extends Register(8) {
     setValue(value) {};
     getValue() {
@@ -23,6 +35,7 @@ export default function(machine) {
             this.channel3 = channel3(this);
             this.channel4 = channel4(this);
             this._isPowered = true;
+            this._frameOrigin = 0;
             this.nr52 = Nr52(this);
             this.nr50 = new (Register(8));
             this.nr51 = new (Register(8));
@@ -81,6 +94,10 @@ export default function(machine) {
             }
         }
 
+        powerOn() {
+            this._frameOrigin = this.divTicks(this.totalMachineCycles) - 1;
+        }
+
         check() {
             return;
         }
@@ -109,27 +126,32 @@ export default function(machine) {
             return reg.setValue(value);
         };
 
+        divTicks(cycle) {
+            return Math.floor(this.machine.timer.innerCyclesAt(cycle) / FRAME_PERIOD);
+        }
+
         frameTicks(cycle) {
-            return Math.floor(this.machine.timer.innerCyclesAt(cycle) / 8192); // 8192 = 2 ^ (12 + 1) : Effondrement du bit 12
+            return this.divTicks(cycle) - this._frameOrigin;
         }
 
         frameStep(cycle) {
             return this.frameTicks(cycle) % 8;
         }
 
+        nextStepClocksLength(cycle) {
+            return LENGTH_STEPS.includes(this.frameStep(cycle));
+        }
+
         lengthTicks(cycle) {
-            const v = this.frameTicks(cycle) + 1;
-            return Math.floor(v / 2);
+            return executedSteps(this.frameTicks(cycle), LENGTH_STEPS);
         }
         
         sweepTicks(cycle) {
-            const v = this.frameTicks(cycle) + 1;
-            return Math.floor(v / 4);
+            return executedSteps(this.frameTicks(cycle), SWEEP_STEPS);
         }
 
         envelopeTicks(cycle) {
-            const v = this.frameTicks(cycle);
-            return Math.floor(v / 8);
+            return executedSteps(this.frameTicks(cycle), ENVELOPE_STEPS);
         }
     }
 
