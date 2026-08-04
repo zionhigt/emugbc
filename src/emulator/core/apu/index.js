@@ -9,6 +9,7 @@ import Nr52 from "./nr52";
 
 const FRAME_PERIOD = 8192; // 8192 = 2 ^ (12 + 1) : Effondrement du bit 12 de DIV
 const LENGTH_STEPS = [0, 2, 4, 6];
+const LENGTH_ADDRESSES = [0xFF11, 0xFF16, 0xFF1B, 0xFF20]
 const SWEEP_STEPS = [2, 6];
 const ENVELOPE_STEPS = [7];
 
@@ -117,7 +118,10 @@ export default function(machine) {
         write (addr, value) {
             let reg = this._WaveRAM[addr];
             if (!reg) {
-                if (!this.isPowered && addr !== 0xFF26) return;
+                if (!this.isPowered && addr !== 0xFF26) {
+                    if (!LENGTH_ADDRESSES.includes(addr)) return;
+                    return this.registersMapping[addr].setLength(value);
+                }
                 reg = this.registersMapping[addr];
             }
             if (!reg) {

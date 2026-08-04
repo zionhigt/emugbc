@@ -13,6 +13,10 @@ export class NRegister extends Register(8) {
         super();
         this.parent = parent;
     }
+
+    reset() {
+        this.setValue(0);
+    }
 }
 
 
@@ -23,13 +27,18 @@ export class NRegister4 extends NRegister {
         const now = this.parent.apu.totalMachineCycles;
         const isExtraClock = !this.parent.apu.nextStepClocksLength(now);
         const trigger = byte.getFlag(val, 7);
-        let isFreeValue = byte.getFlag(val, 6) && !this.parent.isLengthEnabled;
+        const isLengthEnabled = byte.getFlag(val, 6);
+        let hasEnableEdge = isLengthEnabled && !this.parent.isLengthEnabled;
         let remain = this.parent.lengthRemaining(now);
         this.parent._lastLengthRemaining = remain;
         this.parent._lastLengthAt = now;
         super.setValue(val);
-        if (trigger && remain === 0) remain = this.parent._maxLength;
-        if (remain !== 0 && isFreeValue && isExtraClock) remain --;
+        if (trigger && remain === 0) {
+            remain = this.parent._maxLength;
+            if (hasEnableEdge && isExtraClock) remain --;
+        } else if (hasEnableEdge && isExtraClock && remain !== 0) {
+            remain --;
+        }
         if (remain === 0) {
             this.parent._isEnabled = false;
         }
@@ -52,6 +61,15 @@ export class NRegister2 extends NRegister {
 export class NRegister1 extends NRegister {
     lengthRemaining(val) {
         return this.parent._maxLength - (val & 0x3F);
+    }
+
+    setLength(val) {
+        this.parent._lastLengthRemaining = this.lengthRemaining(val);
+        this.parent._lastLengthAt = this.parent.apu.totalMachineCycles;
+    }
+
+    reset() {
+        super.setValue(0);
     }
     setValue(val) {
         super.setValue(val);

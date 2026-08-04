@@ -12,7 +12,8 @@ export default function(apu) {
             for (let addr in this.apu.registersMapping) {
                 const r = this.apu.registersMapping[addr];
                 if (r === this) continue;
-                r.setValue(0);
+                if (r.reset) r.reset();
+                else r.setValue(0);
             }
         }
 
