@@ -13,8 +13,8 @@ import buildTimer from '../timer/index';
  * Éteindre l'APU met à zéro 0xFF10-0xFF25 et fait ignorer toute écriture dans cette
  * plage tant qu'il reste éteint. NR52 lui-même reste écrivable.
  *
- * Hors périmètre, faute d'oracle : la survie des compteurs de longueur à l'extinction
- * (propre au DMG) et la remise à zéro du carillon à l'allumage.
+ * La remise à zéro du carillon à l'allumage a son bloc dans frame-sequencer.test.js ; la
+ * survie des compteurs de longueur, propre au DMG, est en fin de ce fichier.
  */
 
 const NR21 = 0xFF16;
@@ -168,5 +168,79 @@ describe('NR52 - isPowered', () => {
         expect(apu.isPowered).toBe(false);
         apu.write(NR52, POWER);
         expect(apu.isPowered).toBe(true);
+    });
+});
+
+/**
+ * L'EXCEPTION DMG : LES COMPTEURS DE LONGUEUR SURVIVENT À L'EXTINCTION.
+ *
+ * Wiki gbdev, section « Obscure Behavior »,
+ * https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware :
+ *
+ *   « When powered off, all registers (NR10-NR51) are instantly written with zero and any
+ *     writes to those registers are ignored while power remains off (except on the DMG,
+ *     where length counters are unaffected by power and can still be written while off). »
+ *
+ * Deux conséquences, arbitrées par `11-regs after power` (#4, « Powering off shouldn't
+ * affect NR41 ») et `08-len ctr during power` :
+ *
+ *   - l'extinction efface bien l'octet de NRx1, mais pas le COMPTEUR qu'il avait chargé ;
+ *   - une écriture dans NRx1 pendant l'extinction passe quand même — sa partie longueur
+ *     seulement, le pochoir restant, lui, sous la règle générale.
+ */
+describe('NR52 - l\'extinction et les compteurs de longueur', () => {
+
+    const REGISTRES_DE_LONGUEUR = [
+        { nom: 'NR11', addr: 0xFF11, canal: 'channel1', valeur: 0x3C, crans: 4 },
+        { nom: 'NR21', addr: 0xFF16, canal: 'channel2', valeur: 0x3C, crans: 4 },
+        { nom: 'NR31', addr: 0xFF1B, canal: 'channel3', valeur: 0xFC, crans: 4 }, // 8 bits
+        { nom: 'NR41', addr: 0xFF20, canal: 'channel4', valeur: 0x3C, crans: 4 },
+    ];
+
+    it.each(REGISTRES_DE_LONGUEUR)(
+        '$nom : le compteur survit à l\'extinction',
+        ({ addr, canal, valeur, crans }) => {
+            const { apu } = buildHarness();
+            apu.write(addr, valeur);
+            expect(apu[canal].lengthRemaining(0), 'chargé avant l\'extinction').toBe(crans);
+
+            apu.write(NR52, 0x00);
+            apu.write(NR52, POWER);
+
+            expect(apu[canal].lengthRemaining(0), 'l\'extinction ne l\'a pas touché').toBe(crans);
+        },
+    );
+
+    it.each(REGISTRES_DE_LONGUEUR)(
+        '$nom : reste écrivable pendant l\'extinction',
+        ({ addr, canal, valeur, crans }) => {
+            const { apu } = buildHarness();
+            apu.write(NR52, 0x00);
+
+            apu.write(addr, valeur);
+
+            expect(apu[canal].lengthRemaining(0), 'la longueur passe malgré l\'extinction').toBe(crans);
+        },
+    );
+
+    it('mais seulement leur partie longueur : le pochoir reste sous la règle générale', () => {
+        const { apu, chan } = buildHarness();
+        apu.write(NR52, 0x00);
+
+        apu.write(NR21, 0xC0 | 0x3C); // pochoir 3 ET longueur 60
+
+        expect(chan.lengthRemaining(0), 'la longueur passe').toBe(4);
+        expect(chan.duty, 'le pochoir non').toBe(0);
+    });
+
+    it('les autres registres restent bien ignorés, eux', () => {
+        const { apu, chan } = buildHarness();
+        apu.write(NR52, 0x00);
+
+        apu.write(NR22, 0xF0);
+        apu.write(NR24, TRIGGER);
+
+        expect(chan.initialVolume, 'NR22 ignoré').toBe(0);
+        expect(chan.isEnabled, 'le trigger aussi').toBe(false);
     });
 });

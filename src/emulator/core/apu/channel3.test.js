@@ -183,9 +183,11 @@ describe('Canal 3 - le minuteur compte sur 8 bits', () => {
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
         expect(chan3.lengthRemaining(clocheLongueur(1)), 'à sec').toBe(0);
 
-        machine.totalCycles = clocheLongueur(1);
+        // Tic 2 : l'étape suivante est une étape de longueur, donc pas de cran de la
+        // règle 2 — le rechargement se lit à nu.
+        machine.totalCycles = 2 * TIC;
         apu.write(NR34, TRIGGER | LENGTH_ENABLE);
-        expect(chan3.lengthRemaining(clocheLongueur(1)), 'le maximum du canal 3').toBe(256);
+        expect(chan3.lengthRemaining(2 * TIC), 'le maximum du canal 3').toBe(256);
     });
 
     it('débrancher la longueur ne ressuscite pas une note éteinte', () => {

@@ -38,11 +38,15 @@ import buildTimer from '../timer/index';
  *      is being set to 64 (256 for wave channel) because it was previously zero, it is
  *      set to 63 instead. »
  *
- * La 1 exige un FRONT sur le bit 6 — « PREVIOUSLY disabled and now enabled ». La 2 ne
- * regarde que l'état courant — « is now enabled » : un trigger sur un compteur à sec
- * reçoit son cran même sans front. C'est ce cas que `03-trigger` exerce à son sous-test 8.
- * Les deux ne peuvent jamais s'appliquer ensemble : la 1 veut un compteur non nul, la 2
- * un compteur à zéro.
+ * La 1 exige un FRONT sur le bit 6 — « PREVIOUSLY disabled and now enabled ». La 2 dit
+ * seulement « is now enabled », ce qui se lit comme si l'état courant suffisait — mais
+ * c'est un raccourci : `02-len ctr` sous-test 6 refuse ce cas en toutes lettres. Un
+ * trigger sans front, sur un compteur vidé, remonte à 64 et ne reçoit AUCUN cran. Les
+ * deux règles exigent donc le front ; ce qui les sépare, c'est l'état du compteur — la 1
+ * le veut non nul, la 2 à zéro, et elles ne peuvent jamais s'appliquer ensemble.
+ *
+ * (Le wiki ajoute que la CGB-02 se contente d'un « a été débranché un jour » : c'est une
+ * variante du front, pas sa disparition. On est sur DMG.)
  */
 
 const TIC = 2048;        // un tic de carillon, en cycles machine
@@ -369,10 +373,13 @@ describe('Minuteur - le trigger le remonte, mais seulement à sec', () => {
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
         expect(chan.lengthRemaining(clocheLongueur(1)), 'à sec après une cloche').toBe(0);
 
-        machine.totalCycles = clocheLongueur(1);
+        // On redéclenche au tic 2, dont l'étape suivante EST une étape de longueur : la
+        // règle 2 ne mord pas là, et le rechargement se lit à nu. Le tic 1 en donnerait 63,
+        // et c'est le bloc « trigger et branchement dans la même écriture » qui le couvre.
+        machine.totalCycles = 2 * TIC;
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
-        expect(chan.lengthRemaining(clocheLongueur(1)), 'remonté à fond, pas à 1').toBe(64);
-        expect(chan.isEnabledAt(clocheLongueur(1)), 'et la note repart').toBe(true);
+        expect(chan.lengthRemaining(2 * TIC), 'remonté à fond, pas à 1').toBe(64);
+        expect(chan.isEnabledAt(2 * TIC), 'et la note repart').toBe(true);
     });
 
     it('déclencher un minuteur encore plein ne le remonte pas', () => {
@@ -469,6 +476,32 @@ describe('Minuteur - trigger et branchement dans la même écriture', () => {
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
 
         expect(chan.lengthRemaining(4 * TIC), 'rechargé, et rien ne lui est retiré').toBe(64);
+    });
+
+    /**
+     * SANS FRONT, PAS DE CRAN — arbitré par `02-len ctr` sous-test 6, relevé au journal :
+     * il déclenche au tic 377 (étape 1, donc une étape qui ne clocke pas la longueur) sur
+     * un compteur vidé par les cloches, sans avoir retouché le bit 6, et il exige 64.
+     *
+     * C'est le garde-fou de la règle 2 : sa formulation « and the length counter is now
+     * enabled » laisse croire que l'état courant suffit. Il n'en est rien.
+     */
+    it('trigger sans front, sur un compteur vidé par la cloche du même tic : 64', () => {
+        const { machine, chan } = buildPlayable();
+
+        machine.totalCycles = 479 * TIC;
+        chan.NR1.setValue(0xC0 | 0x3F);              // compteur à 1
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);  // le front est consommé ICI
+
+        machine.totalCycles = 480 * TIC;
+        chan.NR1.setValue(0xC0 | 0x3F);              // on le remonte à 1
+
+        // Le tic 481 est impair : sa cloche vide le compteur. L'écriture qui suit porte le
+        // trigger, mais aucun front — le bit 6 était déjà levé au tic 479.
+        machine.totalCycles = 481 * TIC;
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(481 * TIC), 'rechargé à fond, et rien ne lui est retiré').toBe(64);
     });
 
     it('sur un minuteur encore plein, le trigger ne recharge pas mais le cran tombe', () => {

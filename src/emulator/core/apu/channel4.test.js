@@ -113,9 +113,11 @@ describe('Canal 4 - la longueur, comme un canal pulse', () => {
         apu.write(NR44, TRIGGER | LENGTH_ENABLE);
         expect(chan4.lengthRemaining(clocheLongueur(1)), 'à sec').toBe(0);
 
-        machine.totalCycles = clocheLongueur(1);
+        // Tic 2 : l'étape suivante est une étape de longueur, donc pas de cran de la
+        // règle 2 — le rechargement se lit à nu.
+        machine.totalCycles = 2 * TIC;
         apu.write(NR44, TRIGGER | LENGTH_ENABLE);
-        expect(chan4.lengthRemaining(clocheLongueur(1)), 'le maximum d\'un canal 6 bits').toBe(64);
+        expect(chan4.lengthRemaining(2 * TIC), 'le maximum d\'un canal 6 bits').toBe(64);
     });
 });
 
