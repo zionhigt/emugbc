@@ -270,15 +270,16 @@ describe('Carillon - il est monté sur DIV, pas sur son propre ressort', () => {
  * La seconde phrase est exactement ce que ce bloc vérifie : l'allumage touche l'index,
  * jamais la cadence.
  *
- * PHASE, arbitrée par l'oracle le 2026-08-03, et EN TENSION D'UN CRAN avec la première
- * phrase : après un allumage, la première étape à tomber est chez nous la 1, pas la 0.
- * Le balayage des 8 phases sur les 12 ROMs ne distingue que la parité (la longueur ne
- * tombe que sur les positions paires) ; l'impair fait passer `07-len sweep period sync`
- * de son sous-test 2 à son sous-test 5, sans rien coûter à `02-len ctr` ni `03-trigger`.
+ * PHASE — la première phrase se lit au pied de la lettre : après l'allumage, la prochaine
+ * étape est la 0, donc le premier tic FAIT avancer la longueur.
  *
- * Nos numéros d'étape sont donc probablement décalés d'un cran par rapport à la table du
- * wiki. Sans conséquence tant que les trois familles gardent leur espacement — mais le
- * jour où une règle sera formulée en NUMÉRO d'étape, c'est ici qu'il faudra revenir.
+ * On avait d'abord posé l'impair, mesuré le 2026-08-03 sur les 12 ROMs : il faisait passer
+ * `07-len sweep period sync` de son sous-test 2 à son sous-test 5. C'était un optimum
+ * local, obtenu avant que les compteurs de longueur ne survivent à l'extinction. Une fois
+ * cette règle en place, le balayage refait le 2026-08-04 renverse le verdict : avec la
+ * phase du wiki, `08-len ctr during power` passe EN ENTIER — la ROM dédiée à ce
+ * comportement — au prix des trois sous-tests que l'impair volait à `07`. Une ROM verte
+ * et la doc contre trois sous-tests d'une ROM rouge : la doc gagne.
  */
 describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
 
@@ -288,7 +289,7 @@ describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
         apu.write(NR52, 0x80);
     };
 
-    it('après l\'allumage, la prochaine étape est la 1', () => {
+    it('après l\'allumage, la prochaine étape est la 0', () => {
         const { machine, apu } = buildHarness();
 
         machine.totalCycles = 5 * TIC;
@@ -296,19 +297,20 @@ describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
 
         powerCycle(apu);
 
-        expect(apu.frameStep(5 * TIC), 'l\'étape 0 est réputée consommée').toBe(1);
-        expect(apu.nextStepClocksLength(5 * TIC), 'la 1 ne frappe pas la longueur').toBe(false);
+        expect(apu.frameStep(5 * TIC), 'l\'index repart de zéro').toBe(0);
+        expect(apu.nextStepClocksLength(5 * TIC), 'et la 0 frappe la longueur').toBe(true);
     });
 
-    it('le premier tic après l\'allumage ne fait pas avancer la longueur', () => {
+    it('le premier tic après l\'allumage fait avancer la longueur', () => {
         const { machine, apu } = buildHarness();
 
         machine.totalCycles = 5 * TIC;
         powerCycle(apu);
         const depart = apu.lengthTicks(5 * TIC);
 
-        expect(apu.lengthTicks(6 * TIC) - depart, 'le premier tic tombe sur la position 1').toBe(0);
-        expect(apu.lengthTicks(7 * TIC) - depart, 'le deuxième sur la position 2').toBe(1);
+        expect(apu.lengthTicks(6 * TIC) - depart, 'le premier tic tombe sur la position 0').toBe(1);
+        expect(apu.lengthTicks(7 * TIC) - depart, 'la position 1 ne frappe rien').toBe(1);
+        expect(apu.lengthTicks(8 * TIC) - depart, 'la position 2 si').toBe(2);
     });
 
     it('l\'allumage ne décale pas les dates : le prochain tic reste calé sur DIV', () => {
@@ -332,7 +334,7 @@ describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
         machine.totalCycles = 11 * TIC;
         powerCycle(apu);
 
-        expect(apu.frameStep(11 * TIC), 'c\'est le dernier allumage qui fait foi').toBe(1);
+        expect(apu.frameStep(11 * TIC), 'c\'est le dernier allumage qui fait foi').toBe(0);
     });
 
     it('rallumer un APU déjà allumé ne repose rien', () => {
@@ -344,6 +346,6 @@ describe('Carillon - allumer l\'APU repose l\'index, pas la cadence', () => {
         machine.totalCycles = 9 * TIC;
         apu.write(NR52, 0x80); // il l'était déjà
 
-        expect(apu.frameStep(9 * TIC), 'quatre tics depuis l\'allumage, sur un index parti de 1').toBe(5);
+        expect(apu.frameStep(9 * TIC), 'quatre tics depuis l\'allumage, sur un index parti de 0').toBe(4);
     });
 });
