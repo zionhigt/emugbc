@@ -96,7 +96,7 @@ export default function(machine) {
         }
 
         powerOn() {
-            this._frameOrigin = this.divTicks(this.totalMachineCycles) - 1;
+            this._frameOrigin = this.divTicks(this.totalMachineCycles);
         }
 
         check() {
