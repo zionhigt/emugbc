@@ -307,3 +307,69 @@ describe('Sweep - le canal 2 n\'en a pas', () => {
         expect(chan2.frequencyAt(clocheSweep(10)), 'aucun sweep sur ce canal').toBe(1024);
     });
 });
+
+/**
+ * LA CADENCE 0 : LE MINUTEUR TOURNE, MAIS IL NE CALCULE RIEN.
+ *
+ * Wiki gbdev, section « Obscure Behavior »,
+ * https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware :
+ *
+ *   « The volume envelope and sweep timers treat a period of 0 as 8. »
+ *
+ * Deux choses qu'on avait fondues en une : couper le CALCUL et arrêter le MINUTEUR. Le
+ * matériel ne coupe que le premier. Tant que la cadence reste à 0, la différence ne se
+ * voit pas — c'est en la changeant en vol qu'elle apparaît, parce que le minuteur a déjà
+ * consommé une partie de ses huit crans et que la nouvelle cadence ne prend qu'à la
+ * recharge suivante.
+ *
+ * Arbitré par `04-sweep` #4 (« If period=0, doesn't calculate ») et `05-sweep details` #2
+ * (« Timer treats period 0 as 8 »).
+ */
+describe('Sweep - la cadence 0', () => {
+
+    it.each([
+        { pace: 0, periode: 8 },
+        { pace: 1, periode: 1 },
+        { pace: 7, periode: 7 },
+    ])('cadence $pace : le minuteur recharge avec $periode', ({ pace, periode }) => {
+        const { apu, chan1 } = buildHarness();
+        apu.write(NR10, nr10({ pace }));
+        expect(chan1.sweepTimerPeriod).toBe(periode);
+    });
+
+    it.each([
+        { pace: 0, shift: 0, arme: false, pourquoi: 'ni cadence ni décalage : l\'unité dort' },
+        { pace: 0, shift: 2, arme: true, pourquoi: 'un décalage suffit à l\'armer' },
+        { pace: 3, shift: 0, arme: true, pourquoi: 'une cadence aussi' },
+    ])('trigger avec cadence $pace et décalage $shift : armé = $arme', ({ pace, shift, arme, pourquoi }) => {
+        const { chan1 } = buildSweeping({ sweep: { pace, shift }, frequency: 0x100 });
+        expect(chan1._isSweepArmed, pourquoi).toBe(arme);
+    });
+
+    it('cadence 0 : aucune échéance ne calcule, donc aucun débordement ne tue la note', () => {
+        // Décalage 0 : à l'échéance, le contrôle vaudrait f + f, soit 0xC00 — au-dessus de
+        // 2047, donc la note mourrait. Avec une cadence de 0, il n'y a pas d'échéance.
+        const { chan1 } = buildSweeping({ sweep: { pace: 0, shift: 0 }, frequency: 0x600 });
+
+        expect(chan1.isEnabledAt(clocheSweep(1)), 'rien ne s\'est calculé').toBe(true);
+        expect(chan1.isEnabledAt(clocheSweep(20)), 'et rien ne se calculera').toBe(true);
+        expect(chan1.frequencyAt(clocheSweep(20)), 'la fréquence n\'a pas bougé').toBe(0x600);
+    });
+
+    it('le minuteur tourne quand même : la cadence posée en vol ne prend qu\'à la recharge', () => {
+        const { machine, apu, chan1 } = buildSweeping({
+            sweep: { pace: 0, shift: 1 }, frequency: 0x100,
+        });
+
+        // Au trigger le minuteur est chargé à 8. Trois cloches plus tard il lui en reste 5,
+        // et c'est LUI qui décide de la prochaine échéance — pas la cadence qu'on écrit ici.
+        chan1.frequencyAt(clocheSweep(3));
+        machine.totalCycles = clocheSweep(3);
+        apu.write(NR10, nr10({ pace: 2, shift: 1 }));
+
+        expect(chan1.frequencyAt(clocheSweep(7)), 'les huit crans ne sont pas écoulés').toBe(0x100);
+        expect(chan1.frequencyAt(clocheSweep(8)), 'première échéance : 0x100 + 0x80').toBe(0x180);
+        expect(chan1.frequencyAt(clocheSweep(9)), 'la cadence 2 court depuis la recharge').toBe(0x180);
+        expect(chan1.frequencyAt(clocheSweep(10)), 'deuxième échéance : 0x180 + 0xC0').toBe(0x240);
+    });
+});
