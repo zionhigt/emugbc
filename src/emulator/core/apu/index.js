@@ -99,6 +99,44 @@ export default function(machine) {
             this._frameOrigin = this.divTicks(this.totalMachineCycles);
         }
 
+        /**
+         * Les trois bits PLUS UN : le fader va de 1 à 8, jamais à 0. Un réglage à zéro
+         * laisse encore passer un huitième du signal — couper est l'affaire de NR51 seul.
+         */
+        get leftVolume() {
+            return ((this.nr50.getValue() & 0x70) >> 4) + 1;
+        }
+
+        get rightVolume() {
+            return (this.nr50.getValue() & 0x07) + 1;
+        }
+
+        isRoutedLeft(channel) {
+            return byte.getFlag(this.nr51.getValue(), channel + 3);
+        }
+
+        isRoutedRight(channel) {
+            return byte.getFlag(this.nr51.getValue(), channel - 1);
+        }
+
+        /**
+         * Une voix peut partir des deux côtés, d'un seul, ou d'aucun : les deux sommes se
+         * remplissent indépendamment, et chacune ne rencontre son fader qu'à la fin.
+         */
+        sample(cycle) {
+            let left = 0;
+            let right = 0;
+            for (let channel = 1; channel <= 4; channel++) {
+                const amplitude = this["channel" + channel].amplitude(cycle);
+                if (this.isRoutedLeft(channel)) left += amplitude;
+                if (this.isRoutedRight(channel)) right += amplitude;
+            }
+            return {
+                left: left * this.leftVolume,
+                right: right * this.rightVolume,
+            };
+        }
+
         check() {
             return;
         }
