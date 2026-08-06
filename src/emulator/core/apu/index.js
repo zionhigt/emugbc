@@ -105,6 +105,11 @@ export default function(machine) {
 
         read (addr) {
             let reg = this._WaveRAM[addr];
+            if (reg && this.channel3.isEnabled) {
+                const now = this.totalMachineCycles;
+                if (!this.channel3.isAccessingWaveAt(now)) return 0xFF;
+                reg = this._WaveRAM[0xFF30 + this.channel3.waveByteIndexAt(now)];
+            }
             if (!reg) {
                 reg = this.registersMapping[addr];
             }
@@ -117,6 +122,11 @@ export default function(machine) {
 
         write (addr, value) {
             let reg = this._WaveRAM[addr];
+            if (reg && this.channel3.isEnabled) {
+                const now = this.totalMachineCycles;
+                if (!this.channel3.isAccessingWaveAt(now)) return;
+                reg = this._WaveRAM[0xFF30 + this.channel3.waveByteIndexAt(now)];
+            }
             if (!reg) {
                 if (!this.isPowered && addr !== 0xFF26) {
                     if (!LENGTH_ADDRESSES.includes(addr)) return;

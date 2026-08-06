@@ -17,6 +17,11 @@ export default function(apu) {
                 this._sweepFrequency = 0;
                 this._sweptTicks  = 0;
                 this._sweepTimer = 0;
+                this._isSweepArmed = false;
+            }
+
+            get sweepTimerPeriod() {
+                return this.sweepPace === 0 ? 8 : this.sweepPace;
             }
 
             get sweepPace() {
@@ -57,7 +62,7 @@ export default function(apu) {
                     console.warn("Special case");
                     return;
                 } 0xF8
-                if (this.sweepPace === 0 || !this._isEnabled) {
+                if (!this._isSweepArmed || !super.isEnabledAt(cycle)) {
                     this._sweptTicks = this.apu.sweepTicks(cycle);
                     return this._sweepFrequency;
                 }
@@ -66,16 +71,18 @@ export default function(apu) {
                     this._sweptTicks += 1;
                     this._sweepTimer -= 1;
                     if (this._sweepTimer === 0) {
-                        this._sweepTimer = this.sweepPace;
-                        let n = this.computeN();
-                        if (n > 2047) {
-                            this._isEnabled = false;
-                        } else if(this.sweepShift !== 0) {
-                            this._sweepFrequency = n;
-                            this.setFrequency(n);
-                            n = this.computeN();
+                        this._sweepTimer = this.sweepTimerPeriod;
+                        if (this.sweepPace !== 0) {
+                            let n = this.computeN();
                             if (n > 2047) {
-                                this._isEnabled  = false;
+                                this._isEnabled = false;
+                            } else if(this.sweepShift !== 0) {
+                                this._sweepFrequency = n;
+                                this.setFrequency(n);
+                                n = this.computeN();
+                                if (n > 2047) {
+                                    this._isEnabled  = false;
+                                }
                             }
                         }
                     }
@@ -92,8 +99,8 @@ export default function(apu) {
             onTrigger() {
                 this._sweepFrequency = this.frequency;
                 this._sweptTicks  = this.apu.sweepTicks(this.apu.totalMachineCycles);
-                this._sweepTimer = this.sweepPace;
-
+                this._sweepTimer = this.sweepTimerPeriod;
+                this._isSweepArmed = this.sweepPace !== 0 || this.sweepShift !== 0;
                 if (this.sweepShift !== 0) {
                     const n = this.computeN();
                     if (n > 2047) this._isEnabled = false;

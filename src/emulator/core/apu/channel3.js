@@ -1,6 +1,6 @@
 import { Register } from "../../lib/register";
 import byte from "../../lib/byte";
-import { Channel, NRegister, NRegister1 } from "./channel";
+import { Channel, NRegister, NRegister1, NRegister4 } from "./channel";
 
 class NR30 extends NRegister {
     setValue(val) {
@@ -14,6 +14,19 @@ class NR31 extends NRegister1 {
     }
 }
 
+class NR33 extends NRegister {
+    setValue(val) {
+        this.parent.captureWaveStep();
+        return super.setValue(val);
+    }
+}
+class NR34 extends NRegister4 {
+    setValue(val) {
+        this.parent.captureWaveStep();
+        return super.setValue(val);
+    }
+}
+
 const OFFSETS = [4, 0, 1, 2];
 
 export default function(apu) {
@@ -22,6 +35,8 @@ export default function(apu) {
             constructor() {
                 super(...arguments);
                 this._maxLength = 256;
+                this._lastWaveStep = 0;
+                this._lastWaveAt = 0;
             }
             get DAC() {
                 return byte.getBit(this.NR0.getValue(), 7);
@@ -35,22 +50,31 @@ export default function(apu) {
                 return (this.NR2.getValue() >> 5) & 0x03;
             }
 
+            waveByteIndexAt(cycle) {
+                return Math.floor(this.waveStep(cycle) / 2);
+            }
+
+            /**
+             * Le canal ne touche la RAM qu'en changeant d'OCTET, soit un échantillon sur
+             * deux : toutes les `period` cycles machine depuis le trigger.
+             */
+            isAccessingWaveAt(cycle) {
+                if (!this.isEnabledAt(cycle)) return false;
+                return (cycle - this.triggeredAt) % this.period === 0;
+            }
+
             waveStep(cycle) {
-                return Math.floor(
-                    2 * (cycle - this.triggeredAt) / this.period
-                ) % 32
+                return (this._lastWaveStep + Math.floor(
+                    2 * (cycle - this._lastWaveAt) / this.period
+                )) % 32
             }
 
             waveSample(cycle) {
                 const position = this.waveStep(cycle);
-                const addr = 0xFF30 + Math.floor(position / 2);
-                let o = this.apu.read(addr);
-                if (position % 2 === 0) {
-                    o >>= 4;
-                } else {
-                    o &= 0x0F;
-                }
-                return o;
+                // Lecture directe : passer par apu.read ferait retomber le canal sur sa
+                // propre porte, et il se lirait 0xFF dès qu'il n'est pas dans sa fenêtre.
+                const octet = this.apu._WaveRAM[0xFF30 + this.waveByteIndexAt(cycle)].getValue();
+                return position % 2 === 0 ? octet >> 4 : octet & 0x0F;
             }
 
             amplitude(cycle) {
@@ -64,9 +88,24 @@ export default function(apu) {
                     this.registers[this.start] = new NR30(this);
                 } else if (offset === 1) {
                     this.registers[this.start + offset] = new NR31(this);
+                } else if (offset === 3) {
+                    this.registers[this.start + offset] = new NR33(this);
+                } else if (offset === 4) {
+                    this.registers[this.start + offset] = new NR34(this);
                 } else {
                     super.addReg(offset);
                 }
+            }
+
+            captureWaveStep() {
+                const now = this.apu.totalMachineCycles;
+                this._lastWaveStep = this.waveStep(now);
+                this._lastWaveAt = now;
+            };
+
+            onTrigger() {
+                this._lastWaveStep = 0;
+                this._lastWaveAt = this.apu.totalMachineCycles;
             }
         }
     
