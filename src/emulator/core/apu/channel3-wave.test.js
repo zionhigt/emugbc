@@ -11,14 +11,26 @@ import buildTimer from '../timer/index';
  * dans ses bits 7-4 et l'échantillon 1 dans ses bits 3-0.
  *
  * Trois écarts avec le rouleau des canaux pulse, et ce fichier les vise tous les trois :
- *   - 32 positions, qui avancent DEUX FOIS plus vite : une toutes les
- *     (2048 - frequency) / 2 cycles machine ;
+ *   - 32 positions, qui avancent DEUX FOIS plus vite : le minuteur de fréquence du canal 3
+ *     décompte tous les 2 T-cycles, là où celui d'un canal pulse décompte tous les 4 ;
  *   - le trigger remet la position à ZÉRO, là où le duty d'un canal pulse continue
  *     imperturbablement ;
  *   - pas d'enveloppe : le volume est un décalage fixe lu dans NR32.
  *
  *     niveau 0  muet          niveau 2  moitié   (>> 1)
  *     niveau 1  pleine échelle niveau 3  quart    (>> 2)
+ *
+ * LA GRILLE DE CE FICHIER EST LE DEMI-CYCLE MACHINE (2 T-cycles).
+ *
+ * C'est l'unité du minuteur du canal 3, et c'est la seule grille où le modèle tient : les
+ * ROMs 09 et 12 mesurent une distinction de 2 T-cycles, structurellement invisible sur une
+ * grille en cycles machine entiers. La période vaut donc `2048 - frequency` DEMI-cycles,
+ * soit un échantillon toutes les `(2048 - frequency) / 2` cycles machine.
+ *
+ * L'interface, elle, ne change pas : `waveStep`, `waveByteIndexAt`, `isAccessingWaveAt`,
+ * `waveSample` et `amplitude` reçoivent toujours des CYCLES MACHINE. Le demi-cycle est un
+ * détail interne — et c'est précisément pour cela que la parité compte : le CPU n'agit
+ * qu'aux demi-cycles PAIRS, `2 × cycle`.
  *
  * Ce que le matériel fait quand on lit ou écrit la wave RAM PENDANT que le canal joue
  * (blargg 09 et 12) a son bloc en fin de fichier. La corruption au trigger (blargg 10)
@@ -35,9 +47,32 @@ const WAVE = 0xFF30;
 const TRIGGER = 0x80;
 const DAC_ON = 0x80;
 
-/** frequency = 1536 : période de 512, donc un échantillon tous les 256 cycles machine. */
+/**
+ * LE RETARD DU TRIGGER, EN DEMI-CYCLES : UNE CONSTANTE CALIBRÉE, PAS DÉRIVÉE.
+ *
+ * Au trigger, la date du prochain accès à la wave RAM vaut
+ *
+ *     prochainAcces = 2 × dateDuTrigger + périodeAuTrigger + RETARD      (en demi-cycles)
+ *
+ * Ces 3 demi-cycles ne se déduisent d'aucun schéma : ils mêlent le retard réel du trigger
+ * de la wave sur DMG et NOTRE convention sur l'instant où une écriture atterrit dans le
+ * cycle machine. Ils ont été trouvés par balayage — 170 combinaisons essayées sur
+ * `09-wave read while on`, une seule passe — puis confirmés tels quels par
+ * `12-wave write while on`, qui a une autre CRC et un autre chemin de code.
+ *
+ * Deux ROMs indépendantes s'accordent dessus : c'est une mesure, pas une démonstration.
+ * Que personne ne la prenne plus tard pour une vérité dérivée.
+ */
+const RETARD = 3;
+
+/** frequency = 1536 : période de 512 demi-cycles, donc un échantillon tous les 256 cycles. */
 const FREQUENCY = 0x600;
-const PAS = 256;
+const PERIODE = 2048 - FREQUENCY;
+const PAS = PERIODE / 2;
+
+/** frequency = 1539 : période de 509 demi-cycles — IMPAIRE, et 509 + RETARD = 512. */
+const FREQ_TRIGGER = 0x603;
+const PERIODE_TRIGGER = 2048 - FREQ_TRIGGER;
 
 const buildHarness = () => {
     const machine = {
@@ -61,6 +96,34 @@ const buildHarness = () => {
 const MOTIF = Array.from({ length: 16 }, (_, i) => (i << 4) | (15 - i));
 const attendu = (position) => (position % 2 === 0 ? position / 2 : 15 - (position - 1) / 2);
 
+/** Pose une fréquence ET déclenche, à la date courante. */
+const declencherA = (apu, frequence) => {
+    apu.write(NR33, frequence & 0xFF);
+    apu.write(NR34, TRIGGER | ((frequence >> 8) & 0x07));
+};
+
+/**
+ * DÉCLENCHER EN LAISSANT LES ACCÈS TOMBER SUR DES CYCLES MACHINE ENTIERS.
+ *
+ * L'échéance du premier accès vaut `2 × trigger + périodeAuTrigger + RETARD` demi-cycles ;
+ * le CPU, lui, n'agit qu'aux demi-cycles PAIRS. Déclencher directement à 0x600 (période
+ * 512, PAIRE) poserait l'échéance sur un demi-cycle impair, et tous les accès de la note
+ * avec elle : le canal jouerait, mais le CPU ne verrait JAMAIS sa fenêtre — c'est le bloc
+ * « la parité de la période au trigger » qui le vérifie.
+ *
+ * On déclenche donc à 0x603, période 509, impaire, et 509 + 3 = 512 pile. Puis on pose
+ * 0x600 AVANT que l'échéance n'échoie : l'échéance en vol garde sa valeur, si bien que le
+ * premier accès tombe à 512 demi-cycles du trigger, soit PAS cycles machine, et que tous
+ * les suivants, espacés d'une période PAIRE, restent sur la grille du CPU.
+ *
+ * Le harnais s'appuie donc sur deux règles du modèle : la période est lue AU trigger, et
+ * l'échéance en vol survit à l'écriture de fréquence. Chacune a par ailleurs son test.
+ */
+const declencher = (apu) => {
+    declencherA(apu, FREQ_TRIGGER);
+    apu.write(NR33, FREQUENCY & 0xFF); // même octet haut : NR33 suffit, pas de re-trigger
+};
+
 /** Canal 3 alimenté, wave remplie, note lancée à la date 0. */
 const buildPlaying = (niveau = 1) => {
     const harness = buildHarness();
@@ -68,8 +131,18 @@ const buildPlaying = (niveau = 1) => {
     MOTIF.forEach((octet, i) => apu.write(WAVE + i, octet));
     apu.write(NR30, DAC_ON);
     apu.write(NR32, niveau << 5);
-    apu.write(NR33, FREQUENCY & 0xFF);
-    apu.write(NR34, TRIGGER | ((FREQUENCY >> 8) & 0x07));
+    declencher(apu);
+    return harness;
+};
+
+/** Même chose, mais déclenché tel quel sur la fréquence demandée — parité comprise. */
+const buildTriggered = (frequence, niveau = 1) => {
+    const harness = buildHarness();
+    const { apu } = harness;
+    MOTIF.forEach((octet, i) => apu.write(WAVE + i, octet));
+    apu.write(NR30, DAC_ON);
+    apu.write(NR32, niveau << 5);
+    declencherA(apu, frequence);
     return harness;
 };
 
@@ -96,9 +169,10 @@ describe('Wave - la position tourne', () => {
         expect(chan3.waveStep(0)).toBe(0);
     });
 
-    it('un échantillon tous les 256 cycles machine, et la frontière est exacte', () => {
+    it('un échantillon toutes les 512 demi-cycles, et la frontière est exacte', () => {
         const { chan3 } = buildPlaying();
-        expect(chan3.waveStep(PAS - 1), 'un cycle trop tôt').toBe(0);
+        // le premier accès est à 512 demi-cycles du trigger, soit PAS cycles machine
+        expect(chan3.waveStep(PAS - 1), 'un cycle trop tôt, soit deux demi-cycles').toBe(0);
         expect(chan3.waveStep(PAS), 'pile').toBe(1);
         expect(chan3.waveStep(2 * PAS)).toBe(2);
         expect(chan3.waveStep(31 * PAS)).toBe(31);
@@ -106,9 +180,9 @@ describe('Wave - la position tourne', () => {
 
     it('elle avance DEUX FOIS plus vite que le rouleau d\'un canal pulse', () => {
         const { chan3 } = buildPlaying();
-        // période 512 : un canal pulse changerait de cran tous les 512 cycles
+        // 512 : le canal pulse le lirait en cycles machine, le canal 3 en demi-cycles
         expect(chan3.period, 'la période est bien 512').toBe(512);
-        expect(chan3.waveStep(512), 'deux échantillons en une période').toBe(2);
+        expect(chan3.waveStep(512), 'deux échantillons en 512 cycles machine').toBe(2);
     });
 
     it('trente-deux positions font un tour', () => {
@@ -123,7 +197,7 @@ describe('Wave - la position tourne', () => {
         expect(chan3.waveStep(5 * PAS)).toBe(5);
 
         machine.totalCycles = 5 * PAS;
-        apu.write(NR34, TRIGGER | ((FREQUENCY >> 8) & 0x07));
+        declencher(apu);
 
         expect(chan3.waveStep(5 * PAS), 'repart de zéro').toBe(0);
         expect(chan3.waveStep(6 * PAS), 'et compte depuis là').toBe(1);
@@ -135,7 +209,7 @@ describe('Wave - lire les quartets', () => {
     /**
      * Semer un octet précis dans la wave RAM demande que le canal se taise : tant qu'il
      * joue, l'écriture est redirigée vers l'octet qu'il occupe (voir le dernier bloc).
-     * Couper le DAC l'éteint sans toucher à `triggeredAt`, donc sans bouger la position.
+     * Couper le DAC l'éteint sans toucher à l'échéance, donc sans bouger la position.
      */
     const semer = (apu, index, octet) => {
         apu.write(NR30, 0x00);
@@ -235,6 +309,116 @@ describe('Wave - les deux interrupteurs en amont', () => {
 });
 
 /**
+ * L'ÉCHÉANCE DU PROCHAIN ACCÈS.
+ *
+ * Le canal 3 ne se souvient pas d'une paire (position, date) qu'on recompte après coup :
+ * il porte un compteur qui décompte vers un ACCÈS, et ce compteur a été rechargé une fois
+ * pour toutes au moment où il a été armé. D'où le modèle :
+ *
+ *   - au trigger, position = 0 et échéance = 2 × trigger + périodeAuTrigger + RETARD ;
+ *   - à chaque échéance, position + 1, et rechargement avec la période COURANTE ;
+ *   - une écriture de NR33 ou NR34 sans trigger fait avancer la position jusqu'à maintenant
+ *     avec l'ANCIENNE période, mais NE TOUCHE PAS à l'échéance en cours.
+ *
+ * C'est toute la différence entre « le compteur en vol garde sa valeur de rechargement »
+ * (le matériel) et « on repart de zéro à chaque écriture de fréquence » — cette dernière
+ * détruit exactement l'information que `09-wave read while on` mesure.
+ */
+describe('Wave - l\'échéance du prochain accès', () => {
+
+    it('le trigger arme l\'échéance : la période lue AU trigger, plus le retard calibré', () => {
+        const { chan3 } = buildTriggered(FREQ_TRIGGER); // période 509
+
+        // 509 + 3 = 512 demi-cycles, soit 256 cycles machine
+        const echeance = (PERIODE_TRIGGER + RETARD) / 2;
+        expect(echeance, 'l\'échéance tombe sur un cycle machine entier').toBe(256);
+        expect(chan3.isAccessingWaveAt(echeance - 1), 'un cycle trop tôt').toBe(false);
+        expect(chan3.isAccessingWaveAt(echeance), 'pile').toBe(true);
+        expect(chan3.waveStep(echeance - 1), 'la position ne bouge qu\'à l\'accès').toBe(0);
+        expect(chan3.waveStep(echeance), 'l\'accès la fait passer à 1').toBe(1);
+    });
+
+    it('une écriture de fréquence en vol ne touche pas l\'échéance en cours', () => {
+        const { machine, apu, chan3 } = buildPlaying();
+
+        // 0x700 : période 256 demi-cycles, deux fois plus rapide. On la pose à la date 0,
+        // donc bien avant que l'échéance armée à 512 demi-cycles n'échoie.
+        machine.totalCycles = 0;
+        apu.write(NR34, 0x07); // bit 7 bas : on change la fréquence sans redéclencher
+
+        expect(chan3.isAccessingWaveAt(128), 'la nouvelle période ne raccourcit pas l\'échéance en vol').toBe(false);
+        expect(chan3.isAccessingWaveAt(PAS), 'elle échoit à l\'heure posée par le trigger').toBe(true);
+        expect(chan3.isAccessingWaveAt(PAS + 128), 'seul le rechargement suivant prend le nouveau rythme').toBe(true);
+        expect(chan3.waveStep(PAS + 128), 'deux accès écoulés').toBe(2);
+    });
+
+    it('le trigger repose l\'échéance : elle repart d\'une période pleine', () => {
+        const { machine, apu, chan3 } = buildPlaying();
+        expect(chan3.isAccessingWaveAt(PAS), 'l\'échéance d\'origine').toBe(true);
+
+        machine.totalCycles = 100;
+        declencher(apu);
+
+        expect(chan3.waveStep(100), 'la position est remise à zéro').toBe(0);
+        expect(chan3.isAccessingWaveAt(PAS), 'l\'ancienne échéance est annulée').toBe(false);
+        expect(chan3.isAccessingWaveAt(100 + PAS), 'la nouvelle compte depuis le trigger').toBe(true);
+        expect(chan3.waveStep(100 + PAS)).toBe(1);
+    });
+});
+
+/**
+ * LA PARITÉ DE LA PÉRIODE AU TRIGGER.
+ *
+ * La fenêtre d'accès est large d'UN demi-cycle, et le CPU n'agit qu'aux demi-cycles PAIRS
+ * (`2 × cycle`). L'échéance vaut `2 × trigger + période + RETARD` : `2 × trigger` est pair
+ * et RETARD est impair, donc la parité de l'échéance est CELLE DE LA PÉRIODE, inversée.
+ *
+ *     période IMPAIRE au trigger  ->  accès sur la grille du CPU, la wave RAM est lisible
+ *     période PAIRE au trigger    ->  accès 2 T-cycles à côté, invisible pour toute la note
+ *
+ * Ce n'est pas un artefact : c'est l'observable que `09-wave read while on` balaye. La ROM
+ * descend la période un cran à la fois et lit un octet sur deux — la moitié des périodes ne
+ * rend jamais que 0xFF.
+ */
+describe('Wave - la parité de la période au trigger', () => {
+
+    it.each([
+        { nom: '0x601', frequence: 0x601, periode: 511 },
+        { nom: '0x603', frequence: 0x603, periode: 509 },
+        { nom: '0x605', frequence: 0x605, periode: 507 },
+    ])('$nom, période IMPAIRE $periode : le CPU tombe pile sur l\'accès', ({ frequence, periode }) => {
+        const { machine, apu } = buildTriggered(frequence);
+
+        machine.totalCycles = (periode + RETARD) / 2;
+        expect(apu.read(WAVE + 0x0F), 'l\'octet courant, adresse ignorée').toBe(MOTIF[0]);
+    });
+
+    it.each([
+        { nom: '0x600', frequence: 0x600, periode: 512 },
+        { nom: '0x602', frequence: 0x602, periode: 510 },
+        { nom: '0x604', frequence: 0x604, periode: 508 },
+    ])('$nom, période PAIRE $periode : l\'accès tombe entre deux cycles machine', ({ frequence, periode }) => {
+        const { machine, apu } = buildTriggered(frequence);
+
+        machine.totalCycles = (periode + RETARD - 1) / 2;
+        expect(apu.read(WAVE), 'un demi-cycle trop tôt').toBe(0xFF);
+        machine.totalCycles = (periode + RETARD + 1) / 2;
+        expect(apu.read(WAVE), 'un demi-cycle trop tard').toBe(0xFF);
+    });
+
+    it('période PAIRE : le canal joue, mais le CPU ne verra la wave RAM à aucun cycle', () => {
+        const { machine, apu, chan3 } = buildTriggered(0x604); // période 508
+
+        for (let cycle = 0; cycle <= 4 * PAS; cycle++) {
+            machine.totalCycles = cycle;
+            expect(apu.read(WAVE), `cycle ${cycle}`).toBe(0xFF);
+        }
+        // 511, 1019, 1527, 2035 : quatre accès sous la lecture, tous sur des demi-cycles impairs
+        expect(chan3.waveStep(4 * PAS), 'le canal, lui, a bien avancé').toBe(4);
+    });
+});
+
+/**
  * LIRE ET ÉCRIRE LA WAVE RAM PENDANT QUE LE CANAL JOUE.
  *
  * Wiki gbdev, section « Obscure Behavior »,
@@ -247,14 +431,19 @@ describe('Wave - les deux interrupteurs en amont', () => {
  *     of the wave channel accessing wave RAM; if made at any other time, reads return $FF
  *     and writes have no effect. »
  *
+ * Pandocs, `Audio_details.md`, dit QUAND le canal y touche :
+ *
+ *   « CH3 contains an internal sample index counter… Each increment causes the
+ *     corresponding nibble to be read from wave RAM. »
+ *
+ * Donc à CHAQUE ÉCHANTILLON, pas à chaque octet : un octet porte deux échantillons, il est
+ * lu deux fois. Et seulement à l'instant EXACT de l'accès, largeur un demi-cycle — c'est ce
+ * qui rend la parité observable, et c'est pour cela que ce bloc n'existe que grâce au
+ * harnais `declencher` (voir son commentaire).
+ *
  * Deux notions à distinguer, d'où les deux méthodes :
  *   - QUEL octet le canal occupe — `waveByteIndexAt`, la position divisée par deux ;
- *   - QUAND il y touche — `isAccessingWaveAt`, l'instant où il passe à l'octet suivant.
- *
- * La fenêtre est modélisée ici au cycle machine près, notre grain le plus fin : elle
- * s'ouvre sur le cycle du changement d'octet, et sur lui seul. Le « couple of clocks » du
- * wiki compte en T-cycles, donc en dessous ; si blargg réclame plus large, c'est ce seul
- * chiffre qu'on élargira.
+ *   - QUAND il y touche — `isAccessingWaveAt`, l'instant où l'échéance échoit.
  *
  * Arbitré par `09-wave read while on` et `12-wave write while on`.
  */
@@ -273,28 +462,44 @@ describe('Wave - lire et écrire pendant que le canal joue', () => {
         expect(chan3.waveByteIndexAt(16 * OCTET), 'et le tour est bouclé').toBe(0);
     });
 
-    it('la fenêtre ne s\'ouvre qu\'au changement d\'octet', () => {
+    it('la fenêtre s\'ouvre à CHAQUE échantillon, pas à chaque octet', () => {
         const { chan3 } = buildPlaying();
 
-        expect(chan3.isAccessingWaveAt(0), 'le canal attaque son premier octet').toBe(true);
-        expect(chan3.isAccessingWaveAt(1), 'un cycle plus tard, c\'est fini').toBe(false);
-        expect(chan3.isAccessingWaveAt(PAS), 'le quartet bas ne relit rien').toBe(false);
-        expect(chan3.isAccessingWaveAt(OCTET), 'octet suivant : elle se rouvre').toBe(true);
-        expect(chan3.isAccessingWaveAt(OCTET + 1)).toBe(false);
+        expect(chan3.isAccessingWaveAt(0), 'le trigger ne lit rien : le premier accès est une période plus loin').toBe(false);
+        expect(chan3.isAccessingWaveAt(PAS), 'premier accès').toBe(true);
+        expect(chan3.isAccessingWaveAt(PAS + 1), 'un cycle plus tard, c\'est fini').toBe(false);
+        expect(chan3.isAccessingWaveAt(2 * PAS), 'échantillon suivant : la fenêtre se rouvre').toBe(true);
+        expect(chan3.isAccessingWaveAt(3 * PAS), 'et encore, sans avoir changé d\'octet').toBe(true);
+        expect(chan3.isAccessingWaveAt(4 * PAS)).toBe(true);
+    });
+
+    it('deux accès par octet, et le second relit le MÊME octet', () => {
+        const { machine, apu } = buildPlaying();
+
+        // positions 1, 2, 3, 4 aux accès : octets 0, 1, 1, 2
+        const lus = [1, 2, 3, 4].map((n) => {
+            machine.totalCycles = n * PAS;
+            return apu.read(WAVE);
+        });
+        expect(lus, 'le quartet bas rouvre la fenêtre sur son propre octet')
+            .toEqual([MOTIF[0], MOTIF[1], MOTIF[1], MOTIF[2]]);
     });
 
     it('hors fenêtre, la lecture rend 0xFF', () => {
         const { machine, apu } = buildPlaying();
 
-        machine.totalCycles = OCTET + 1;
+        machine.totalCycles = PAS + 1; // deux T-cycles après l'accès, c'est déjà trop tard
         expect(apu.read(WAVE + 0), 'le canal joue, mais il ne touche pas la RAM').toBe(0xFF);
         expect(apu.read(WAVE + 0x0F)).toBe(0xFF);
+
+        machine.totalCycles = OCTET + 1;
+        expect(apu.read(WAVE + 0), 'un échantillon plus loin, toujours pas').toBe(0xFF);
     });
 
     it('dans la fenêtre, la lecture rend l\'octet COURANT, quelle que soit l\'adresse', () => {
         const { machine, apu } = buildPlaying();
 
-        machine.totalCycles = OCTET; // le canal attaque l'octet 1
+        machine.totalCycles = OCTET; // position 2 : le canal attaque l'octet 1
         expect(apu.read(WAVE + 0x0F), 'l\'adresse demandée est ignorée').toBe(MOTIF[1]);
         expect(apu.read(WAVE + 0x00), 'elle l\'est dans les deux sens').toBe(MOTIF[1]);
     });
@@ -312,7 +517,7 @@ describe('Wave - lire et écrire pendant que le canal joue', () => {
     it('dans la fenêtre, l\'écriture atteint l\'octet courant', () => {
         const { machine, apu } = buildPlaying();
 
-        machine.totalCycles = 3 * OCTET; // le canal attaque l'octet 3
+        machine.totalCycles = 3 * OCTET; // position 6 : le canal attaque l'octet 3
         apu.write(WAVE + 0x0F, 0xAB);    // adresse ignorée, c'est l'octet 3 qui prend
 
         apu.write(NR30, 0x00);
@@ -339,9 +544,9 @@ describe('Wave - lire et écrire pendant que le canal joue', () => {
  * le temps déjà écoulé au nouveau rythme, et la position sautait.
  *
  * C'est la deuxième unité à état gardé après le sweep, et pour la même raison : ce qui
- * s'est déjà produit ne doit pas dépendre d'un réglage posé après coup. D'où la capture —
- * `_lastWaveStep` et `_lastWaveAt` — au trigger et à chaque écriture qui touche la
- * fréquence, NR33 comme NR34.
+ * s'est déjà produit ne doit pas dépendre d'un réglage posé après coup. D'où l'avance
+ * jusqu'à maintenant À L'ANCIENNE PÉRIODE au trigger et à chaque écriture qui touche la
+ * fréquence, NR33 comme NR34 — sans toucher à l'échéance en vol.
  *
  * Arbitré par `09-wave read while on`, qui pose la période MINIMALE juste après le trigger
  * avant de lire la wave RAM — la manœuvre qui rend le défaut visible.
@@ -352,26 +557,30 @@ describe('Wave - la position et les changements de période', () => {
         const { machine, apu, chan3 } = buildPlaying();
         expect(chan3.waveStep(3 * PAS), 'trois échantillons écoulés').toBe(3);
 
-        // 0x700 : période 256, donc un échantillon tous les 128 cycles machine — deux fois
-        // plus vite. Bit 7 bas : on change la fréquence sans redéclencher.
+        // 0x700 : période 256 demi-cycles, donc un échantillon tous les 128 cycles machine
+        // — deux fois plus vite. Bit 7 bas : on change la fréquence sans redéclencher.
         machine.totalCycles = 3 * PAS;
         apu.write(NR34, 0x07);
 
         expect(chan3.waveStep(3 * PAS), 'la position ne bouge pas à l\'instant du changement').toBe(3);
-        expect(chan3.waveStep(3 * PAS + 128), 'et repart d\'ici, au nouveau rythme').toBe(4);
-        expect(chan3.waveStep(3 * PAS + 256)).toBe(5);
+        expect(chan3.waveStep(3 * PAS + 128), 'l\'échéance en vol court encore sur l\'ancienne période').toBe(3);
+        expect(chan3.waveStep(3 * PAS + 256), 'elle échoit à l\'heure prévue avant le changement').toBe(4);
+        expect(chan3.waveStep(3 * PAS + 256 + 128), 'et c\'est le rechargement suivant qui adopte le nouveau rythme').toBe(5);
+        expect(chan3.waveStep(3 * PAS + 256 + 256)).toBe(6);
     });
 
     it('NR33 capture aussi : la position tient, seul le rythme change', () => {
         const { machine, apu, chan3 } = buildPlaying();
         expect(chan3.waveStep(5 * PAS)).toBe(5);
 
-        // 0x680 : période 384, un échantillon tous les 192 cycles machine.
+        // 0x680 : période 384 demi-cycles, un échantillon tous les 192 cycles machine.
         machine.totalCycles = 5 * PAS;
         apu.write(NR33, 0x80);
 
         expect(chan3.waveStep(5 * PAS), 'la position est capturée').toBe(5);
-        expect(chan3.waveStep(5 * PAS + 192), 'nouveau rythme').toBe(6);
+        expect(chan3.waveStep(5 * PAS + 192), 'l\'échéance en vol tient encore').toBe(5);
+        expect(chan3.waveStep(5 * PAS + 256), 'elle échoit sur l\'ancienne période').toBe(6);
+        expect(chan3.waveStep(5 * PAS + 256 + 192), 'nouveau rythme ensuite').toBe(7);
     });
 
     it('réécrire la même fréquence ne fait rien sauter', () => {
@@ -383,22 +592,114 @@ describe('Wave - la position et les changements de période', () => {
         expect(chan3.waveStep(7 * PAS), 'toujours la même position').toBe(7);
         expect(chan3.waveStep(8 * PAS), 'et le même rythme').toBe(8);
     });
+});
 
-    it('la séquence de blargg 09 : la période minimale posée juste après le trigger', () => {
-        const { machine, apu, chan3 } = buildHarness();
-        MOTIF.forEach((octet, i) => apu.write(WAVE + i, octet));
+/**
+ * LA SÉQUENCE MESURÉE DE `09-wave read while on`.
+ *
+ * La ROM déclenche le canal, pose IMMÉDIATEMENT la période minimale, laisse passer un délai
+ * fixe, puis lit la wave RAM — et recommence en descendant la période du trigger d'un cran
+ * à chaque tour. Le calage, mesuré :
+ *
+ *     cycle 0    NR33 = 2048 - période, NR34 = trigger | 0x07
+ *     cycle 2    NR33 = 0xFE                  (fréquence 0x7FE, période 2)
+ *     cycle 52   lecture de 0xFF30            (demi-cycle 104)
+ *
+ * Toute l'arithmétique tient en une ligne. L'échéance armée au trigger vaut `période + 3`
+ * demi-cycles ; l'écriture de NR33 ne la touche pas, mais les rechargements SUIVANTS se
+ * font à 2 demi-cycles. Les accès sont donc aux demi-cycles
+ *
+ *     période + 3,  période + 5,  période + 7,  …
+ *
+ * et la lecture, au demi-cycle 104, en attrape un si et seulement si
+ * `104 >= période + 3` ET `104 - (période + 3)` est PAIR — c'est-à-dire période IMPAIRE et
+ * période <= 101. Le k-ième accès (k à partir de 0) porte la position k + 1, donc l'octet
+ * (k + 1) / 2 arrondi par le bas.
+ *
+ * La wave RAM est semée avec l'octet i = i × 0x11, et la ROM attend
+ *
+ *     FF FF 00 FF 11 FF 11 FF 22 …
+ *
+ * C'est le test qui a le plus de valeur du fichier : il fixe RETARD, la parité, la survie
+ * de l'échéance et le pas d'un échantillon d'un seul coup. Le faire passer autrement, c'est
+ * l'avoir cassé.
+ */
+describe('Wave - la séquence mesurée de blargg 09', () => {
+
+    const ECRITURE = 2;  // cycle machine de l'écriture de NR33
+    const LECTURE = 52;  // cycle machine de la lecture, soit le demi-cycle 104
+
+    /** Octet i = i × 0x11, le motif de la ROM : 0x00, 0x11, 0x22 … 0xFF. */
+    const RAMPE = Array.from({ length: 16 }, (_, i) => i * 0x11);
+
+    const jouerLaSequence = (periode) => {
+        const { machine, apu } = buildHarness();
+        RAMPE.forEach((octet, i) => apu.write(WAVE + i, octet));
         apu.write(NR30, DAC_ON);
         apu.write(NR32, 1 << 5);
-        apu.write(NR33, 0xDD);
-        apu.write(NR34, TRIGGER | 0x07); // fréquence 0x7DD : période 35
 
-        machine.totalCycles = 10;
-        apu.write(NR33, 0xFE);           // fréquence 0x7FE : période 2
+        const frequence = 2048 - periode;
+        machine.totalCycles = 0;
+        declencherA(apu, frequence);
 
-        // Dix cycles sous une période de 35, ce n'est pas même un échantillon. Les
-        // recompter à la période 2 en ferait dix.
-        expect(chan3.waveStep(10), 'toujours au premier échantillon').toBe(0);
-        expect(chan3.waveStep(11), 'ensuite, un échantillon par cycle machine').toBe(1);
-        expect(chan3.waveStep(12)).toBe(2);
+        machine.totalCycles = ECRITURE;
+        apu.write(NR33, 0xFE); // fréquence 0x7FE : période 2, la plus courte
+
+        machine.totalCycles = LECTURE;
+        return apu.read(WAVE);
+    };
+
+    it('la ROM pose bien 0x99 puis 0x87 pour la période 103', () => {
+        const frequence = 2048 - 103;
+        expect(frequence & 0xFF, 'NR33').toBe(0x99);
+        expect(TRIGGER | ((frequence >> 8) & 0x07), 'NR34').toBe(0x87);
+    });
+
+    it.each([
+        { nom: '0x99', periode: 103, lu: 0xFF, pourquoi: 'échéance 106 : encore devant la lecture' },
+        { nom: '0x9A', periode: 102, lu: 0xFF, pourquoi: 'échéance 105 : devant, et impaire' },
+        { nom: '0x9B', periode: 101, lu: 0x00, pourquoi: 'échéance 104 : la lecture tombe dessus, position 1, octet 0' },
+        { nom: '0x9C', periode: 100, lu: 0xFF, pourquoi: 'échéance 103, impaire : 2 T-cycles à côté pour toujours' },
+        { nom: '0x9D', periode: 99, lu: 0x11, pourquoi: 'accès à 102 puis 104 : position 2, octet 1' },
+        { nom: '0x9E', periode: 98, lu: 0xFF, pourquoi: 'échéance 101, impaire' },
+        { nom: '0x9F', periode: 97, lu: 0x11, pourquoi: 'accès à 100, 102, 104 : position 3, octet 1' },
+        { nom: '0xA0', periode: 96, lu: 0xFF, pourquoi: 'échéance 99, impaire' },
+        { nom: '0xA1', periode: 95, lu: 0x22, pourquoi: 'accès à 98, 100, 102, 104 : position 4, octet 2' },
+    ])('NR33 = $nom, période $periode : la lecture rend $lu — $pourquoi', ({ periode, lu }) => {
+        expect(jouerLaSequence(periode)).toBe(lu);
+    });
+
+    it('la séquence entière, telle que la ROM l\'attend', () => {
+        const sequence = [103, 102, 101, 100, 99, 98, 97, 96, 95].map(jouerLaSequence);
+        expect(sequence).toEqual([0xFF, 0xFF, 0x00, 0xFF, 0x11, 0xFF, 0x11, 0xFF, 0x22]);
+    });
+
+    /**
+     * `12-wave write while on` emprunte le même chemin en sens inverse : la parité qui
+     * décide si la lecture voit l'octet décide aussi si l'écriture l'atteint.
+     */
+    it('la même parité gouverne l\'ÉCRITURE — le chemin de blargg 12', () => {
+        const ecrireLaSequence = (periode) => {
+            const { machine, apu } = buildHarness();
+            RAMPE.forEach((octet, i) => apu.write(WAVE + i, octet));
+            apu.write(NR30, DAC_ON);
+            apu.write(NR32, 1 << 5);
+
+            machine.totalCycles = 0;
+            declencherA(apu, 2048 - periode);
+            machine.totalCycles = ECRITURE;
+            apu.write(NR33, 0xFE);
+
+            machine.totalCycles = LECTURE;
+            apu.write(WAVE + 0x0F, 0xAB); // adresse ignorée si la fenêtre est ouverte
+
+            apu.write(NR30, 0x00); // DAC coupé : la RAM redevient lisible telle quelle
+            return [apu.read(WAVE + 0x00), apu.read(WAVE + 0x0F)];
+        };
+
+        expect(ecrireLaSequence(101), 'période impaire : l\'octet courant prend, pas celui visé')
+            .toEqual([0xAB, RAMPE[15]]);
+        expect(ecrireLaSequence(100), 'période paire : l\'écriture est perdue des deux côtés')
+            .toEqual([RAMPE[0], RAMPE[15]]);
     });
 });
