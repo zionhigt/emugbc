@@ -23,7 +23,7 @@ coûterait cher à retrouver** en revenant sur le chapitre après une pause.
 | 06-overflow on trigger | **passe** | — | — |
 | 07-len sweep period sync | **passe** | — | — |
 | 08-len ctr during power | **passe** | — | — |
-| 09-wave read while on | #1 | 70 lectures, 70 fois `FF` | A |
+| 09-wave read while on | #1 | 70 lectures, 70 fois `77` | A |
 | 10-wave trigger while on | #1 | wave RAM intacte : rien n'est modélisé | A |
 | 11-regs after power | **passe** | — | — |
 | 12-wave write while on | #1 | même famille que 09 | A |
@@ -36,18 +36,31 @@ coûterait cher à retrouver** en revenant sur le chapitre après une pause.
 
 ### 09 et 12 — la fenêtre d'accès
 
-Le symptôme est sans ambiguïté : la ROM déverse soixante-dix octets, **soixante-dix fois
-`FF`**. La fenêtre ne s'ouvre pas une seule fois. Ce n'est pas un décalage à ajuster, c'est
-une condition fausse en permanence.
+La ROM déverse soixante-dix octets, **soixante-dix fois `77`** : la fenêtre est bloquée
+**ouverte**, et toujours sur le même octet. (Avant la correction de `PUSH AF` elle rendait
+`FF` : le temps CPU corrigé a déplacé la lecture pile sur l'instant d'accès. Le symptôme
+d'une ROM dépend de l'état du reste de l'émulateur — le relever à nouveau après chaque
+correction.)
 
-Suspect nommé, à confirmer par la trace : `isAccessingWaveAt` compte encore
-`(cycle - triggeredAt) % period`, alors que la position de wave a été portée sur sa paire
-capturée (`_lastWaveStep` / `_lastWaveAt`) précisément parce que cette forme se réécrit
-quand la fréquence change en vol — ce que `09` fait juste après le trigger.
+Le modèle est faux sur trois points, établis par balayage — 170 combinaisons essayées sur
+`09`, une seule passe, et `12` qui a une autre CRC tombe sur la même :
 
-Seconde inconnue : la largeur de la fenêtre. Le wiki parle d'« a couple of clocks » en
-T-cycles ; notre modèle l'ouvre sur **un seul cycle machine**, celui du changement d'octet,
-donc au-dessus de ce grain. Si la ROM réclame plus large, c'est ce seul chiffre qui bouge.
+1. **L'horloge de la wave doit être en demi-cycles machine** (2 T-cycles, un échantillon à
+   la période minimale). La ROM mesure une distinction de 2 T, structurellement invisible
+   sur une grille en cycles entiers : c'est la parité de la période au trigger qui décide
+   si la lecture du CPU tombe sur l'accès ou à côté.
+2. **Une échéance, pas un réancrage.** `captureWaveStep` réancre la position sur la date de
+   l'écriture, ce qui efface la période au trigger — or c'est exactement la variable que la
+   ROM balaye. Le matériel garde la valeur de rechargement du compteur en vol : le premier
+   accès reste programmé à `2·trigger + périodeAuTrigger + 3` demi-cycles, et la nouvelle
+   période ne s'applique qu'au rechargement suivant.
+3. **La fenêtre s'ouvre à chaque échantillon**, pas à chaque octet, et sur un seul
+   demi-cycle. Le commentaire de `channel3.js` affirmait l'inverse. Élargir la fenêtre ne
+   donne rien : une largeur de 2 échoue sur toutes les combinaisons.
+
+La constante `+3` demi-cycles est **calibrée, pas dérivée** : elle mêle le retard réel du
+trigger de la wave et notre convention sur l'instant où une écriture atterrit dans le cycle
+machine. Deux ROMs indépendantes s'accordent dessus.
 
 ### 10 — la corruption au trigger
 
