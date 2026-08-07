@@ -1,13 +1,13 @@
 # L'APU — les lots jusqu'à la porte blargg
 
-État au 7 août 2026 : **3 ROMs vertes sur 12**, 512 tests unitaires APU verts, dépôt propre.
+État au 7 août 2026, commit `[IMPL] PUSH AF + purge de NR10` : **7 ROMs vertes sur 12**,
+1054 tests unitaires verts.
 
 La porte du chapitre est fixée : les douze ROMs `dmg_sound` vertes. Il n'existe pas d'autre
-oracle — mooneye n'a aucune suite son. Neuf restent, et elles se regroupent en quatre lots
-de natures très différentes.
+oracle — mooneye n'a aucune suite son. Cinq restent.
 
-Ce document n'explique pas l'APU. Il dit **ce qui reste, ce qui est déjà prouvé, et ce qui
-coûterait cher à retrouver** si on revient sur le chapitre après une pause.
+Ce document ne décrit pas l'APU. Il dit **ce qui reste, ce qui est déjà prouvé, et ce qui
+coûterait cher à retrouver** en revenant sur le chapitre après une pause.
 
 ---
 
@@ -16,178 +16,139 @@ coûterait cher à retrouver** si on revient sur le chapitre après une pause.
 | ROM | verdict | ce que blargg nomme | lot |
 |---|---|---|---|
 | 01-registers | **passe** | — | — |
-| 02-len ctr | #7 | Trigger with disabled length should convert 0 length to maximum | A |
-| 03-trigger | #8 | Trigger that un-freezes enabled length should clock it | A |
-| 04-sweep | #4 | If period=0, doesn't calculate | B |
-| 05-sweep details | #2 | Timer treats period 0 as 8 | B |
+| 02-len ctr | **passe** | — | — |
+| 03-trigger | #8 | Trigger that un-freezes enabled length should clock it | C |
+| 04-sweep | **passe** | — | — |
+| 05-sweep details | #4 | Exiting negate mode after calculation disables channel | B |
 | 06-overflow on trigger | **passe** | — | — |
-| 07-len sweep period sync | #2 | Length period is wrong | A |
-| 08-len ctr during power | **passe** | — *à protéger* | A |
-| 09-wave read while on | #1 | 70 lectures, 70 fois `FF` | C |
-| 10-wave trigger while on | #1 | wave RAM intacte : rien n'est modélisé | D |
-| 11-regs after power | #4 | Powering off shouldn't affect NR41 | A |
-| 12-wave write while on | #1 | même famille que 09 | C |
+| 07-len sweep period sync | **passe** | — | — |
+| 08-len ctr during power | **passe** | — | — |
+| 09-wave read while on | #1 | 70 lectures, 70 fois `FF` | A |
+| 10-wave trigger while on | #1 | wave RAM intacte : rien n'est modélisé | A |
+| 11-regs after power | **passe** | — | — |
+| 12-wave write while on | #1 | même famille que 09 | A |
 
 ---
 
-## Lot A — la longueur et le carillon
+## Lot A — la wave pendant qu'elle joue
 
-**ROMs** : 02, 03, 07, 11 à gagner, 08 à ne pas perdre.
+**ROMs** : 09, 12, puis 10.
 
-### Acquis
-
-Huit variantes de phase ont été mesurées, avec le tableau des douze ROMs à chaque fois.
-Deux résultats valent d'être gardés :
-
-- **`powerOn` est innocenté**, par la trace et non par déduction. Une voie déclenchée au
-  tic 0 se comporte à l'identique sous les deux règles, parce que `lengthRemaining` ne lit
-  que des **différences** : le décalage constant s'annule entre la capture et la mesure.
-- **`incl(t−1) == excl(t)`** pour n'importe quel jeu de positions. Décaler l'origine du
-  carillon annule donc exactement le passage à l'inclusif. Plusieurs combinaisons qui
-  « marchaient » se sont révélées algébriquement identiques au repère. À vérifier avant
-  d'attribuer un gain à un bouton.
-
-### Le nœud
-
-**08 et 11 sont mutuellement exclusives** sur la totalité de la matrice. La cloche de
-longueur inclusive prend 11 et perd 08 ; l'exclusive fait l'inverse. Aucun des trois
-boutons de phase ne prend les deux.
-
-Ce n'est donc pas un réglage qui manque, c'est une **règle**.
-
-### À faire
-
-Redériver **ensemble** la phase de la cloche, le cran gratuit (`nextStepClocksLength`) et
-la capture. Les trois dérivent de la même horloge et ne se réparent pas séparément — c'est
-ce que la matrice a coûté pour l'établir.
-
-### Poids
-
-Le plus gros lot et le plus dur. Quatre ROMs à gagner, une à ne pas perdre, et une
-trentaine de tests unitaires écrits sous l'ancienne phase à **porter, pas à supprimer**.
-
----
-
-## Lot B — le sweep
-
-**ROMs** : 04, 05.
-
-### Acquis
-
-`04-sweep` #4 **n'est pas un test de sweep**. Il pose `NR10 = $00`, donc pace 0 *et*
-shift 0 : le sweep ne calcule jamais, et ce que la ROM mesure est le compteur de longueur.
-Beaucoup de sous-tests de 04 et 05 sont des tests de longueur déguisés — le nom du fichier
-ne dit rien de la règle testée.
-
-Ce sous-test est arbitré par la phase **relative** entre la cloche de sweep et celle de
-longueur : blargg s'y synchronise sur le sweep (`sync_sweep`) et mesure la longueur, donc
-seul leur écart compte.
-
-### Le nœud
-
-Deux modèles documentés s'opposent sur le même registre :
-
-> **wiki gg8** — The volume envelope and sweep timers treat a period of 0 as 8.
-
-> **pandocs, FF10** — The hardware doesn't re-read this value until a sweep iteration
-> completes or the channel is retriggered. However, if `0` is written to this field, then
-> iterations are instantly disabled, and it will be reloaded as soon as it's set to
-> something else.
-
-`05-sweep details` #2, « Timer treats period 0 as 8 », est exactement le sous-test qui les
-départage. C'est son objet.
-
-Pandocs ajoute une règle qu'on n'implémente pas du tout :
-
-> In addition mode, if the period value would overflow, the channel is turned off instead.
-> **This occurs even if sweep iterations are disabled by the pace being 0.**
-
-Or notre calcul entier est sous `if (this.sweepPace !== 0)` : avec un pace nul on ne
-calcule pas, on ne vérifie pas le débordement, on n'éteint jamais.
-
-Trois gestes sont à distinguer, et les règles ne les gouvernent pas ensemble :
-**calculer**, **écrire en retour**, **vérifier le débordement**. `04` #4 s'appelle
-« doesn't *calculate* », `04` #12 s'appelle « doesn't *update* ».
-
-### Piège
-
-Décaler la cloche de sweep d'un tic fait passer `04` de #4 à #8 — **dans les deux
-directions opposées**. On tient l'effet sans tenir la cause, et ça contredit la table
-documentée du frame sequencer (sweep aux positions 2 et 6). À ne pas committer.
-
-### Poids
-
-Deux ROMs. La cause doit être prouvée par une trace **avant** qu'un test soit écrit : une
-passe a déjà produit huit tests bien écrits autour de la mauvaise unité.
-
----
-
-## Lot C — la fenêtre de la wave
-
-**ROMs** : 09, 12.
-
-### Acquis
+### 09 et 12 — la fenêtre d'accès
 
 Le symptôme est sans ambiguïté : la ROM déverse soixante-dix octets, **soixante-dix fois
 `FF`**. La fenêtre ne s'ouvre pas une seule fois. Ce n'est pas un décalage à ajuster, c'est
 une condition fausse en permanence.
 
-### Suspect
+Suspect nommé, à confirmer par la trace : `isAccessingWaveAt` compte encore
+`(cycle - triggeredAt) % period`, alors que la position de wave a été portée sur sa paire
+capturée (`_lastWaveStep` / `_lastWaveAt`) précisément parce que cette forme se réécrit
+quand la fréquence change en vol — ce que `09` fait juste après le trigger.
 
-`isAccessingWaveAt` compte encore `(cycle - triggeredAt) % period`, alors que la position
-de wave, elle, a été portée sur sa paire capturée (`_lastWaveStep` / `_lastWaveAt`). Dès
-que la fréquence change en vol — ce que `09` fait juste après le trigger — l'ancre et la
-période ne se rapportent plus au même instant.
+Seconde inconnue : la largeur de la fenêtre. Le wiki parle d'« a couple of clocks » en
+T-cycles ; notre modèle l'ouvre sur **un seul cycle machine**, celui du changement d'octet,
+donc au-dessus de ce grain. Si la ROM réclame plus large, c'est ce seul chiffre qui bouge.
 
-### À trancher
-
-La largeur de la fenêtre. Le wiki parle d'« a couple of clocks » en T-cycles ; notre grain
-le plus fin est le cycle machine, donc au-dessus. Si blargg réclame plus large, c'est ce
-seul chiffre qui bouge.
-
-### Poids
-
-Le lot le moins cher : deux ROMs, un symptôme net, un suspect nommé, et le code de la wave
-est récent.
-
----
-
-## Lot D — la corruption au trigger
-
-**ROM** : 10.
-
-### Acquis
+### 10 — la corruption au trigger
 
 Le dump montre la wave RAM parfaitement intacte (`00 11 22 33 …`). Ce n'est pas un bug,
 c'est une règle matérielle jamais implémentée : sur DMG, déclencher le canal 3 pendant
 qu'il lit corrompt les premiers octets.
 
-### À faire
-
-Poser la règle. Elle dépend de l'octet que le canal occupait au moment du trigger, donc du
-lot C : la même notion de « quel octet, à quel instant » sert aux deux.
+À faire après 09 et 12, dont elle réutilise la mécanique : la même notion de « quel octet,
+à quel instant » sert aux deux.
 
 ### Poids
 
-Une ROM, un cran isolé, à faire après C dont il réutilise la mécanique.
+Trois ROMs, le plus gros lot restant, et le code de la wave est récent.
+
+---
+
+## Lot B — le mode négatif du sweep
+
+**ROM** : 05, à partir de #4.
+
+`05-sweep details` avance sous-test par sous-test, et la suite est une chaîne de règles
+autour du **mode soustraction** :
+
+| # | ce que blargg nomme |
+|---|---|
+| 4 | Exiting negate mode after calculation disables channel |
+| 5 | Ending negate after it maybe changed freq disables chan |
+| 6 | Ending negate mode any other way doesn't disable channel |
+| 7 | Subtract mode uses two's complement |
+| 8 | Subtract mode uses two's complement (upper bound) |
+| 9 | Update channel frequency only when period is reloaded |
+
+La règle centrale : une fois qu'un calcul a été fait en mode négatif, **quitter ce mode
+éteint le canal**. Il faut donc retenir qu'un calcul négatif a eu lieu — un drapeau de
+plus dans l'unité de sweep, remis à zéro au trigger.
+
+Le source de blargg est lisible en brut sur `retrio/gb-test-roms`, et il documente chaque
+sous-test par un commentaire. À lire avant d'écrire quoi que ce soit.
+
+### Poids
+
+Une ROM, mais six sous-tests enchaînés : c'est un lot de règles, pas un correctif.
+
+---
+
+## Lot C — le cran gratuit au trigger
+
+**ROM** : 03, à #8 — « Trigger that un-freezes enabled length should clock it ».
+
+Dernier survivant de ce qui était le gros lot de la longueur. Les trois autres ROMs de cette
+famille sont tombées avec la correction du CPU, ce qui laisse une règle isolée et nommée :
+un trigger qui **active la longueur sur la même écriture** doit recharger le compteur au
+maximum **puis** le décrémenter aussitôt. On ne l'implémente pas du tout aujourd'hui.
+
+### Poids
+
+Une ROM, une règle. Mais c'est la seule qui ait résisté à toute l'enquête sur la phase du
+carillon, donc à traiter avec méthode.
 
 ---
 
 ## Ordre conseillé
 
-1. **Lot C** — deux ROMs pour un symptôme non ambigu et un suspect déjà nommé. Meilleur
-   rapport, et deux vertes de plus changent la lecture de tout le reste.
-2. **Lot B** — la documentation vient d'être complétée, autant finir tant que le contexte
-   est chaud.
-3. **Lot A** — le plus gros, le plus dur, et celui qui demande de porter une trentaine de
-   tests. *L'argument inverse se défend* : c'est aussi celui qui débloque le plus de ROMs.
-   Mais on y entrerait avec une règle manquante et non identifiée, ce qui est la pire
-   condition pour un gros lot.
-4. **Lot D** — en dernier, il réemploie ce que C aura construit.
+1. **Lot A** — trois ROMs, symptôme net, suspect nommé, code récent.
+2. **Lot B** — une chaîne de règles bien documentées par blargg lui-même.
+3. **Lot C** — isolé, sans dépendance, donc déplaçable à volonté.
+
+---
+
+## Une règle d'architecture, apprise quatre fois
+
+Dans cet APU, plusieurs unités sont **dérivées** : rien ne tourne en fond, on interroge leur
+état à une date. Certaines sont en plus à **état gardé** — elles retiennent une valeur avec
+sa date de capture, ou rattrapent leur retard paresseusement quand on les interroge.
+
+> **Toute écriture dans un registre qui gouverne une telle unité doit d'abord la faire
+> rattraper son retard, AVANT de changer la valeur.**
+
+Sans ça, ce qui s'est déjà produit est recompté avec un réglage posé après coup. Quatre
+applications à ce jour, toutes trouvées séparément avant que la règle soit nommée :
+
+| registre | unité | méthode |
+|---|---|---|
+| NR33, NR34 | position de wave | `captureWaveStep` |
+| NR43 | LFSR du bruit | `captureLfsrStep` |
+| NR10 | sweep | `captureSweepStep` |
+| NR11, NR21, NR31, NR41 | compteur de longueur | capture dans `NRegister1` / `NRegister4` |
+
+**Candidat non vérifié** : NR12 et ses homologues. `volumeAt` lit `envelopePeriod` et
+`isEnvelopeIncreasing` au moment de l'appel (`channel.js`), donc l'enveloppe est
+probablement dans le même cas. Aucune ROM ne l'a réclamé pour l'instant.
 
 ---
 
 ## Acquis à ne pas re-dériver
+
+**L'oracle du son teste aussi le CPU.** `delay_apu` est du code qui s'exécute, pas une
+horloge de test. Un seul cycle machine manquant dans `PUSH_AF` — qui ne payait pas le
+décrément de SP là où `PUSH_r16` le payait — faisait dériver chaque `delay_apu` de 16
+cycles, et coûtait **trois ROMs**. Avant de suspecter l'APU, vérifier que le temps que
+blargg croit mesurer est celui qui s'écoule.
 
 **`delay_apu`** vaut **4096 cycles machine**, soit une période de longueur, soit deux tics
 de carillon. Établi par les commentaires de `05` #6. Le fichier `apu.s` où vit la macro
@@ -198,14 +159,38 @@ cartouche : code en `$A000`, signature `DE B0 61` en `$A001-$A003`, texte termin
 zéro à partir de `$A004`. C'est la **phrase** qui vaut, pas le numéro : elle nomme la règle
 manquante.
 
-**Le traceur** — un pilote autonome lancé par `vite-node` journalise les transitions
-allumé/éteint des quatre voies avec leur date en tics, et il marche **aussi sur une ROM qui
-passe**, ce que le journal `APU_JOURNAL` intégré ne permet pas. C'est l'instrument qui a
-tranché toutes les questions de phase.
+**Le traceur** — un pilote autonome lancé par `vite-node`, dont le harnais se copie depuis
+`dmg-sound.test.js`, journalise ce qu'on veut et marche **aussi sur une ROM qui passe**, ce
+que le journal `APU_JOURNAL` intégré ne permet pas.
 
-**Les cartouches** — aucune des neuf rouges n'attend quoi que ce soit du MBC. Elles
-déclarent le type `0x03`, mais avec 32 Ko de ROM et un seul banc de 8 Ko de RAM : rien à
-commuter. Seule l'activation de la RAM sert, et elle marche déjà.
+**Les cartouches** — aucune des rouges n'attend quoi que ce soit du MBC. Elles déclarent le
+type `0x03`, mais avec 32 Ko de ROM et un seul banc de 8 Ko de RAM : rien à commuter.
+
+**Les noms de fichiers mentent.** `04-sweep` #4 s'appelle « If period=0, doesn't calculate »
+et pose pace 0 *et* shift 0 : le sweep ne calcule jamais, et ce que la ROM mesure est le
+compteur de longueur. Toujours lire le source du sous-test avant de croire son intitulé.
+
+---
+
+## Pistes réfutées, à ne pas rouvrir
+
+**La phase du carillon.** Une matrice de huit variantes a été mesurée — cloche de longueur
+inclusive, origine de `powerOn` décalée, phase de `nextStepClocksLength`, sweep et
+enveloppe — avec le tableau des douze ROMs à chaque fois. **Aucune ne dépassait 3 vertes.**
+Trois choses en sont restées :
+
+- `incl(t−1) == excl(t)` pour n'importe quel jeu de positions. Décaler l'origine annule
+  donc le passage à l'inclusif : plusieurs combinaisons « qui marchaient » étaient
+  algébriquement le repère. À vérifier avant d'attribuer un gain à un bouton.
+- `powerOn` est innocenté par la trace : `lengthRemaining` ne lit que des **différences**,
+  donc un décalage constant s'annule entre la capture et la mesure.
+- Le saut de `04` #4 à #8 qu'on attribuait à la phase du sweep était en réalité la dérive
+  de `delay_apu`. La correction de `PUSH AF` produit le même saut, sans toucher à la phase.
+
+**Le modèle pandocs du rechargement du pace.** Pandocs dit qu'écrire 0 dans la cadence
+désactive les itérations instantanément et que la valeur est rechargée dès qu'on repose du
+non-nul. `05` #2 contredit ce modèle : c'est celui du wiki gg8 — « treat a period of 0 as
+8 », minuteur qui continue de descendre — que la ROM exige, et c'est celui qu'on avait déjà.
 
 ---
 
