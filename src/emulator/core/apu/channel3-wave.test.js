@@ -35,6 +35,12 @@ import buildTimer from '../timer/index';
  * Ce que le matériel fait quand on lit ou écrit la wave RAM PENDANT que le canal joue
  * (blargg 09 et 12) a son bloc en milieu de fichier ; la corruption des quatre premiers
  * octets quand on redéclenche PENDANT un accès (blargg 10) a le dernier.
+ *
+ * ET LES DEUX INSTANTS NE SONT PAS LE MÊME. Un cycle machine dure deux demi-cycles : la
+ * lecture du CPU se juge sur le PREMIER, la corruption au trigger sur le SECOND. Un
+ * demi-cycle les sépare, et c'est mesuré, pas dérivé : les ROMs 09 et 12 calent la lecture,
+ * la ROM 10 cale la corruption, et elles ne tombent d'accord sur aucune valeur commune. Les
+ * deux blocs ont donc chacun sa parité de période au trigger, en miroir l'un de l'autre.
  */
 
 const NR30 = 0xFF1A;
@@ -73,6 +79,13 @@ const PAS = PERIODE / 2;
 /** frequency = 1539 : période de 509 demi-cycles — IMPAIRE, et 509 + RETARD = 512. */
 const FREQ_TRIGGER = 0x603;
 const PERIODE_TRIGGER = 2048 - FREQ_TRIGGER;
+
+/** frequency = 1540 : période de 508 demi-cycles — PAIRE, et 508 + RETARD = 511, IMPAIR. */
+const FREQ_TRIGGER_CORRUPTION = 0x604;
+const PERIODE_TRIGGER_CORRUPTION = 2048 - FREQ_TRIGGER_CORRUPTION;
+
+/** Le demi-cycle du premier accès sous cette phase : 511, donc en SECONDE moitié du cycle 255. */
+const PREMIER_ACCES_CORRUPTION = PERIODE_TRIGGER_CORRUPTION + RETARD;
 
 const buildHarness = () => {
     const machine = {
@@ -132,6 +145,39 @@ const buildPlaying = (niveau = 1) => {
     apu.write(NR30, DAC_ON);
     apu.write(NR32, niveau << 5);
     declencher(apu);
+    return harness;
+};
+
+/**
+ * DÉCLENCHER EN LAISSANT LA CORRUPTION TOMBER SUR DES CYCLES MACHINE ENTIERS.
+ *
+ * Miroir exact de `declencher`, à la parité près, et pour la raison inverse.
+ *
+ * La corruption au trigger se juge un demi-cycle APRÈS la lecture (voir l'en-tête du
+ * dernier bloc). Sur la phase de `declencher` — période IMPAIRE, accès aux demi-cycles
+ * PAIRS — elle tomberait donc systématiquement entre deux cycles machine, et aucune
+ * écriture de NR34 ne pourrait jamais l'atteindre. Il faut l'autre parité.
+ *
+ * On déclenche donc à 0x604, période 508, PAIRE : l'échéance vaut 508 + 3 = 511 demi-cycles,
+ * IMPAIRE. Les accès du canal tombent aux demi-cycles 511, 1023, 1535… — invisibles au CPU
+ * en lecture, mais chacun dans la seconde moitié d'un cycle machine, là où la corruption se
+ * juge. Puis on pose 0x600 comme dans `declencher` : même octet haut, donc NR33 suffit, et
+ * l'échéance en vol garde sa valeur, si bien que la période redevient 512 sans bouger la
+ * phase.
+ */
+const declencherPourLaCorruption = (apu) => {
+    declencherA(apu, FREQ_TRIGGER_CORRUPTION);
+    apu.write(NR33, FREQUENCY & 0xFF); // même octet haut : NR33 suffit, pas de re-trigger
+};
+
+/** Canal 3 alimenté, wave remplie, note lancée à la date 0 sur la phase de la CORRUPTION. */
+const buildCorrupting = (niveau = 1) => {
+    const harness = buildHarness();
+    const { apu } = harness;
+    MOTIF.forEach((octet, i) => apu.write(WAVE + i, octet));
+    apu.write(NR30, DAC_ON);
+    apu.write(NR32, niveau << 5);
+    declencherPourLaCorruption(apu);
     return harness;
 };
 
@@ -735,6 +781,29 @@ describe('Wave - la séquence mesurée de blargg 09', () => {
  * bloc précédent. C'est ce qui rend le contournement possible : éteindre le canal juste
  * avant, comme le wiki le recommande, ferme la fenêtre et la corruption n'a pas lieu.
  *
+ * MAIS PAS AU MÊME INSTANT QUE LA LECTURE, ET C'EST TOUT L'OBJET DE CE BLOC.
+ *
+ * Un cycle machine dure deux demi-cycles. La lecture et l'écriture de la wave RAM se jugent
+ * sur le PREMIER — c'est ce que fixent `09` et `12`, à `période + 3` demi-cycles du trigger.
+ * La corruption, elle, se juge sur le SECOND : un demi-cycle plus tard, soit `période + 2`
+ * ramené sur la grille des dates du CPU. C'est ce que fixe `10`, et rien d'autre : sous le
+ * calage de la lecture, la ROM reste rouge ; d'un demi-cycle plus loin, elle passe.
+ *
+ * CALIBRÉ PAR LES ROMs, PAS DÉRIVÉ DU MATÉRIEL — comme RETARD lui-même, dont ce second
+ * instant est le voisin immédiat. Il a été trouvé par balayage : 84 combinaisons de largeur
+ * et de phase, chacune une exécution complète de la ROM, une seule passante. La piste « la
+ * fenêtre du trigger est plus large que celle de la lecture » a été essayée et RÉFUTÉE :
+ * aucune largeur supérieure à un demi-cycle ne passe, à aucune phase. Ce n'est pas une
+ * tolérance, c'est un décalage. Que personne ne le prenne plus tard pour une vérité dérivée.
+ *
+ * CONSÉQUENCE SUR LE HARNAIS, et c'est structurel, pas un réglage. La fenêtre est large d'UN
+ * demi-cycle et le CPU n'agit qu'aux demi-cycles PAIRS : sur une même note, la lecture et la
+ * corruption ne peuvent donc pas être toutes deux atteignables. La parité de la période au
+ * trigger choisit laquelle. `buildPlaying` (période 509, IMPAIRE) rend la LECTURE visible —
+ * c'est la phase des blocs précédents ; `buildCorrupting` (période 508, PAIRE) rend la
+ * CORRUPTION atteignable — c'est celle-ci. Les deux formes sont des miroirs exacts : mêmes
+ * octets, mêmes indices, mêmes quadruplets, à un cycle machine près.
+ *
  * PIÈGE D'ORDRE, pour qui implémente. `NRegister4.setValue` pose `_isEnabled` PUIS appelle
  * `onTrigger`, qui remet la position à zéro : quand `onTrigger` s'exécute, l'état qui
  * décide de la corruption a déjà disparu. Elle se lit donc à l'entrée de l'écriture de
@@ -750,19 +819,29 @@ describe('Wave - la séquence mesurée de blargg 09', () => {
  */
 describe('Wave - la corruption de la wave RAM au trigger', () => {
 
-    /** NR34 seul, bit 7 armé : `buildPlaying` a laissé la fréquence à 0x600, on la reprend. */
+    /** NR34 seul, bit 7 armé : `buildCorrupting` a laissé la fréquence à 0x600, on la reprend. */
     const REDECLENCHEMENT = TRIGGER | ((FREQUENCY >> 8) & 0x07);
 
     /**
-     * LE CYCLE MACHINE OÙ LE CANAL OCCUPE L'OCTET `index`.
+     * LE CYCLE MACHINE DONT LA SECONDE MOITIÉ ATTRAPE L'OCTET `index`.
      *
-     * Sous `buildPlaying`, les accès tombent à n × PAS et portent la position n, donc
-     * l'octet `n / 2` arrondi par le bas : n = 2 × index vise le quartet HAUT de l'octet
-     * voulu. L'octet 0 fait exception — sa première occurrence, n = 0, est l'instant du
-     * trigger lui-même, où aucun accès n'a encore eu lieu. On le prend un tour plus loin,
-     * n = 32, qui ramène la position à 0 : même octet, même quartet, même phase.
+     * Sous `buildCorrupting`, l'échéance vaut 508 + RETARD = 511 demi-cycles et se recharge
+     * toutes les 512 : les accès du canal tombent aux demi-cycles IMPAIRS 511, 1023, 1535…
+     * Le n-ième d'entre eux occupe donc la SECONDE moitié du cycle machine n × PAS − 1, et
+     * porte la position n, donc l'octet `n / 2` arrondi par le bas.
+     *
+     * n = 2 × index vise le quartet HAUT de l'octet voulu. L'octet 0 fait exception — sa
+     * première occurrence, n = 0, est l'instant du trigger lui-même, où aucun accès n'a
+     * encore eu lieu. On le prend un tour plus loin, n = 32, qui ramène la position à 0 :
+     * même octet, même quartet, même phase.
+     *
+     * Ce sont exactement les dates de la phase de lecture, MOINS UN CYCLE MACHINE.
      */
-    const accesA = (index) => (index === 0 ? 32 : 2 * index) * PAS;
+    const accesA = (index) => {
+        const rang = index === 0 ? 32 : 2 * index;
+        const demiCycle = PREMIER_ACCES_CORRUPTION + (rang - 1) * PERIODE;
+        return (demiCycle - 1) / 2; // le cycle machine dont il occupe la seconde moitié
+    };
 
     /** Éteindre le canal rouvre la RAM à l'adressage normal ; NR30 ne touche pas son contenu. */
     const lireLaRAM = (apu) => {
@@ -772,24 +851,25 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
 
     /** Redéclenche PILE sur l'accès à `index`, puis rend les seize octets. */
     const corrompreSur = (index) => {
-        const { machine, apu } = buildPlaying();
+        const { machine, apu } = buildCorrupting();
         machine.totalCycles = accesA(index);
         apu.write(NR34, REDECLENCHEMENT);
         return lireLaRAM(apu);
     };
 
     it.each([
-        { nom: '0x00', index: 0 },
-        { nom: '0x01', index: 1 },
-        { nom: '0x04', index: 4 },
-        { nom: '0x09', index: 9 },
-        { nom: '0x0F', index: 15 },
-    ])('le harnais vise juste : à l\'accès de l\'octet $nom, la fenêtre est ouverte sur lui', ({ index }) => {
-        const { chan3 } = buildPlaying();
+        { nom: '0x00', index: 0, precedent: 15 },
+        { nom: '0x01', index: 1, precedent: 0 },
+        { nom: '0x04', index: 4, precedent: 3 },
+        { nom: '0x09', index: 9, precedent: 8 },
+        { nom: '0x0F', index: 15, precedent: 14 },
+    ])('le harnais vise juste : l\'accès à l\'octet $nom tombe dans la seconde moitié du cycle', ({ index, precedent }) => {
+        const { chan3 } = buildCorrupting();
         const cycle = accesA(index);
 
-        expect(chan3.isAccessingWaveAt(cycle), 'le canal y touche à cet instant exact').toBe(true);
-        expect(chan3.waveByteIndexAt(cycle), 'et c\'est bien cet octet qu\'il occupe').toBe(index);
+        expect(chan3.isAccessingWaveAt(cycle), 'la fenêtre de LECTURE, elle, reste fermée : ce n\'est pas la même phase').toBe(false);
+        expect(chan3.waveByteIndexAt(cycle), 'au début du cycle machine, le canal en est encore à l\'octet précédent').toBe(precedent);
+        expect(chan3.waveByteIndexAt(cycle + 1), 'l\'accès a eu lieu entre les deux : c\'est cet octet-là qu\'il portait').toBe(index);
     });
 
     it.each([
@@ -838,15 +918,23 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
             .toEqual(MOTIF.slice(8, 12));
     });
 
+    /**
+     * Le témoin en tête n'est pas décoratif : sur cette phase, la fenêtre de LECTURE n'est
+     * ouverte à aucun cycle machine de la note, donc `isAccessingWaveAt` répond false
+     * partout et ne peut plus servir de garde-fou. Sans le témoin, ces trois cas passeraient
+     * aussi sur une implémentation qui ne corrompt jamais rien.
+     */
     it.each([
         { nom: '+1', decalage: 1, quand: 'un cycle machine après l\'accès' },
         { nom: '-1', decalage: -1, quand: 'un cycle machine avant l\'accès' },
         { nom: '+128', decalage: PAS / 2, quand: 'à mi-chemin entre deux accès' },
     ])('hors fenêtre ($nom, $quand), rien ne bouge', ({ decalage }) => {
-        const { machine, apu, chan3 } = buildPlaying();
+        expect(corrompreSur(9).slice(0, 4), 'témoin : à deux demi-cycles près, cet instant corrompt')
+            .toEqual(MOTIF.slice(8, 12));
+
+        const { machine, apu } = buildCorrupting();
         const cycle = accesA(9) + decalage;
 
-        expect(chan3.isAccessingWaveAt(cycle), 'le harnais vise bien hors fenêtre').toBe(false);
         machine.totalCycles = cycle;
         apu.write(NR34, REDECLENCHEMENT);
 
@@ -861,7 +949,7 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
         apu.write(NR32, 1 << 5);
 
         machine.totalCycles = 1000; // une date quelconque : aucun accès n'est encore armé
-        declencher(apu);
+        declencherPourLaCorruption(apu);
 
         expect(lireLaRAM(apu), 'aucun octet en cours de lecture, donc rien à recopier')
             .toEqual(MOTIF);
@@ -882,7 +970,7 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
         expect(corrompreSur(9).slice(0, 4), 'témoin : à nu, cet instant corrompt')
             .toEqual(MOTIF.slice(8, 12));
 
-        const { machine, apu } = buildPlaying();
+        const { machine, apu } = buildCorrupting();
         machine.totalCycles = accesA(9);
         apu.write(NR30, 0x00);   // le canal s'éteint : il ne lit plus la RAM
         apu.write(NR30, DAC_ON); // le DAC revient, mais le canal reste éteint jusqu'au trigger
@@ -892,9 +980,10 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
     });
 
     it('le trigger fait son office par ailleurs : position à zéro, échéance réarmée', () => {
-        const { machine, apu, chan3 } = buildPlaying();
+        const { machine, apu, chan3 } = buildCorrupting();
         const cycle = accesA(9);
-        expect(chan3.waveStep(cycle), 'position 18 : le quartet haut de l\'octet 9').toBe(18);
+        expect(chan3.waveStep(cycle), 'position 17 au début du cycle machine').toBe(17);
+        expect(chan3.waveStep(cycle + 1), 'l\'accès attrapé porte la position 18, le quartet haut de l\'octet 9').toBe(18);
 
         machine.totalCycles = cycle;
         apu.write(NR34, REDECLENCHEMENT);
@@ -908,5 +997,46 @@ describe('Wave - la corruption de la wave RAM au trigger', () => {
 
         expect(lireLaRAM(apu), 'et la corruption a bien eu lieu au passage')
             .toEqual([...MOTIF.slice(8, 12), ...MOTIF.slice(4)]);
+    });
+
+    /**
+     * LES DEUX INSTANTS NE SONT PAS LE MÊME, ET C'EST CE QUE CES DEUX TESTS NOMMENT.
+     *
+     * Le reste du bloc décrit CE QUE la corruption recopie ; ces deux-là disent QUAND, et
+     * disent que ce quand n'est pas celui de la lecture. Ils se lisent ensemble : chacun
+     * prend une parité de période au trigger, et montre que sur cette parité l'une des deux
+     * règles s'arme pendant que l'autre reste muette. Un modèle qui juge les deux au même
+     * demi-cycle en échoue forcément un — c'est là toute la mesure, réduite à deux cas.
+     *
+     * Le second, en particulier, est le seul test du fichier qui exige un NON-effet à un
+     * instant où le canal touche pourtant la RAM sous les yeux du CPU.
+     */
+    it('sur la phase de la corruption, le CPU ne voit RIEN de la wave RAM', () => {
+        const { machine, apu, chan3 } = buildCorrupting();
+        const cycle = accesA(9);
+
+        machine.totalCycles = cycle;
+        expect(chan3.isAccessingWaveAt(cycle), 'la fenêtre de lecture est fermée').toBe(false);
+        expect(apu.read(WAVE), 'le CPU ne lit que 0xFF').toBe(0xFF);
+        expect(apu.read(WAVE + 0x09), 'à toute adresse').toBe(0xFF);
+
+        apu.write(NR34, REDECLENCHEMENT);
+
+        expect(lireLaRAM(apu).slice(0, 4), 'la corruption, elle, a bien eu lieu au même cycle machine')
+            .toEqual(MOTIF.slice(8, 12));
+    });
+
+    it('et réciproquement : là où le CPU lit l\'octet, le trigger ne corrompt pas', () => {
+        const { machine, apu, chan3 } = buildPlaying(); // période IMPAIRE : la phase de la LECTURE
+        const cycle = 2 * 9 * PAS;                      // l'accès qui porte l'octet 9
+
+        machine.totalCycles = cycle;
+        expect(chan3.isAccessingWaveAt(cycle), 'la fenêtre de lecture est grande ouverte').toBe(true);
+        expect(apu.read(WAVE), 'le CPU lit bien l\'octet 9 en direct').toBe(MOTIF[9]);
+
+        apu.write(NR34, REDECLENCHEMENT);
+
+        expect(lireLaRAM(apu), 'un demi-cycle plus loin, l\'accès est déjà passé : rien n\'est corrompu')
+            .toEqual(MOTIF);
     });
 });
