@@ -373,3 +373,85 @@ describe('Sweep - la cadence 0', () => {
         expect(chan1.frequencyAt(clocheSweep(10)), 'deuxième échéance : 0x180 + 0xC0').toBe(0x240);
     });
 });
+
+/**
+ * ÉCRIRE DANS NR10 PURGE D'ABORD LE RETARD.
+ *
+ * L'unité de sweep est la seule à état gardé avec rattrapage paresseux : `frequencyAt`
+ * avance son minuteur d'un coup de cloche à la fois et retient où il en est. Personne ne la
+ * fait tourner en fond — elle ne se réveille QUE quand on l'interroge. Une écriture dans
+ * NR10 qui ne la réveille pas d'abord laisse donc les coups en attente se rejouer avec la
+ * cadence, le sens et le décalage QUI VIENNENT D'ÊTRE ÉCRITS, alors qu'ils appartiennent à
+ * l'ancien réglage.
+ *
+ * Même règle et même patron que NR33/NR34 (`captureWaveStep`) et NR43 (`captureLfsrStep`) :
+ * capturer AVANT que `super.setValue` ne change la valeur.
+ *
+ * Le scénario est celui de `05-sweep details` #2, repris tel quel : il pose une cadence 0
+ * en vol, précisément pour que le minuteur reparte de 8 sans rien calculer (voir le
+ * describe précédent), puis remet une cadence 1 avant que ces huit crans soient écoulés.
+ * Sans la purge, les deux coups en retard sont recomptés à la cadence 1 et la note meurt
+ * huit cloches trop tôt.
+ */
+describe('Sweep - écrire NR10 purge le retard', () => {
+
+    /** Une date en tics de carillon (le frame sequencer), pour viser entre deux cloches. */
+    const tic = (n) => n * TIC;
+
+    /**
+     * 512 avec cadence 1 et décalage 1, puis deux écritures dans NR10, et JAMAIS la moindre
+     * interrogation du canal entre les deux : c'est tout l'enjeu. Une lecture de NR52 ou un
+     * appel à `isEnabled` suffirait à réveiller l'unité et à masquer le défaut.
+     */
+    const buildInterrupted = () => {
+        const harness = buildSweeping({ sweep: { pace: 1, shift: 1 }, frequency: 0x200 });
+        const { machine, apu } = harness;
+
+        // tic 4 : un tic APRÈS la première cloche (tic 3), qui est donc due et non comptée.
+        machine.totalCycles = tic(4);
+        apu.write(NR10, nr10({ pace: 0, shift: 1 }));
+
+        // tic 10 : après la deuxième cloche (tic 7), avant la troisième (tic 11).
+        machine.totalCycles = tic(10);
+        apu.write(NR10, nr10({ pace: 1, shift: 1 }));
+
+        return harness;
+    };
+
+    it('les coups en retard se comptent à l\'ANCIEN réglage, pas au nouveau', () => {
+        const { chan1 } = buildInterrupted();
+        // Une seule échéance a calculé, la première : 512 + 256 = 768. Les deux suivantes
+        // sont tombées pendant la cadence 0, qui recharge le minuteur sans rien calculer.
+        expect(chan1.frequencyAt(clocheSweep(3)), 'un seul pas balayé').toBe(768);
+        expect(chan1.isEnabledAt(clocheSweep(3)), 'et la note est bien vivante').toBe(true);
+    });
+
+    it('la note survit les huit crans que la cadence 0 a rechargés', () => {
+        const { chan1 } = buildInterrupted();
+        // La cloche tombée pendant la cadence 0 a rechargé le minuteur à 8 : le calcul
+        // suivant n'a lieu qu'à la dixième cloche, 768 + 384 = 1152. À la onzième,
+        // 1152 + 576 = 1728 est retenu, mais son second contrôle donne 2592 : c'est là,
+        // et pas avant, que la note meurt.
+        expect(chan1.frequencyAt(clocheSweep(10)), 'premier calcul depuis la recharge').toBe(1152);
+        expect(chan1.isEnabledAt(clocheSweep(10)), 'toujours vivante huit cloches plus tard').toBe(true);
+        expect(chan1.isEnabledAt(clocheSweep(11)), 'elle ne meurt qu\'ici').toBe(false);
+    });
+
+    it('réécrire la MÊME valeur dans NR10 ne fait rien sauter', () => {
+        // Le garde-fou de la purge : elle rejoue le retard, elle ne le remet pas à zéro et
+        // ne recharge pas le minuteur. Même échelle que « la fréquence monte » plus haut,
+        // à ceci près qu'une écriture inutile tombe au milieu.
+        const { machine, apu, chan1 } = buildSweeping({
+            sweep: { pace: 1, shift: 3 }, frequency: 1024,
+        });
+
+        machine.totalCycles = tic(4);
+        apu.write(NR10, nr10({ pace: 1, shift: 3 }));
+
+        expect(chan1.frequencyAt(clocheSweep(1)), '1024 + 128').toBe(1152);
+        expect(chan1.frequencyAt(clocheSweep(2)), '1152 + 144').toBe(1296);
+        expect(chan1.frequencyAt(clocheSweep(3)), '1296 + 162').toBe(1458);
+        expect(chan1.frequencyAt(clocheSweep(4)), '1458 + 182').toBe(1640);
+        expect(chan1.isEnabledAt(clocheSweep(4)), 'et vivante comme sans l\'écriture').toBe(true);
+    });
+});

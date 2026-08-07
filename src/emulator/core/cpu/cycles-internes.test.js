@@ -125,8 +125,34 @@ describe('Cycles internes : ce qu\'aucun accès au bus n\'explique', () => {
   });
 
   describe('la pile : le décrément de SP se paie, l\'incrément non', () => {
-    it('PUSH BC (0xC5) : fetch + 1 interne (SP = SP-1) + 2 écritures', () => {
-      expect(measure([0xc5])).toBe(attendu('PUSH_r16'));
+    /**
+     * LES QUATRE PUSH PAIENT LE MÊME PRIX.
+     *
+     * gbctr (gekkio) chapitre 6 : PUSH rr dure 16 T-cycles, soit 4 cycles machine, et AF
+     * n'y fait pas exception — c'est une paire de registres comme les trois autres. Le
+     * fetch et les deux écritures pile n'expliquent que trois de ces cycles ; le quatrième
+     * est le décrément de SP, qu'aucun accès au bus ne porte et qui doit donc être payé
+     * explicitement.
+     *
+     * Les quatre sont ici alors qu'un seul identifiant peut être en cause : un test qui ne
+     * couvrirait que la forme cassée laisserait la régression symétrique passer.
+     *
+     * L'attendu est LE NOMBRE DU MATÉRIEL, pas `instructions[id].cycle` — contrairement au
+     * reste du fichier, et pour une raison précise : c'est exactement quand la dépense et
+     * la déclaration divergent que le défaut se voit. La seconde assertion vérifie qu'elles
+     * tombent bien sur la même valeur, de sorte que baisser la config ne suffise pas à
+     * décrocher le vert.
+     */
+    const CYCLES_PUSH = 4;
+
+    it.each([
+      { nom: 'PUSH BC (0xC5)', opcode: 0xc5, id: 'PUSH_r16' },
+      { nom: 'PUSH DE (0xD5)', opcode: 0xd5, id: 'PUSH_r16' },
+      { nom: 'PUSH HL (0xE5)', opcode: 0xe5, id: 'PUSH_r16' },
+      { nom: 'PUSH AF (0xF5)', opcode: 0xf5, id: 'PUSH_AF' },
+    ])('$nom : fetch + 1 interne (SP = SP-1) + 2 écritures', ({ opcode, id }) => {
+      expect(measure([opcode]), 'ce que le CPU dépense vraiment').toBe(CYCLES_PUSH);
+      expect(attendu(id), 'et ce que sa propre déclaration annonce').toBe(CYCLES_PUSH);
     });
 
     it('CALL nn (0xCD) : fetch + 2 opérandes + 1 interne + 2 écritures', () => {
