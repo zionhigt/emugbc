@@ -25,8 +25,19 @@ class NR33 extends NRegister {
         return super.setValue(val);
     }
 }
+/**
+ * La corruption de la wave RAM se juge ICI, À L'ENTRÉE, avant tout le reste.
+ *
+ * Deux choses la consommeraient si on la laissait descendre :
+ *   - `catchUpWave` compte l'accès qui tombe exactement à cette date et pousse l'échéance
+ *     d'une période au-delà, si bien qu'après lui le canal ne « touche » plus la RAM à
+ *     maintenant — mesuré : appliquée après, la règle ne se déclenche jamais ;
+ *   - plus bas encore, `NRegister4.setValue` pose `_isEnabled` puis `onTrigger` remet la
+ *     position à zéro : l'état dont dépend la corruption n'existe déjà plus.
+ */
 class NR34 extends NRegister4 {
     setValue(val) {
+        if (byte.getFlag(val, 7)) this.parent.corruptWaveRAMOnTrigger();
         this.parent.catchUpWave();
         return super.setValue(val);
     }
@@ -45,6 +56,15 @@ const HALF_CYCLES_PER_MACHINE_CYCLE = 2;
 
 /** Seize octets de wave RAM, deux quartets par octet. */
 const WAVE_SAMPLE_COUNT = 32;
+
+/** Première adresse de la wave RAM : elle s'indexe en absolu dans `apu._WaveRAM`. */
+const WAVE_RAM_START = 0xFF30;
+
+/**
+ * La corruption au trigger travaille par quadruplets ALIGNÉS : quatre octets recopiés en
+ * tête, pris à `index & ~3`. C'est la granularité que donne le wiki, pas un choix.
+ */
+const WAVE_CORRUPTION_BLOCK_SIZE = 4;
 
 /**
  * CONSTANTE CALIBRÉE, PAS DÉRIVÉE. Elle ne se démontre pas à partir du matériel : elle a
@@ -128,7 +148,7 @@ export default function(apu) {
                 const position = this.waveStep(cycle);
                 // Lecture directe : passer par apu.read ferait retomber le canal sur sa
                 // propre porte, et il se lirait 0xFF dès qu'il n'est pas dans sa fenêtre.
-                const octet = this.apu._WaveRAM[0xFF30 + this.waveByteIndexAt(cycle)].getValue();
+                const octet = this.apu._WaveRAM[WAVE_RAM_START + this.waveByteIndexAt(cycle)].getValue();
                 return position % 2 === 0 ? octet >> 4 : octet & 0x0F;
             }
 
@@ -167,6 +187,48 @@ export default function(apu) {
                 const accesses = this.waveAccessCountAt(now);
                 this._wavePosition = (this._wavePosition + accesses) % WAVE_SAMPLE_COUNT;
                 this._nextWaveAccess += accesses * this.period;
+            }
+
+            /**
+             * Recopier un octet de wave RAM sur un autre, sans passer par `apu.write` : le
+             * canal joue encore à cet instant, l'écriture retomberait sur sa propre porte
+             * d'accès et se ferait rediriger vers l'octet courant.
+             */
+            copyWaveByte(from, to) {
+                const octet = this.apu._WaveRAM[WAVE_RAM_START + from].getValue();
+                this.apu._WaveRAM[WAVE_RAM_START + to].setValue(octet);
+            }
+
+            /**
+             * LA CORRUPTION DE LA WAVE RAM AU TRIGGER (DMG).
+             *
+             * Wiki gbdev, « Obscure Behavior » : « Triggering the wave channel on the DMG
+             * while it reads a sample byte will alter the first four bytes of wave RAM. If
+             * the channel was reading one of the first four bytes, the only first byte will
+             * be rewritten with the byte being read. If the channel was reading one of the
+             * later 12 bytes, the first FOUR bytes of wave RAM will be rewritten with the
+             * four aligned bytes that the read was from. »
+             *
+             * Le déclencheur n'est donc pas le trigger seul : il faut que le canal ait été
+             * EN TRAIN de lire un octet à cet instant précis — allumé, et dans sa fenêtre
+             * d'accès. `isAccessingWaveAt` porte les deux conditions.
+             *
+             * Le quadruplet source commence toujours à 4 ou plus, la destination s'arrête à
+             * 3 : source et destination ne se chevauchent jamais, l'ordre de copie est libre.
+             */
+            corruptWaveRAMOnTrigger() {
+                const now = this.apu.totalMachineCycles;
+                if (!this.isAccessingWaveAt(now)) return;
+
+                const index = this.waveByteIndexAt(now);
+                if (index < WAVE_CORRUPTION_BLOCK_SIZE) {
+                    this.copyWaveByte(index, 0);
+                    return;
+                }
+                const base = index - (index % WAVE_CORRUPTION_BLOCK_SIZE);
+                for (let offset = 0; offset < WAVE_CORRUPTION_BLOCK_SIZE; offset++) {
+                    this.copyWaveByte(base + offset, offset);
+                }
             }
 
             onTrigger() {
