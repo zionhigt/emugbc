@@ -2,7 +2,18 @@ import { Register } from "../../lib/register";
 import byte from "../../lib/byte";
 import { Channel, NRegister, NRegister4 } from "./channel";
 
-class NR10 extends NRegister { }
+/**
+ * NR10 porte la cadence, le sens et le décalage : les coups de cloche encore en retard
+ * étaient dus à l'ANCIEN réglage, et l'unité de sweep ne se réveille que quand on
+ * l'interroge. On la fait donc rattraper avant d'écrire, sinon elle rejoue ce retard avec
+ * les champs qu'on vient de poser. Même capture que la position de wave et le LFSR.
+ */
+class NR10 extends NRegister {
+    setValue(val) {
+        this.parent.captureSweepStep();
+        super.setValue(val);
+    }
+}
 class NR14 extends NRegister4 {
     write(value) {
         this._buffer[0] = value;
@@ -61,7 +72,7 @@ export default function(apu) {
                 if (this.apu.sweepTicks(cycle) < this._sweptTicks) {
                     console.warn("Special case");
                     return;
-                } 0xF8
+                }
                 if (!this._isSweepArmed || !super.isEnabledAt(cycle)) {
                     this._sweptTicks = this.apu.sweepTicks(cycle);
                     return this._sweepFrequency;
@@ -88,6 +99,11 @@ export default function(apu) {
                     }
                 }
                 return this._sweepFrequency;
+            }
+
+            /** Purger le retard : avancer l'unité jusqu'à maintenant, sans rien recharger. */
+            captureSweepStep() {
+                this.frequencyAt(this.apu.totalMachineCycles);
             }
 
             computeN() {

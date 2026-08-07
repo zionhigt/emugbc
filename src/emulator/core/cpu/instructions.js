@@ -685,6 +685,7 @@ export default function() {
         r16.setValue(cpu.stack.pop());
     });
     buildInstruction("PUSH_AF", 4, 1, function(cpu) {
+        cpu.pay(1);
         cpu.stack.push(cpu.registers.AF);
     });
     buildInstruction("PUSH_r16", 4, 1, function(cpu, r16) {
