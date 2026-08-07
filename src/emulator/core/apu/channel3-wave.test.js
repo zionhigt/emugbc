@@ -33,8 +33,8 @@ import buildTimer from '../timer/index';
  * qu'aux demi-cycles PAIRS, `2 × cycle`.
  *
  * Ce que le matériel fait quand on lit ou écrit la wave RAM PENDANT que le canal joue
- * (blargg 09 et 12) a son bloc en fin de fichier. La corruption au trigger (blargg 10)
- * attend encore son cran.
+ * (blargg 09 et 12) a son bloc en milieu de fichier ; la corruption des quatre premiers
+ * octets quand on redéclenche PENDANT un accès (blargg 10) a le dernier.
  */
 
 const NR30 = 0xFF1A;
@@ -701,5 +701,212 @@ describe('Wave - la séquence mesurée de blargg 09', () => {
             .toEqual([0xAB, RAMPE[15]]);
         expect(ecrireLaSequence(100), 'période paire : l\'écriture est perdue des deux côtés')
             .toEqual([RAMPE[0], RAMPE[15]]);
+    });
+});
+
+/**
+ * LA CORRUPTION DE LA WAVE RAM AU TRIGGER.
+ *
+ * Wiki gbdev, section « Obscure Behavior »,
+ * https://gbdev.gg8.se/wiki/articles/Gameboy_sound_hardware :
+ *
+ *   « Triggering the wave channel on the DMG while it reads a sample byte will alter the
+ *     first four bytes of wave RAM. If the channel was reading one of the first four bytes,
+ *     the only first byte will be rewritten with the byte being read. If the channel was
+ *     reading one of the later 12 bytes, the first FOUR bytes of wave RAM will be rewritten
+ *     with the four aligned bytes that the read was from (bytes 4-7, 8-11, or 12-15); for
+ *     example if it were reading byte 9 when it was retriggered, the first four bytes would
+ *     be rewritten with the contents of bytes 8-11. »
+ *
+ *   « To avoid this corruption you should stop the wave by writing 0 then $80 to NR30
+ *     before triggering it again. The game Duck Tales encounters this issue part way
+ *     through most songs. »
+ *
+ * En clair, avec `index` l'octet que le canal occupait à l'instant du trigger :
+ *
+ *     index < 4    ->  octet 0 = octet index, et RIEN d'autre ne bouge
+ *     index >= 4   ->  octets 0..3 = octets (index & ~3) .. (index & ~3) + 3
+ *
+ * Deux paramètres, donc, et deux seulement : la FRONTIÈRE à 4, et l'ALIGNEMENT par 4
+ * au-delà. Les douze derniers octets ne sont jamais touchés, dans aucun des deux cas.
+ *
+ * La règle ne s'arme que si le canal était ALLUMÉ et DANS SA FENÊTRE d'accès à l'instant
+ * précis du trigger — les deux mêmes conditions que la lecture et l'écriture portées du
+ * bloc précédent. C'est ce qui rend le contournement possible : éteindre le canal juste
+ * avant, comme le wiki le recommande, ferme la fenêtre et la corruption n'a pas lieu.
+ *
+ * PIÈGE D'ORDRE, pour qui implémente. `NRegister4.setValue` pose `_isEnabled` PUIS appelle
+ * `onTrigger`, qui remet la position à zéro : quand `onTrigger` s'exécute, l'état qui
+ * décide de la corruption a déjà disparu. Elle se lit donc à l'entrée de l'écriture de
+ * NR34, avant que quoi que ce soit n'ait bougé. Ces tests, eux, n'exigent que le résultat
+ * observable : on redéclenche, on éteint, on relit les seize octets.
+ *
+ * LA SÉQUENCE DE `10-wave trigger while on`, source lu : la ROM charge son motif, joue une
+ * note, puis redéclenche par une écriture de NR34 SEULE — NR33 a été posé 168 clocks plus
+ * tôt. Elle recommence 69 fois en décalant la période du premier trigger, ce qui déplace la
+ * phase de 2 T-cycles par itération : chaque tour attrape le canal sur un autre octet, ou
+ * hors fenêtre. C'est ce balayage qui rend les deux moitiés de la règle observables, et
+ * c'est pourquoi le redéclenchement se fait ici aussi par NR34 seul.
+ */
+describe('Wave - la corruption de la wave RAM au trigger', () => {
+
+    /** NR34 seul, bit 7 armé : `buildPlaying` a laissé la fréquence à 0x600, on la reprend. */
+    const REDECLENCHEMENT = TRIGGER | ((FREQUENCY >> 8) & 0x07);
+
+    /**
+     * LE CYCLE MACHINE OÙ LE CANAL OCCUPE L'OCTET `index`.
+     *
+     * Sous `buildPlaying`, les accès tombent à n × PAS et portent la position n, donc
+     * l'octet `n / 2` arrondi par le bas : n = 2 × index vise le quartet HAUT de l'octet
+     * voulu. L'octet 0 fait exception — sa première occurrence, n = 0, est l'instant du
+     * trigger lui-même, où aucun accès n'a encore eu lieu. On le prend un tour plus loin,
+     * n = 32, qui ramène la position à 0 : même octet, même quartet, même phase.
+     */
+    const accesA = (index) => (index === 0 ? 32 : 2 * index) * PAS;
+
+    /** Éteindre le canal rouvre la RAM à l'adressage normal ; NR30 ne touche pas son contenu. */
+    const lireLaRAM = (apu) => {
+        apu.write(NR30, 0x00);
+        return Array.from({ length: 16 }, (_, i) => apu.read(WAVE + i));
+    };
+
+    /** Redéclenche PILE sur l'accès à `index`, puis rend les seize octets. */
+    const corrompreSur = (index) => {
+        const { machine, apu } = buildPlaying();
+        machine.totalCycles = accesA(index);
+        apu.write(NR34, REDECLENCHEMENT);
+        return lireLaRAM(apu);
+    };
+
+    it.each([
+        { nom: '0x00', index: 0 },
+        { nom: '0x01', index: 1 },
+        { nom: '0x04', index: 4 },
+        { nom: '0x09', index: 9 },
+        { nom: '0x0F', index: 15 },
+    ])('le harnais vise juste : à l\'accès de l\'octet $nom, la fenêtre est ouverte sur lui', ({ index }) => {
+        const { chan3 } = buildPlaying();
+        const cycle = accesA(index);
+
+        expect(chan3.isAccessingWaveAt(cycle), 'le canal y touche à cet instant exact').toBe(true);
+        expect(chan3.waveByteIndexAt(cycle), 'et c\'est bien cet octet qu\'il occupe').toBe(index);
+    });
+
+    it.each([
+        { nom: '0x01', index: 1 },
+        { nom: '0x02', index: 2 },
+        { nom: '0x03', index: 3 },
+    ])('octet $nom, sous la frontière : seul l\'octet 0 est réécrit, avec l\'octet lu', ({ index }) => {
+        const ram = corrompreSur(index);
+
+        expect(ram[0], 'l\'octet 0 prend la valeur de l\'octet que le canal lisait').toBe(MOTIF[index]);
+        expect(ram.slice(1), 'les quinze autres ne bougent pas d\'un bit').toEqual(MOTIF.slice(1));
+    });
+
+    it('octet 0x00 : la règle s\'applique, mais elle recopie l\'octet 0 sur lui-même', () => {
+        expect(corrompreSur(0), 'rien de visible — et c\'est la règle qui le dit, pas une exemption')
+            .toEqual(MOTIF);
+    });
+
+    it.each([
+        { nom: '0x04', index: 4, base: 4 },
+        { nom: '0x05', index: 5, base: 4 },
+        { nom: '0x07', index: 7, base: 4 },
+        { nom: '0x08', index: 8, base: 8 },
+        { nom: '0x09', index: 9, base: 8 }, // l'exemple donné par le wiki
+        { nom: '0x0B', index: 11, base: 8 },
+        { nom: '0x0C', index: 12, base: 12 },
+        { nom: '0x0F', index: 15, base: 12 },
+    ])('octet $nom : les quatre premiers prennent le quadruplet aligné qui commence en $base', ({ index, base }) => {
+        const ram = corrompreSur(index);
+
+        expect(ram.slice(0, 4), `le quadruplet ${base}..${base + 3} est recopié en tête`)
+            .toEqual(MOTIF.slice(base, base + 4));
+        expect(ram.slice(4), 'les douze derniers octets ne sont jamais touchés')
+            .toEqual(MOTIF.slice(4));
+    });
+
+    it('la frontière est bien à 4 : l\'octet 3 n\'en réécrit qu\'un, l\'octet 4 en réécrit quatre', () => {
+        expect(corrompreSur(3).slice(0, 4), 'octet 3 : seul l\'octet 0 bouge')
+            .toEqual([MOTIF[3], MOTIF[1], MOTIF[2], MOTIF[3]]);
+        expect(corrompreSur(4).slice(0, 4), 'octet 4 : les quatre bougent d\'un coup')
+            .toEqual([MOTIF[4], MOTIF[5], MOTIF[6], MOTIF[7]]);
+    });
+
+    it('l\'alignement écrase le reste du quadruplet : lire l\'octet 11 ramène 8, 9, 10, 11', () => {
+        expect(corrompreSur(11).slice(0, 4), 'ce n\'est pas « les quatre octets à partir de 11 »')
+            .toEqual(MOTIF.slice(8, 12));
+    });
+
+    it.each([
+        { nom: '+1', decalage: 1, quand: 'un cycle machine après l\'accès' },
+        { nom: '-1', decalage: -1, quand: 'un cycle machine avant l\'accès' },
+        { nom: '+128', decalage: PAS / 2, quand: 'à mi-chemin entre deux accès' },
+    ])('hors fenêtre ($nom, $quand), rien ne bouge', ({ decalage }) => {
+        const { machine, apu, chan3 } = buildPlaying();
+        const cycle = accesA(9) + decalage;
+
+        expect(chan3.isAccessingWaveAt(cycle), 'le harnais vise bien hors fenêtre').toBe(false);
+        machine.totalCycles = cycle;
+        apu.write(NR34, REDECLENCHEMENT);
+
+        expect(lireLaRAM(apu), 'le canal jouait, mais il ne touchait pas la RAM à cet instant')
+            .toEqual(MOTIF);
+    });
+
+    it('canal jamais déclenché : le premier trigger d\'une note ne corrompt rien', () => {
+        const { machine, apu } = buildHarness();
+        MOTIF.forEach((octet, i) => apu.write(WAVE + i, octet));
+        apu.write(NR30, DAC_ON);
+        apu.write(NR32, 1 << 5);
+
+        machine.totalCycles = 1000; // une date quelconque : aucun accès n'est encore armé
+        declencher(apu);
+
+        expect(lireLaRAM(apu), 'aucun octet en cours de lecture, donc rien à recopier')
+            .toEqual(MOTIF);
+    });
+
+    /**
+     * LE CONTOURNEMENT DE DUCK TALES.
+     *
+     * « To avoid this corruption you should stop the wave by writing 0 then $80 to NR30
+     *   before triggering it again. »
+     *
+     * C'est le test qui a le plus de valeur d'usage du bloc : couper le DAC éteint le canal,
+     * donc ferme sa fenêtre, et le trigger qui suit ne trouve plus rien à recopier. Le
+     * témoin en tête vérifie que l'instant choisi corrompt bel et bien sans la manœuvre —
+     * sans lui, ce test passerait aussi sur un émulateur qui ignore purement la règle.
+     */
+    it('le contournement documenté : 0 puis 0x80 dans NR30 avant de redéclencher', () => {
+        expect(corrompreSur(9).slice(0, 4), 'témoin : à nu, cet instant corrompt')
+            .toEqual(MOTIF.slice(8, 12));
+
+        const { machine, apu } = buildPlaying();
+        machine.totalCycles = accesA(9);
+        apu.write(NR30, 0x00);   // le canal s'éteint : il ne lit plus la RAM
+        apu.write(NR30, DAC_ON); // le DAC revient, mais le canal reste éteint jusqu'au trigger
+        apu.write(NR34, REDECLENCHEMENT);
+
+        expect(lireLaRAM(apu), 'la manœuvre préserve les seize octets').toEqual(MOTIF);
+    });
+
+    it('le trigger fait son office par ailleurs : position à zéro, échéance réarmée', () => {
+        const { machine, apu, chan3 } = buildPlaying();
+        const cycle = accesA(9);
+        expect(chan3.waveStep(cycle), 'position 18 : le quartet haut de l\'octet 9').toBe(18);
+
+        machine.totalCycles = cycle;
+        apu.write(NR34, REDECLENCHEMENT);
+
+        expect(chan3.waveStep(cycle), 'la position repart de zéro').toBe(0);
+        // 0x600 : période PAIRE au trigger, donc l'échéance tombe un demi-cycle après le
+        // cycle machine — le canal joue, mais le CPU ne verra pas sa fenêtre (voir le bloc
+        // « la parité de la période au trigger »). La position, elle, avance quand même.
+        expect(chan3.waveStep(cycle + (PERIODE + RETARD - 1) / 2), 'un cycle trop tôt').toBe(0);
+        expect(chan3.waveStep(cycle + (PERIODE + RETARD + 1) / 2), 'l\'échéance réarmée').toBe(1);
+
+        expect(lireLaRAM(apu), 'et la corruption a bien eu lieu au passage')
+            .toEqual([...MOTIF.slice(8, 12), ...MOTIF.slice(4)]);
     });
 });
