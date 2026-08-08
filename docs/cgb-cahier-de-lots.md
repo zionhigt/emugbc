@@ -57,24 +57,25 @@ le trajet du pixel, il change ce qu'on lit au passage et comment on le colorie.*
 | Table de registres figée, extensible | `ppu/index.js:221` |
 | Le routage mémoire par plages, une classe de section par périphérique | `memory/index.js` |
 
-### Ce qui bloque, et qu'il faut ouvrir
+### Ce qui bloquait — **tout est levé** (lots 0 à 7)
 
-1. **`Fetcher` est privé et instancié en dur** (`this.fetcher = new Fetcher(this)`).
-   Une sous-classe ne peut ni le remplacer ni le dériver. Or c'est là que se lit
-   la tuile de fond : le point exact où le CGB doit lire son étiquette.
-2. **Le coloriage est écrit en clair, à trois endroits différents** :
-   `Fetcher.tick` (fond), `renderWindow` (fenêtre), `renderSprites` (sprites), tous
-   avec la même expression `(palette >> (teinte * 2)) & 0b11`. Trois copies à
-   surcharger au lieu d'une.
-3. **`this.screen` est un `Uint8Array` de teintes 0-3.** Le CGB en produit 32 768.
-   Le contrat de sortie doit changer — voir §4, décision D1.
-4. **`bgLine` ne retient que la teinte**, or le CGB a besoin en plus du bit de
-   priorité de l'étiquette de tuile.
-5. **`bus.ppuRead(addr)` ne sait pas viser une banque.** Il tape `memory._read`,
-   c'est-à-dire la RAM plate de 64 Ko.
-6. **Tout le bloc 0xFF4C-0xFFFF tombe dans une section plate** (`overflow3`,
-   `memory/index.js:289`). VBK, BCPS/BCPD, OCPS/OCPD, OPRI, HDMA, SVBK n'ont
-   aucun propriétaire.
+Gardé pour mémoire : c'est cette liste qui a dicté le découpage.
+
+| ce qui bloquait | levé par |
+|---|---|
+| `Fetcher` privé et instancié en dur | lot 0 — exporté, injecté au constructeur |
+| Le coloriage recopié à trois endroits | lot 0 — `backgroundColor` / `spriteColor` |
+| `screen` en teintes 0-3 | lot 3 — `Uint16Array` RGB555 (D1) |
+| `bgLine` sans plan de priorité | lot 4 — `bgPriority` |
+| `bus.ppuRead` incapable de viser une banque | lots 0 et 2 — `ppuReadBank` |
+| 0xFF4C-0xFFFF en section plate | lot 1.5 (trous) puis 2 (`bindAddresses`) |
+
+**Plus rien ne reste à router.** OPRI (0xFF6C) est arrivé au lot 5, HDMA
+(0xFF51-55) au lot 6, SVBK (0xFF70) et les six registres indocumentés
+(0xFF72-0xFF77) au lot 7. Tous par le même geste : leur propriétaire les DÉCLARE,
+`bindAddresses` les route. La carte mémoire n'a toujours aucun « si CGB »
+dedans — elle route ce qu'un propriétaire présent lui déclare, et en DMG ces
+propriétaires n'existent simplement pas.
 
 ---
 
@@ -120,6 +121,13 @@ trames, comparer le tampon écran. Deux niveaux, à ne pas confondre :
 - une **image de référence** venue du dépôt de la ROM — la seule qui prouve la
   justesse. À récupérer, comme `cgb-acid2.gb`.
 
+**Les deux sont FAITS.** Le harnais existe depuis le lot 0.5, et
+`src/test/fixtures/reference.png` est arrivée pendant le lot 4 : c'est celle de
+`cgb-acid2` (160x144, palette de 8 couleurs, en-tête « CGB ACID2 »). Elle est
+décodée sans dépendance — `zlib` est dans Node — par `src/test/refPng.js`,
+lui-même testé AVANT de servir de juge. `cgb-acid2` est donc devenu un
+**cliquet** : un compte de pixels faux qui n'a plus le droit de remonter.
+
 **P2 — `unused_hwio-C` n'est pas utilisable tant que `unused_hwio-GS` est rouge.**
 Mesuré : la variante DMG échoue déjà aujourd'hui. Les deux ROMs testent le même
 plan d'IO, la version `-C` n'y ajoute que `$FF4F`, `$FF68`, `$FF6A`, les registres
@@ -128,18 +136,45 @@ rouge, l'écart n'est pas lisible : on ne saurait pas si l'échec vient du CGB o
 d'un masque DMG manquant. **Fermer `unused_hwio-GS` est donc un prérequis**, et
 c'est un trou de justesse DMG qu'on ne se connaissait pas.
 
-### État mesuré des oracles (2026-08-08)
+### P3 — `unused_hwio-C` NE PEUT PAS devenir vert *(découvert au lot 7)*
 
-| ROM | aujourd'hui | ferme quel lot |
+Ce cahier a promis deux fois que les registres indocumentés étaient « tout ce qui
+séparait cette ROM du vert ». **C'était faux**, et c'est le genre d'erreur que la
+règle d'oracle est censée attraper : la conclusion venait de tests rejoués un par
+un, pas de la ROM elle-même.
+
+Une fois les six registres posés, elle avance — et s'arrête sur **`$FF69`**, le
+port de DONNÉE des palettes de fond, qu'elle attend à 0xFF. L'explication est dans
+son en-tête : `0x143 = 0x00`. Sur un vrai CGB, une cartouche qui ne se déclare pas
+CGB fait démarrer la console en **mode de compatibilité DMG**, et le boot ROM y
+verrouille tout un lot de registres — `$FF69` et `$FF6B` (les données de palette),
+`$FF6C` (OPRI), `$FF70` (SVBK), les cinq du HDMA, et `$FF74` qui devient lecture
+seule à 0xFF. Pandocs le dit noir sur blanc pour `$FF74` : *« Otherwise, this
+register is read-only, and locked at value $FF »*.
+
+Ce que cette ROM a mesuré sur du matériel, c'est donc **un CGB bridé**. Nous la
+forçons en modèle CGB — la seule façon d'atteindre les registres qu'elle arbitre
+par ailleurs. Les deux lectures ne peuvent pas être vraies en même temps.
+
+Le test a donc changé de nature plutôt que de disparaître : il assure désormais
+**jusqu'où** elle va, en lisant le registre fautif dans sa propre HRAM
+(`test_reg`, 0xFF83). Reculer avant `$FF69`, c'est casser un lot déjà fermé.
+
+### État mesuré des oracles — après le lot F
+
+| ROM | état | rôle |
 |---|---|---|
-| `boot_regs-dmgABC.gb` | **passe** | garde-fou du lot 1 |
-| `boot_regs-cgb.gb` | échoue (on démarre en DMG) | **lot 1** |
-| `unused_hwio-GS.gb` | **échoue** | prérequis P2 |
-| `unused_hwio-C.gb` | échoue | **lots 2 et 3**, après P2 |
-| `boot_hwio-C.gb` | échoue | lots 2-3, appoint |
-| `vblank_stat_intr-C.gb` | non mesuré | lot 2-3, appoint |
-| `dmg-acid2.gb` | **exécuté depuis le lot 0.5** | filet du rendu |
-| `cgb-acid2.gbc` | **déposé, branché en ligne de base** | lots 4-5, en mesure continue |
+| `boot_regs-dmgABC.gb` | **passe** en DMG, échoue en CGB | lot 1, avec son négatif |
+| `boot_regs-cgb.gb` | **passe** en CGB, échoue en DMG | lot 1, avec son négatif |
+| `unused_hwio-GS.gb` | **passe** | fermé au lot 1.5 |
+| `unused_hwio-C.gb` | s'arrête à `$FF69` | **plafond**, voir P3 |
+| `dmg-acid2.gb` | instantané stable | filet du rendu DMG |
+| `cgb-acid2.gbc` + `reference.png` | **0 pixel faux sur 23040** | **verdict**, lot 5 |
+| `hblank_vram_dma.gbc` | **passe** (écran vert) | lot 6 |
+| `bg_oam_priority.gbc` | **passe** | lot 5 |
+| `oam_internal_priority.gbc` | **passe** | lot 5 |
+| `boot_hwio-C.gb` | échoue, non exploité | mesure le CGB bridé (P3) |
+| `vblank_stat_intr-C.gb` | jamais mesuré | appoint, non planifié |
 
 ---
 
@@ -155,18 +190,24 @@ c'est un trou de justesse DMG qu'on ne se connaissait pas.
 | `mooneye/misc/boot_hwio-C.gb` | **oui** | valeurs de l'IO au démarrage, modèle C |
 | `mooneye/misc/bits/unused_hwio-C.gb` | **oui** | bits inutilisés de l'IO, modèle C |
 | `mooneye/misc/ppu/vblank_stat_intr-C.gb` | **oui** | IRQ VBlank + STAT, modèle C |
-| **`cgb-acid2.gb`** | **NON** | **le rendu CGB entier — fond, étiquettes, sprites, priorités** |
+| `cgb-acid2.gbc` | **oui** (déposée au lot 4) | le rendu CGB entier |
+| `reference.png` | **oui** (déposée au lot 4) | l'image juste de `cgb-acid2` |
+| `magen/hblank_vram_dma.gbc` | **oui** (lot 6) | le HDMA HBlank, et son gel en `halt` |
+| `magen/bg_oam_priority.gbc` | **oui** (lot 5) | la table de priorités, cas par cas |
+| `magen/oam_internal_priority.gbc` | **oui** (lot 5) | l'ordre entre objets, en CGB |
 
-> **Conséquence directe : les lots 4 et 5 n'ont pas d'oracle tant que
-> `cgb-acid2.gb` n'est pas déposé dans `src/test/fixtures/`.**
-> C'est la ROM de mattcurrie, pendant exact de `dmg-acid2` déjà présente. Sans
-> elle, on avance sur des TU écrits à la main contre pandocs — ce qui marche pour
-> la mécanique (banques, palettes, auto-incrément) mais pas pour la table de
-> priorités du lot 5, qui est précisément le genre de règle qu'on croit avoir
-> comprise et qu'on n'a pas.
->
-> **À faire avant le lot 4.** Les cinq ROMs mooneye ci-dessus, elles, deviennent
-> exploitables dès le lot 1.
+> **Le manque est comblé.** Les lots 4 et 5 ont désormais un vrai verdict, et non
+> une simple mesure d'écart. Ce qui reste vrai en revanche : les TU intermédiaires
+> sont écrits contre pandocs, donc verts parce qu'ils encodent MA lecture. C'est
+> précisément pour ça que la table de priorités du lot 5 doit être arbitrée par la
+> ROM et pas par mes tests.
+
+**Les trois ROMs `magen/` ont été récupérées pendant les lots 5 et 6**
+(github.com/alloncm/MagenTests, MIT, v0.5.0 — le LICENSE est déposé à côté
+d'elles). Elles rendent leur verdict EN IMAGE, et chacune vise une règle et une
+seule : là où `cgb-acid2` dit « quelque chose est faux quelque part », elles
+disent laquelle. Sans elles, le lot 6 serait parti sans aucun oracle du tout —
+c'est exactement le cas que §3 nommait comme le plus dangereux.
 
 ---
 
@@ -175,7 +216,7 @@ c'est un trou de justesse DMG qu'on ne se connaissait pas.
 Conformément à la règle du projet : on fige les noms et les signatures **avant**
 que j'écrive la moindre TU, sinon les tests figent une interface qu'on regrette.
 
-### D1 — Le format du tampon écran — **OUVERTE**
+### D1 — Le format du tampon écran — **TRANCHÉE : option A**
 
 Aujourd'hui `screen` est un `Uint8Array(160*144)` de teintes 0-3, que
 `CanvasRenderer` traduit par une table de 4 couleurs. Le CGB rend du RGB555.
@@ -186,39 +227,83 @@ Aujourd'hui `screen` est un `Uint8Array(160*144)` de teintes 0-3, que
 | **B — deux plans** | `screen` (teinte) + `paletteLine` (n° de palette) | Ne touche pas le DMG, mais le front doit refaire la résolution de couleur, et les tests DMG existants restent valides tels quels. |
 | **C — deux tampons** | `screen` en DMG, `screenRGB` en CGB | Aucun risque de régression, mais deux chemins à maintenir dans le worker, le renderer et le profileur. |
 
-Cette décision ne bloque **pas** la première étape du lot 0 (l'injection du
-fetcher), qui ne touche pas au tampon. Elle devra être prise avant le portage du
-coloriage, plus loin dans le même lot.
+**Retenue : A.** Appliquée au lot 3, confirmée après coup. `screen` est un
+`Uint16Array` de RGB555 pour les deux modèles ; le DMG traverse ses quatre verts
+dans le PPU (`DMG_COLORS`), et `CanvasRenderer` n'a plus qu'un chemin — une table
+RGB555 -> RGBA de 32 768 entrées bâtie une fois, sans « si CGB ».
 
-### D2 — Le choix du modèle
+**Les instantanés de rendu sont restés identiques à l'octet près** au moment de
+la bascule : la preuve que rien de ce qui est dessiné n'a bougé, seul son
+encodage. Une trentaine d'assertions de `ppu.test.js` ont été portées — portées,
+jamais supprimées.
 
-Tu as tranché : on doit pouvoir basculer à la main. Proposition à confirmer :
+### D2 — Le choix du modèle — **TRANCHÉE** *(lot 1)*
 
-- `header.isCgb` (nouveau getter sur 0x143 : `0x80` = compatible, `0xC0` = CGB seul)
-  donne le **défaut** ;
-- un réglage explicite (`auto` | `dmg` | `cgb`) peut le forcer ;
-- `MachineBuilder({ model })` choisit la classe de PPU à la construction.
+Livré, avec deux écarts sur la proposition initiale :
 
-### D3 — Nommage des coutures
+- l'en-tête expose `cgbFlag`, `supportsCgb` (bit 7) et `isCgbOnly` (0xC0) — trois
+  getters plutôt qu'un `isCgb`, parce que 0x80 et 0xC0 ne disent pas la même chose ;
+- le modèle est celui de la **console**, pas de la cartouche : une cartouche 0x80
+  dans une DMG tourne en DMG. D'où `dmg` / `cgb` / `auto`, `auto` étant la seule
+  qui consulte l'en-tête. Défaut : `dmg` ;
+- la préférence passe par le **constructeur de `Machine`**, pas par l'usine : deux
+  appelants lui passaient déjà un sixième argument qu'elle ignore.
 
-À figer maintenant (identifiants en anglais, prose en français, comme partout) :
+Fait qui a tranché tout seul : `boot_regs-cgb.gb` porte 0x143 = 0x00. Les ROMs
+mooneye ne se déclarent JAMAIS CGB — le forçage manuel est la condition pour
+faire tourner l'oracle, pas un confort.
+
+### D3 — Nommage des coutures — **FIGÉ** *(lots 0, 2 et 4)*
+
+Ce qui existe réellement. Un seul écart sur la proposition : `createFetcher()` a
+été remplacé par une **injection au constructeur**, sans valeur par défaut.
 
 ```
-tileAttributes(mapAddress)      // DMG : 0 ; CGB : l'octet de la banque 1
-backgroundColor(shade, attrs)   // le coloriage du fond, un seul endroit
-spriteColor(shade, sprite)      // le coloriage des sprites
-spriteOrder(visibles)           // DMG : x puis index ; CGB (OPRI) : index seul
-createFetcher()                 // l'usine à FIFO, surchargeable
-bus.ppuReadBank(addr, bank)     // lecture visant une banque de VRAM
+// lot 0
+Fetcher                          // exporté, injecté : new PPU(FetcherClass)
+tileAttributes(mapAddress)       // DMG : 0 ; CGB : l'octet de la banque 1
+backgroundColor(shade, attrs)    // le coloriage du fond, un seul endroit
+spriteColor(shade, sprite)       // le coloriage des sprites
+spriteOrder(visibles)            // DMG : x puis index ; CGB (OPRI) : index seul
+buildRegistersMapping()          // surchargeable ; bâtie à la 1re demande
+bus.ppuReadBank(addr, bank)      // lecture visant une banque de VRAM
+
+// lot 2
+vramRead / vramWrite(addr)       // le CPU, qui suit VBK
+vramReadBank(addr, bank)         // le PPU, qui vise
+memory.bindAddresses(...)        // router des adresses éparses
+
+// lot 4
+tileAddress(id)                  // l'adressage 0x8000 / signé, un seul endroit
+patternRow(row, attrs)           // miroir vertical
+patternBank(attrs)               // banque du motif — un NUMÉRO, pas un booléen
+patternBit(column, attrs)        // miroir horizontal
+tilePriority(attrs)              // alimente le plan bgPriority
+
+// lot 5
+backgroundVisible()              // LCDC bit 0 : DMG l'éteint, CGB le déclasse
+blankLine(line)                  // décor coupé : blanc, ET transparent aux objets
+spriteBank(sprite)               // banque du motif d'objet (bit 3 de l'OAM)
+spriteOverBackground(sprite, x)  // la table de priorités, un seul endroit
+
+// lot 6
+enterHBlank()                    // le souffle de fin de ligne ; le CGB y porte son HDMA
 ```
+
+**Règle apprise à la dure** : une couture qui rend un NUMÉRO utilise `byte.getBit`,
+une couture qui rend une CONDITION garde `byte.getFlag`. Mélanger les deux a fait
+lire le motif dans la mauvaise banque, en silence.
 
 ---
 
 ## 5. Les lots
 
-Chaque lot suit la même boucle : **concept + analogie -> je rédige les TU ->
-tu codes jusqu'au vert -> on ferme.** Un lot ne s'ouvre qu'une fois le précédent
-fermé. Aucun lot n'a le droit de faire rougir les 1579 tests existants.
+Chaque lot suit la même boucle : **concept + analogie -> TU -> code jusqu'au
+vert -> on ferme.** Un lot ne s'ouvre qu'une fois le précédent fermé, et aucun
+n'a le droit de faire rougir les tests existants — **1746 au dernier compte**.
+
+*(Sur tout ce jalon, tu m'as demandé de coder aussi bien les TU que
+l'implémentation, contrairement à la répartition habituelle du projet.)*
 
 ---
 
@@ -264,7 +349,7 @@ où D1 sera prise, sans que sa signature bouge.
 
 ---
 
-### Lot 0.5 — Le harnais de rendu *(prérequis P1)*
+### Lot 0.5 — Le harnais de rendu — **FERMÉ** *(prérequis P1)*
 
 **Objectif** : que `dmg-acid2` soit enfin EXÉCUTÉ, et que le chemin de rendu ait
 un filet. Insérer la ROM, tourner assez de trames, comparer le tampon écran.
@@ -478,47 +563,170 @@ C'est le lot 5.
 
 ---
 
-### Lot 5 — Les sprites CGB et la table de priorités
+### Lot 5 — Les sprites CGB et la table de priorités — **FERMÉ**
 
 **Objectif** : palette 0-7 (bits 0-2 des attributs OAM), banque de tuile (bit 3),
-OBP0/OBP1 ignorés, et surtout **l'ordre de priorité**, qui n'est plus celui du DMG :
-en CGB c'est l'index OAM qui tranche, pas la coordonnée X, sauf si OPRI (0xFF6C)
-demande le comportement DMG.
+OBP0/OBP1 ignorés, et l'ordre de priorité, qui n'est plus celui du DMG : en CGB
+c'est l'index OAM qui tranche, sauf si OPRI (0xFF6C) réclame le comportement DMG.
 
-**Le cœur du lot, et sa difficulté** : la priorité fond/sprite se décide par une
-table à trois entrées — le bit 0 de LCDC (qui change de sens en CGB : il devient
-un interrupteur de priorité, pas un interrupteur de fond), le bit 7 de l'attribut
-de tuile, le bit 7 de l'attribut OAM. C'est la règle qu'on croit connaître et
-qu'on n'a pas : elle sera écrite en table dans les TU, cas par cas.
+**Résultat : `cgb-acid2` passe de 28,1 % de pixels faux à ZÉRO.** Le cliquet est
+donc devenu un verdict, et le rendu CGB n'est plus « plausible » : il est celui
+d'un vrai CGB, pixel pour pixel.
 
-**Oracle** : `cgb-acid2.gbc`, et cette fois comparé à l'image de référence.
+**Les deux pistes du cahier étaient les bonnes, et c'était le même bug.** La
+teinte de remplissage en (32,0) et la bande verte qui barrait l'écran de la ligne
+56 à la 87 avaient la même cause : `renderFifo` blanchissait la ligne quand LCDC
+bit 0 était bas. En CGB ce bit ne coupe pas le décor, il lui retire seulement sa
+priorité. À lui seul, ce blanchiment valait 5 120 des 6 476 pixels faux — et il
+cachait au passage le « HELLO WORLD! » du haut de l'image.
+
+**Le trou de justesse DMG trouvé en démêlant les deux sens du bit** : `renderFifo`
+rendait la main AVANT de dessiner les objets quand le décor était coupé. Pandocs
+est explicite — *« Only objects may still be displayed »*. Le DMG a donc gagné
+un correctif au passage, et `dmg-acid2` n'a pas bougé d'un pixel (la ROM ne coupe
+jamais son décor : le bug ne se voyait pas, il attendait).
+
+**La règle contre-intuitive, celle qu'on n'aurait pas devinée** : la priorité
+ENTRE OBJETS se résout AVANT qu'on regarde le fond. Le PPU retient d'abord un
+pixel d'objet par colonne — le premier opaque dans l'ordre de priorité, sans
+jamais consulter le bit « BG over OBJ » — et ce n'est qu'ensuite qu'il demande à
+CE pixel-là s'il passe devant le décor. Conséquence : un objet prioritaire qui
+perd contre le décor **masque** ceux de derrière au lieu de leur céder la place.
+`renderSprites` est donc en deux temps, avec un plan `objLine`/`objOwner`.
+
+**TU** : la table de priorités écrite en table (huit combinaisons × la teinte de
+fond), l'ordre OAM contre l'ordre X, OPRI dans les deux sens, le masquage dans
+les deux modèles, et les deux sens de LCDC bit 0.
+
+**Oracles, et il y en a trois** :
+
+| ROM | ce qu'elle arbitre |
+|---|---|
+| `cgb-acid2.gbc` contre `reference.png` | 0/23040 — le rendu entier |
+| `magen/bg_oam_priority.gbc` | 5 carrés verts, 3 mi-verts mi-bleus, aucune ligne rouge |
+| `magen/oam_internal_priority.gbc` | deux paires de triangles qui se TOUCHENT |
+
+La dernière mérite un mot : ses deux triangles ne se recouvrent que là où le motif
+prioritaire est TRANSPARENT. Un PPU qui réserverait la colonne à l'objet
+prioritaire sans regarder si son pixel est opaque laisserait un trou blanc entre
+les deux. C'est exactement le piège du paragraphe précédent, isolé dans six
+pixels.
 
 ---
 
-### Lot 6 — HDMA (0xFF51-0xFF55)
+### Lot 6 — HDMA (0xFF51-0xFF55) — **FERMÉ**
 
 **Objectif** : les deux transferts, général et cadencé sur HBlank. Ce n'est pas du
 rendu, mais c'est rythmé par le PPU et la plupart des jeux CGB en dépendent pour
 recharger tuiles et palettes en cours de trame.
 
-**À décider à l'ouverture** : si le lot est nécessaire à `cgb-acid2` (il ne l'est
-sans doute pas), il peut passer après le lot 5 sans rien bloquer.
+**L'analogie** : un déménagement. Le transfert général, c'est le camion qui part
+une fois, plein, et le programme attend qu'il revienne. Le transfert HBlank, c'est
+le même chargement porté carton par carton — 16 octets à chaque fois que le PPU
+souffle en fin de ligne — et le jeu continue de tourner entre deux cartons.
+
+**Le cahier annonçait « aucun oracle » : c'était vrai des fixtures, pas du
+monde.** `hblank_vram_dma.gbc` (MagenTests) a été récupérée pour ce lot, et c'est
+un très bon juge : elle peint l'écran en ROUGE, lance un transfert HBlank qui le
+repeint en VERT, attend en scrutant HDMA5, puis en lance un second en BLEU et se
+met immédiatement en `halt`. Trois choses tombent d'un coup — le transfert
+existe, HDMA5 se relit, et le `halt` le gèle. Elle était **rouge** avant le lot,
+elle est **verte** après.
+
+**Les deux règles qui ne se devinent pas**, et que cette ROM sanctionne :
+
+- il n'y a pas de HBlank en VBlank. Rien ne bouge aux lignes 144-153 — chez nous
+  c'est gratuit, le mode 1 ne traverse jamais le mode 3, donc jamais
+  `enterHBlank()` ;
+- **le CPU en `halt` gèle le transfert**. Le DMA emprunte le bus au PROCESSEUR,
+  pas au PPU : processeur endormi, plus personne pour porter les cartons.
+
+**Le piège du registre à deux usages** : le même bit 7 à 0 écrit dans HDMA5
+DÉMARRE un transfert général quand rien ne tourne, et INTERROMPT le transfert
+HBlank en cours quand il y en a un. Un TU tient chacun des deux sens.
+
+**Une simplification assumée** : le transfert général est instantané et ses cycles
+ne sont pas facturés au CPU (8 cycles machine par bloc sur le vrai matériel).
+C'est le même choix que le DMA d'OAM (0xFF46) depuis toujours. Un jeu y gagne un
+peu de temps de VBlank qu'il n'aurait pas eu.
+
+**La source passe par `memory.read`, pas par `_read`.** Elle est presque toujours
+en ROM, donc derrière le MBC et sa banque courante ; la mémoire plate y rendrait
+des zéros. *(Le DMA d'OAM, lui, lit toujours par `_read` : une copie depuis la ROM
+y rendrait zéro. Personne ne s'en plaint parce que les jeux copient l'OAM depuis
+la WRAM — c'est un défaut connu, hors de ce jalon.)*
 
 ---
 
-### Lot 7 — Adjacents, hors PPU mais nécessaires pour jouer
+### Lot 7 — Adjacents, hors PPU mais nécessaires pour jouer — **FERMÉ**
 
-Recensés ici pour qu'ils ne soient pas découverts au dernier moment, **pas
-planifiés** : banques de WRAM (SVBK, 0xFF70), et le reste de l'IO CGB que
-`boot_hwio-C.gb` et `unused_hwio-C.gb` arbitreront.
+Deux choses distinctes, et un nouveau propriétaire pour les deux :
+`core/cgb/index.js`. Les registres CGB déjà posés étaient tous du ressort de
+l'affichage, et c'est le PPU qui les déclare ; ceux-ci ne le sont pas. Ils ont
+donc leur propre propriétaire, bâti sur le même modèle — il déclare une table,
+la mémoire route ce qui est déclaré, et rien dans la carte mémoire ne teste le
+modèle.
+
+**a) Les registres indocumentés — ils sont SIX, pas quatre.** Le cahier en
+comptait quatre parce qu'il ne listait que ceux qui échouaient à ce moment-là :
+
+```
+$FF72, $FF73, $FF74   lecture/écriture libres, 0x00 au départ
+$FF75                 seuls les bits 4-6 se retiennent (relu 0b1000_1111)
+$FF76, $FF77          PCM12 / PCM34
+```
+
+Et **les deux derniers ne sont plus indocumentés du tout** : PCM12 et PCM34
+rendent la sortie NUMÉRIQUE des quatre voies de l'APU, un quartet par voie, la
+voie impaire en bas. Ce n'est pas un registre à ranger quelque part, c'est une
+fenêtre : rien n'est stocké, on lit l'APU à l'instant où le CPU demande. Notre APU
+sait déjà donner l'amplitude d'une voie à une date (`channelN.amplitude(cycle)`),
+donc les câbler coûtait moins cher que de les truquer à zéro.
+
+**Ce lot n'a PAS fermé `unused_hwio-C`**, contrairement à ce qui était promis
+ici : voir le prérequis P3 en §3. Il l'a fait avancer jusqu'à `$FF69`, et c'est un
+plafond de nature, pas de travail.
+
+**b) Les banques de WRAM (SVBK, 0xFF70).** Sept banques de 4 Ko en 0xD000-0xDFFF,
+la moitié basse (0xC000) ne bougeant jamais. Même geste qu'au lot 2 pour la VRAM :
+**la banque 1 reste dans la mémoire plate**, seules les banques 2 à 7 sont des
+tampons à part. Tout le reste de l'émulateur continue de lire 0xD000 sans rien
+savoir de cette histoire. La banque 0 demandée donne la banque 1 — il n'y a pas de
+banque 0 en haut.
+
+Sans effet sur `cgb-acid2`, mais sans elle un jeu CGB se cogne à un plafond de
+8 Ko de RAM.
 
 ---
 
-### Lot F — Le front *(à moi)*
+### Lot F — Le front *(à moi)* — **FERMÉ**
 
-Bascule DMG/CGB dans les Options, chemin couleur du `CanvasRenderer` et du
-worker selon D1, et l'affichage du modèle actif dans l'overlay. Ne bloque aucun
-lot du cœur ; se cale après le lot 3, quand la couleur sort réellement.
+**Déjà fait au lot 3** : le chemin couleur de `CanvasRenderer` (table RGB555 ->
+RGBA, un seul chemin pour les deux modèles). Le worker n'a rien demandé — il
+transfère `ppu.screen` sans en connaître le type.
+
+**Fait au lot F** :
+
+- **la bascule Auto / DMG / CGB** dans les Options, persistée comme la coque et le
+  débogage (`emugbc.model`), et transmise au worker dans le message `load` ;
+- **l'affichage du modèle actif** dans l'overlay, à côté du `WK`/`MT`. C'est le
+  modèle RÉSOLU qui s'affiche, pas le réglage : en « auto », seule la machine sait
+  ce qu'elle est devenue, et elle est de l'autre côté du `postMessage` — d'où un
+  message `{ type: 'model' }` en retour ;
+- **le sélecteur de fichiers accepte les `.gbc`.** Il ne prenait que `.gb` : un jeu
+  couleur ne pouvait littéralement pas être choisi dans la boîte de dialogue. Le
+  reste du lot n'aurait servi à rien sans ça.
+
+**Le défaut est `auto`, et pas `dmg`.** C'est le comportement d'une vraie console :
+la cartouche dit ce qu'elle sait faire, le boîtier suit. Le défaut du CŒUR reste
+`dmg` (le constructeur de `Machine`), parce que toutes les ROMs de test s'appuient
+dessus — c'est le front qui demande `auto`, pas la machine qui l'a adopté.
+
+**Deux collisions rencontrées, notées pour la prochaine fois** : une des coques
+s'appelle « DMG », donc chercher un bouton par son nom trouvait la coque ET le
+modèle (les tests interrogent le `fieldset` par son `legend`) ; et l'étiquette du
+sélecteur, `Cartouche (.gb)`, était le point d'accroche de sept tests existants —
+portés, pas supprimés.
 
 ---
 
@@ -530,14 +738,49 @@ modèle de temps de toute la machine — `totalCycles`, le timer, le curseur par
 de l'APU. C'est un jalon à lui seul, à ouvrir après celui-ci, jamais pendant.
 
 Sans lui, les jeux CGB tourneront — simplement à vitesse simple, comme un jeu qui
-ne demanderait jamais la bascule.
+ne demanderait jamais la bascule. **Un point de vigilance quand même, découvert au
+lot 7** : `$FF4D` n'est pas mappé du tout, donc il se lit 0xFF. Un jeu qui teste
+son bit 7 pour savoir à quelle vitesse il tourne lira « double vitesse ». Un vrai
+CGB au repos rend 0x7E. Poser ce seul octet est tentant, mais il ne va pas seul :
+un jeu qui arme la bascule puis exécute `STOP` attendrait un changement de régime
+qui ne viendrait jamais. C'est le premier caillou du jalon suivant, pas un
+correctif isolé.
+
+**Le mode de compatibilité DMG (KEY0, 0xFF4C).** Découvert au lot 7 en cherchant
+pourquoi `unused_hwio-C` refusait de finir — voir P3. Un CGB qui reçoit une
+cartouche non-CGB se bride lui-même : palettes figées par le boot ROM, données de
+palette, OPRI, SVBK et HDMA verrouillés, `$FF74` en lecture seule. C'est ce que
+mesurent `unused_hwio-C` et `boot_hwio-C`, et c'est pour ça qu'aucune des deux ne
+peut devenir verte ici. Émuler ce mode est un petit jalon en soi ; il n'apporte
+rien au rendu et ne débloque aucun jeu, seulement deux oracles.
 
 ---
 
-## 7. Ce que j'attends de toi pour démarrer
+## 7. Où on en est
 
-1. **Trancher D1** (format du tampon écran) — j'ai recommandé A.
-2. **Confirmer D2 et D3** (choix du modèle, noms des coutures).
-3. **Déposer `cgb-acid2.gb`** dans `src/test/fixtures/` avant le lot 4.
+**Le jalon est fermé.** Lots 0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7 et F.
+**1746 tests au vert**, dont 1664 côté cœur.
 
-Une fois D1-D3 figées, j'écris les TU du lot 0 et on démarre.
+Le verdict du jalon tient en une ligne : **`cgb-acid2` rend l'image de référence
+au pixel près, 0 faux sur 23040**, et les trois ROMs MagenTests passent.
+
+| ce qui a été fait | où ça se vérifie |
+|---|---|
+| deux banques de VRAM, VBK | `unused_hwio-C` (`$FF4F`), `cgb-vram.test.js` |
+| palettes, RGB555 unifié | `unused_hwio-C` (`$FF68`, `$FF6A`), `cgb-acid2` |
+| étiquettes de tuile, fond couleur | `cgb-acid2` |
+| sprites, table de priorités, OPRI | `cgb-acid2`, `bg_oam_priority`, `oam_internal_priority` |
+| HDMA général et HBlank | `hblank_vram_dma` |
+| SVBK, registres indocumentés, PCM | `cgb-systeme.test.js`, `unused_hwio-C` jusqu'à `$FF69` |
+| bascule DMG/CGB côté front | `modele-front.test.jsx` |
+
+**Ce qui reste ouvert, et qui n'est pas de ce jalon** : le double régime d'horloge
+(KEY1) et le mode de compatibilité DMG (KEY0), tous deux en §6. Le premier est le
+prochain jalon naturel — c'est lui qui manquera à un vrai jeu CGB, pas les
+deux oracles que le second débloquerait.
+
+**La leçon du jalon**, s'il faut n'en garder qu'une : la règle d'oracle du §3 a
+tenu, et elle a servi deux fois plutôt qu'une. Elle a évité le brouillard des
+quatre suspects — mais surtout, elle a fini par retourner une promesse que ce
+cahier répétait sans l'avoir vérifiée (P3). Un oracle ne sert pas seulement à
+valider le code : il valide aussi ce qu'on croit savoir de l'oracle.
