@@ -6,8 +6,14 @@ import MemoryBuilder from "./memory/index.js";
 import Clock from "./clock/index.js";
 import Serial from "./serial/index.js";
 import Cartridge from "./cartridge/Cartridge.js";
+import { DMG } from "./models.js";
 
-export function MachineBuilder() {
+/**
+ * @param {object} [options]
+ * @param {'dmg'|'cgb'|'auto'} [options.model] le modèle de CONSOLE voulu.
+ *        'auto' suit la cartouche ; voir core/models.js.
+ */
+export function MachineBuilder({ model = DMG } = {}) {
 
     const SerialClass = Serial(console);
     const serial = new SerialClass();
@@ -25,5 +31,5 @@ export function MachineBuilder() {
         memory, cpu, decoder, clock, serial
     )
 
-    return new MachineClass();
+    return new MachineClass(model);
 }

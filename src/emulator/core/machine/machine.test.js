@@ -86,7 +86,7 @@ const buildAll = () => {
   const Decoder = buildDecoder(cpu, instructions);
   const decoder = new Decoder();
   const clock = buildFakeClock();
-  const Machine = buildMachine(memory, cpu, decoder, clock, serial, timer);
+  const Machine = buildMachine(memory, cpu, decoder, clock, serial);
   const machine = new Machine();
   return { cpu, decoder, clock, serial, timer, machine };
 };

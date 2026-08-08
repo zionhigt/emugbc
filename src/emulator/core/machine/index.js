@@ -3,6 +3,7 @@ import Timer from "../timer/index.js";
 import PPU, { Fetcher } from "../ppu/index.js"
 import APU from "../apu/index.js"
 import Joypad from "../joypad/index.js"
+import { DMG, CGB, AUTO, isPreference } from "../models.js"
 
 const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
@@ -10,7 +11,22 @@ const DEFAULT_BUDGET = Number.parseInt(MACHINE_FREQUENCE / MACHINE_FRAMES_PER_SE
 
 export default function(memory, cpu, decoder, clock, serial) {
     class Machine {
-        constructor() {
+        /**
+         * `modelPreference` arrive par le CONSTRUCTEUR et non par l'usine, pour
+         * la même raison que la classe de Fetcher du PPU : deux appelants passent
+         * déjà un sixième argument à l'usine, qu'elle ignore — y glisser la
+         * préférence lui aurait fait recevoir un timer.
+         *
+         * Le défaut est DMG et non AUTO : tant qu'il n'existe pas de PPU CGB, une
+         * cartouche marquée 0x80 n'a rien à gagner à démarrer en CGB, et onze des
+         * ROMs blargg des fixtures portent justement ce drapeau.
+         */
+        constructor(modelPreference = DMG) {
+            if (!isPreference(modelPreference)) {
+                throw new Error(`Machine : préférence de modèle inconnue « ${modelPreference} »`);
+            }
+            this._modelPreference = modelPreference;
+            this._model = null; // résolu à l'insertion de la cartouche
             // Assume that, decoder.cpu == cpu
             this.cpu = cpu;
             this._memory = memory;
@@ -51,6 +67,30 @@ export default function(memory, cpu, decoder, clock, serial) {
 
         get timer() {
             return this._timer;
+        }
+
+        /** Ce qu'on a DEMANDÉ : 'dmg', 'cgb' ou 'auto'. */
+        get modelPreference() {
+            return this._modelPreference;
+        }
+
+        /**
+         * Ce qu'on EST : 'dmg' ou 'cgb'. Vaut null tant qu'aucune cartouche n'est
+         * insérée — c'est elle qui tranche quand la préférence est 'auto'.
+         */
+        get model() {
+            return this._model;
+        }
+
+        /**
+         * Le boîtier décide, la cartouche renseigne. Une préférence explicite
+         * l'emporte toujours : c'est ce qui permet de forcer une CGB avec une
+         * cartouche qui ne se déclare pas — le cas de TOUTES les ROMs mooneye,
+         * qui portent 0x143 = 0x00 et mesurent ce que la console a laissé.
+         */
+        resolveModel(cartridge) {
+            if (this._modelPreference !== AUTO) return this._modelPreference;
+            return cartridge?.header?.supportsCgb ? CGB : DMG;
         }
 
         get IE() {
@@ -176,6 +216,9 @@ export default function(memory, cpu, decoder, clock, serial) {
         }
 
         plugCartridge(cartridge) {
+            // Le modèle se fige ICI et pas avant : en 'auto' il dépend de la
+            // cartouche, qui n'existe pas à la construction de la machine.
+            this._model = this.resolveModel(cartridge);
             this.initTimer();
             const timer = this.timer;
             const newMemory = MemoryBuilder(
@@ -188,7 +231,7 @@ export default function(memory, cpu, decoder, clock, serial) {
             );
             this._memory = newMemory;
             this.cpu.initMemory(newMemory);
-            cpu.postBoot();
+            cpu.postBoot(this._model);
         }
     }
 

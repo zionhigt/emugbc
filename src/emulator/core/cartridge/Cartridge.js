@@ -131,6 +131,33 @@ class CartridgeHeader {
         return this._raw_cartridge_type;
     }
 
+    /** L'octet brut de 0x143, tel quel. */
+    get cgbFlag() {
+        return this._raw_cgb_flag;
+    }
+
+    /**
+     * La cartouche annonce-t-elle des fonctions CGB ?
+     *
+     * C'est le BIT 7 qui décide, et lui seul : c'est ce que regarde la ROM de
+     * démarrage de la console. Les deux valeurs qu'on rencontre en pratique sont
+     * 0x80 (fonctions CGB, mais tourne aussi sur une monochrome) et 0xC0 (CGB
+     * exclusivement).
+     *
+     * Piège : 0x143 est aussi le DERNIER octet de la zone de titre. Une vieille
+     * cartouche dont le titre est assez long y laisse une lettre, et une lettre
+     * dont le bit 7 serait levé se lirait ici comme une annonce CGB. Le matériel
+     * a exactement la même faiblesse — on ne la corrige pas, on la reproduit.
+     */
+    get supportsCgb() {
+        return (this._raw_cgb_flag & 0x80) !== 0;
+    }
+
+    /** 0xC0 : la cartouche refuse de tourner sur une monochrome. */
+    get isCgbOnly() {
+        return this._raw_cgb_flag === 0xC0;
+    }
+
     get romSize() {
         return ROM_SIZE_CONFIG[this._raw_rom_size].iBSize;
     }

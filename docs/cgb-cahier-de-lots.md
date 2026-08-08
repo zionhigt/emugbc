@@ -78,7 +78,72 @@ le trajet du pixel, il change ce qu'on lit au passage et comment on le colorie.*
 
 ---
 
-## 3. Les oracles — ce qu'on a, ce qu'on n'a pas
+## 3. La règle d'oracle *(corrigée après coup — le premier découpage était fautif)*
+
+Le découpage initial mettait `cgb-acid2` aux lots 4 et 5, et rien d'extérieur
+entre le lot 1 et là. **C'est un mauvais motif, et il faut le nommer** : un oracle
+placé au bout d'une chaîne d'étapes non vérifiées ne peut plus localiser la faute.
+Rouge au lot 5, le coupable est dans la banque, les palettes, les étiquettes ou
+les sprites — quatre suspects. Pire : les TU des lots intermédiaires sont écrits
+par moi contre pandocs, donc **ils sont verts précisément parce qu'ils encodent ma
+lecture**, juste ou fausse. Une lecture fautive passe le contrôle et n'explose que
+six étapes plus loin.
+
+**La règle, désormais** : *chaque lot finit sur quelque chose d'extérieur à ma
+tête, qui ne peut être vert que si CE lot est juste.*
+
+Trois conséquences concrètes :
+
+1. **Un oracle par lot, pas un oracle à la fin.** Les ROMs mooneye `-C` déjà
+   présentes arbitrent la MÉCANIQUE (valeurs au démarrage, bits inutilisés,
+   registres non mappés) et non l'image finale : ce sont elles qui doivent fermer
+   les lots 1 à 3.
+2. **Chaque oracle vient avec son NÉGATIF.** `boot_regs-cgb` doit passer en CGB
+   *et échouer en DMG* — mooneye documente lui-même sa liste d'échecs attendus.
+   Sans le négatif, on ne prouve pas que la bascule fait quoi que ce soit.
+3. **`cgb-acid2` cesse d'être un examen final** : dès qu'il peut tourner, il
+   devient une MESURE — un nombre de pixels faux, comparé à l'image de référence,
+   qui doit décroître à chaque lot et finir à zéro. Un compteur qu'on lit à chaque
+   étape, pas un verdict qu'on découvre à la fin.
+
+### Deux prérequis découverts en mesurant
+
+**P1 — Il n'existe AUCUN oracle de rendu, même en DMG.** `dmg-acid2.gb` est une
+fixture que rien n'exécute : elle n'apparaît que dans deux commentaires de test.
+Le lot 0 a donc traversé tout le chemin de rendu sans filet d'image. Avant
+d'aller plus loin il faut un **harnais de rendu** : insérer la ROM, tourner N
+trames, comparer le tampon écran. Deux niveaux, à ne pas confondre :
+
+- un **instantané de référence** produit par notre propre code — disponible tout
+  de suite, sans rien télécharger. Il attrape les RÉGRESSIONS (il aurait gardé le
+  lot 0) mais ne prouve rien : il fige nos bugs actuels autant que nos succès.
+- une **image de référence** venue du dépôt de la ROM — la seule qui prouve la
+  justesse. À récupérer, comme `cgb-acid2.gb`.
+
+**P2 — `unused_hwio-C` n'est pas utilisable tant que `unused_hwio-GS` est rouge.**
+Mesuré : la variante DMG échoue déjà aujourd'hui. Les deux ROMs testent le même
+plan d'IO, la version `-C` n'y ajoute que `$FF4F`, `$FF68`, `$FF6A`, les registres
+CGB indocumentés et le fait que `$FF4C` reste non mappé. Tant que la base DMG est
+rouge, l'écart n'est pas lisible : on ne saurait pas si l'échec vient du CGB ou
+d'un masque DMG manquant. **Fermer `unused_hwio-GS` est donc un prérequis**, et
+c'est un trou de justesse DMG qu'on ne se connaissait pas.
+
+### État mesuré des oracles (2026-08-08)
+
+| ROM | aujourd'hui | ferme quel lot |
+|---|---|---|
+| `boot_regs-dmgABC.gb` | **passe** | garde-fou du lot 1 |
+| `boot_regs-cgb.gb` | échoue (on démarre en DMG) | **lot 1** |
+| `unused_hwio-GS.gb` | **échoue** | prérequis P2 |
+| `unused_hwio-C.gb` | échoue | **lots 2 et 3**, après P2 |
+| `boot_hwio-C.gb` | échoue | lots 2-3, appoint |
+| `vblank_stat_intr-C.gb` | non mesuré | lot 2-3, appoint |
+| `dmg-acid2.gb` | **jamais exécuté** | prérequis P1 |
+| `cgb-acid2.gb` | **absent du dépôt** | lots 4-5, en mesure continue |
+
+---
+
+## 3 bis. Inventaire des ROMs — ce qu'on a, ce qu'on n'a pas
 
 **À lire avant de promettre quoi que ce soit.** Inventaire réel de
 `src/test/fixtures/` au moment d'écrire ce cahier :
@@ -199,18 +264,80 @@ où D1 sera prise, sans que sa signature bouge.
 
 ---
 
-### Lot 1 — Le modèle : DMG ou CGB, et comment on choisit
+### Lot 0.5 — Le harnais de rendu *(prérequis P1)*
 
-**Objectif** : la machine sait quel modèle elle est, et instancie le bon PPU.
+**Objectif** : que `dmg-acid2` soit enfin EXÉCUTÉ, et que le chemin de rendu ait
+un filet. Insérer la ROM, tourner assez de trames, comparer le tampon écran.
 
-Travaux : getter `isCgb` sur l'en-tête ; notion de modèle sur la `Machine` ;
-`MachineBuilder({ model })` ; valeurs de registres au démarrage propres au CGB
-(`postBoot`, A = 0x11 notamment).
+Instantané de référence d'abord (disponible sans rien télécharger, attrape les
+régressions), image de référence ensuite si tu la récupères (prouve la justesse).
+C'est ce harnais que `cgb-acid2` réutilisera au lot 4 — en MESURE, pas en verdict.
 
-**TU** : lecture du drapeau 0x143 dans ses trois valeurs ; le modèle choisi
-instancie bien la classe attendue ; le forçage manuel l'emporte sur la cartouche.
+**Oracle** : lui-même. Et il ferme rétroactivement le trou du lot 0.
 
-**Oracle** : `boot_regs-cgb.gb` (et son pendant DMG doit rester vert).
+---
+
+### Lot 1 — Le modèle : DMG ou CGB, et comment on choisit — **FERMÉ**
+
+**Objectif** : la machine sait quel modèle elle est, et le CPU démarre avec les
+bons registres.
+
+Travaux : drapeau CGB exposé sur l'en-tête (0x143) ; notion de modèle sur la
+`Machine`, résolue à `plugCartridge` (défaut par la cartouche, forçage explicite
+prioritaire) ; `postBoot(model)`.
+
+**Fait qui tranche D2 tout seul** : `boot_regs-cgb.gb` déclare `0x143 = 0x00`. Les
+ROMs mooneye ne se déclarent JAMAIS CGB — elles mesurent ce que la console a
+laissé. Le forçage manuel n'est donc pas un confort, il est **nécessaire pour
+faire tourner l'oracle**.
+
+Valeurs, prises dans la source de l'oracle et non dans pandocs (elles diffèrent
+de ce qu'on croit savoir) :
+
+```
+DMG   A=$01 F=$B0 B=$00 C=$13 D=$00 E=$D8 H=$01 L=$4D   SP=$FFFE
+CGB   A=$11 F=$80 B=$00 C=$00 D=$00 E=$08 H=$00 L=$7C   SP=$FFFE
+```
+
+**Le choix de la classe de PPU part au lot 2**, quand il y aura réellement deux
+classes : le PPU naît dans le constructeur de `Machine`, donc AVANT que la
+cartouche soit connue. Le déplacer maintenant ne sélectionnerait rien.
+
+**Trois choses apprises en le faisant :**
+
+- Le modèle est celui de la CONSOLE, pas de la cartouche : une cartouche 0x80
+  glissée dans une DMG tourne en DMG. D'où trois valeurs (`dmg`, `cgb`, `auto`)
+  et non deux, `auto` étant la seule qui consulte l'en-tête. Le défaut reste
+  `dmg` tant qu'il n'existe aucun PPU CGB.
+- La préférence passe par le CONSTRUCTEUR de `Machine`, pas par l'usine : deux
+  appelants lui passaient déjà un sixième argument qu'elle ignore, et y glisser
+  la préférence lui aurait fait recevoir un timer. Argument mort supprimé au
+  passage.
+- Onze des ROMs blargg portent 0x143 = 0x80. Mesuré : sous `auto` elles
+  résolvent bien en `cgb` et **passent toutes** — les registres CGB au démarrage
+  ne les gênent pas. Bon présage pour le jour où le front basculera sur `auto`.
+
+**Oracles, avec leurs négatifs** :
+
+| ROM | modèle forcé | attendu |
+|---|---|---|
+| `boot_regs-cgb.gb` | cgb | passe |
+| `boot_regs-cgb.gb` | dmg | **échoue** |
+| `boot_regs-dmgABC.gb` | dmg | passe (déjà vert) |
+| `boot_regs-dmgABC.gb` | cgb | **échoue** |
+
+---
+
+### Lot 1.5 — Fermer les masques de lecture DMG *(prérequis P2)*
+
+**Objectif** : rendre `unused_hwio-GS.gb` vert. Bits inutilisés et registres non
+mappés du plan `$FFxx` : tous doivent se lire à 1.
+
+Ce n'est pas du CGB, c'est un trou de justesse DMG découvert en mesurant. Mais
+sans lui, `unused_hwio-C` reste illisible aux lots 2 et 3 : on ne saurait pas si
+l'échec vient du CGB ou d'un masque DMG manquant.
+
+**Oracle** : `unused_hwio-GS.gb` (et `-C` doit rester rouge — il attend le CGB).
 
 ---
 
@@ -223,8 +350,13 @@ lire une banque précise sans passer par la commutation.
 dot-précis du chapitre PPU) s'appliquent **aux deux banques**. Ce lot ne doit pas
 les contourner en tapant `memory._read` directement.
 
-**TU** : écriture/lecture par banque ; `VBK` se lit `0xFE | banque` ; en DMG
-l'écriture de VBK est sans effet ; le blocage mode 3 reste intact.
+**TU** : écriture/lecture par banque ; en DMG l'écriture de VBK est sans effet ;
+le blocage mode 3 reste intact.
+
+**Oracle** : `unused_hwio-C.gb` arbitre nommément `$FF4F` — `test $FF4F %11111110`,
+donc les bits 1 à 7 lus à 1. Plus `boot_hwio-C.gb` pour sa valeur au démarrage.
+C'est aussi ici que se choisit enfin la CLASSE de PPU selon le modèle, puisqu'il
+y en a désormais deux.
 
 ---
 
@@ -236,6 +368,11 @@ palette, auto-incrément sur le bit 7 de l'index, et le RGB555 qui en sort.
 **TU** : l'auto-incrément avance après une écriture et **pas** après une lecture ;
 relecture fidèle ; décodage RGB555 ; huit palettes de quatre couleurs de chaque
 côté ; en DMG ces registres n'existent pas.
+
+**Oracle** : `unused_hwio-C.gb` arbitre `$FF68` et `$FF6A` — `%01000000`, donc le
+bit 6 lu à 1 des deux côtés. C'est ici aussi que se prend la décision D1, et que
+`cgb-acid2` doit commencer à tourner en MESURE, même très rouge : le compte de
+pixels faux devient le chiffre qu'on suit jusqu'au lot 5.
 
 ---
 
@@ -253,7 +390,8 @@ ne peut pas trancher.
 
 **TU** : chaque bit de l'attribut isolément, puis en combinaison (miroir X + Y).
 
-**Oracle** : `cgb-acid2.gb` — **à déposer avant d'ouvrir ce lot.**
+**Oracle** : `cgb-acid2.gb`, en MESURE et non en verdict — le compte de pixels
+faux doit CHUTER par rapport au lot 3. **À déposer avant d'ouvrir ce lot.**
 
 ---
 
@@ -270,7 +408,7 @@ un interrupteur de priorité, pas un interrupteur de fond), le bit 7 de l'attrib
 de tuile, le bit 7 de l'attribut OAM. C'est la règle qu'on croit connaître et
 qu'on n'a pas : elle sera écrite en table dans les TU, cas par cas.
 
-**Oracle** : `cgb-acid2.gb`, obligatoire ici.
+**Oracle** : `cgb-acid2.gb`, et cette fois à ZÉRO pixel faux.
 
 ---
 

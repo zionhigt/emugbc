@@ -1,5 +1,21 @@
 import byte from "../../lib/byte.js";
 import { Register, FlagRegister, Extendedregister } from "../../lib/register.js";
+import { DMG, CGB } from "../models.js";
+
+/**
+ * L'ÉTAT DES REGISTRES À LA SORTIE DE LA ROM DE DÉMARRAGE, par modèle.
+ *
+ * On ne fait pas tourner la ROM de démarrage : on se pose à 0x100 avec ce
+ * qu'elle aurait laissé. Ces valeurs viennent de mooneye — `boot_regs-dmgABC.s`
+ * et `boot_regs-cgb.s`, mesurées sur du vrai matériel — et NON de pandocs, qui
+ * en donne d'autres pour le CGB (celles d'une CGB faisant tourner une cartouche
+ * monochrome, un cas différent). L'oracle est la source, pas la doc.
+ */
+const BOOT_REGISTERS = {
+    //          A     F     B     C     D     E     H     L
+    [DMG]: { AF: 0x01B0, BC: 0x0013, DE: 0x00D8, HL: 0x014D },
+    [CGB]: { AF: 0x1180, BC: 0x0000, DE: 0x0008, HL: 0x007C },
+};
 
 class MemoryWrapper {
     constructor(cpu, memory) {
@@ -112,13 +128,17 @@ export default class CPU {
         return this._stopped;
     }
 
-    postBoot() {
+    postBoot(model = DMG) {
+        const boot = BOOT_REGISTERS[model];
+        if (!boot) {
+            throw new Error(`postBoot : modèle inconnu « ${model} »`);
+        }
         this.registers.PC.setValue(0x100);
         this.registers.SP.setValue(0xFFFE);
-        this.registers.AF.setValue(0x1B0);
-        this.registers.BC.setValue(0x13);
-        this.registers.DE.setValue(0xD8);
-        this.registers.HL.setValue(0x14D);
+        this.registers.AF.setValue(boot.AF);
+        this.registers.BC.setValue(boot.BC);
+        this.registers.DE.setValue(boot.DE);
+        this.registers.HL.setValue(boot.HL);
     }
 
     initMemory(memory) {

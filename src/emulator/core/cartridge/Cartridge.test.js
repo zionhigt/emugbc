@@ -78,6 +78,40 @@ describe("Cartridge (bootstrap) : parsing d'en-tête et lecture plate", () => {
     });
   });
 
+  describe('header : le drapeau CGB (0x0143)', () => {
+    const withFlag = (value) => {
+      const rom = buildRom();
+      rom[0x0143] = value;
+      return new Cartridge(rom).header;
+    };
+
+    it('cgbFlag rend l\'octet brut', () => {
+      expect(withFlag(0x80).cgbFlag).toBe(0x80);
+      expect(withFlag(0xc0).cgbFlag).toBe(0xc0);
+      expect(withFlag(0x00).cgbFlag).toBe(0x00);
+    });
+
+    it('supportsCgb : 0x80 (compatible) et 0xC0 (CGB seul) l\'annoncent', () => {
+      expect(withFlag(0x80).supportsCgb, '0x80 = fonctions CGB, tourne aussi en mono').toBe(true);
+      expect(withFlag(0xc0).supportsCgb, '0xC0 = CGB exclusivement').toBe(true);
+      expect(withFlag(0x00).supportsCgb).toBe(false);
+    });
+
+    it('isCgbOnly ne vaut que pour 0xC0', () => {
+      expect(withFlag(0xc0).isCgbOnly).toBe(true);
+      expect(withFlag(0x80).isCgbOnly, '0x80 tourne encore sur une monochrome').toBe(false);
+    });
+
+    it('c\'est le BIT 7 qui décide, comme la ROM de démarrage', () => {
+      // 0x143 est aussi le dernier octet de la zone de titre : une vieille
+      // cartouche au titre assez long y laisse une lettre. Une lettre au bit 7
+      // levé s'y lit comme une annonce CGB — le matériel a la même faiblesse,
+      // on la reproduit au lieu de la corriger.
+      expect(withFlag(0x81).supportsCgb, 'bit 7 levé, quoi qu\'il y ait à côté').toBe(true);
+      expect(withFlag(0x7f).supportsCgb, 'bit 7 éteint : rien à déclarer').toBe(false);
+    });
+  });
+
   describe('header : le logo Nintendo', () => {
     it('logoValid : vrai quand les 48 octets sont conformes', () => {
       expect(new Cartridge(buildRom()).header.logoValid).toBe(true);

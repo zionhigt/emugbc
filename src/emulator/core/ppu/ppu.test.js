@@ -1486,7 +1486,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const memory = buildMemory(undefined, serial, timer, undefined, joypad, apu);
       const cpu = new CPU(memory);
       const Decoder = buildDecoder(cpu, buildInstructions());
-      const Machine = buildMachine(memory, cpu, new Decoder(), clock, serial, timer);
+      const Machine = buildMachine(memory, cpu, new Decoder(), clock, serial);
       const machine = new Machine();
 
       // une cartouche factice : HALT à l'entrée, et au vecteur VBlank (0x40)
