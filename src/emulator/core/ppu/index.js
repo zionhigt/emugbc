@@ -719,6 +719,15 @@ export default function(machine) {
             this.statLine = level;
         }
 
+        /**
+         * LE SOUFFLE DE FIN DE LIGNE. Rien à y faire en DMG — c'est du temps mort.
+         * Le CGB y cadence son HDMA : un bloc de 16 octets par HBlank, et aucun
+         * pendant le VBlank, puisqu'on n'y passe jamais par ici (mode 1 ne
+         * traverse pas le mode 3).
+         */
+        enterHBlank() {
+        }
+
         duration(mode) {
             return [204, 456, 80, 172][mode % 4];
         }
@@ -748,6 +757,7 @@ export default function(machine) {
                     break;
                 case 3:
                     this.mode = 0;
+                    this.enterHBlank();
                     break;
             }
 

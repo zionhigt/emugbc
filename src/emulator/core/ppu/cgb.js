@@ -118,6 +118,129 @@ class OPRIRegister extends Register(8) {
     }
 }
 
+/** Le HDMA porte des blocs de 16 octets, jamais un de plus, jamais un de moins. */
+const HDMA_BLOCK = 0x10;
+
+const VRAM_END = VRAM_START + VRAM_SIZE - 1;
+
+/**
+ * HDMA1-4 — les quatre demi-adresses, EN ÉCRITURE SEULE.
+ *
+ * Le matériel ne les relit pas : il n'y a personne derrière, le bus laisse ses
+ * lignes en l'air, donc à 1. Le contrôleur, lui, a besoin de ce qui a été écrit,
+ * d'où `written` — la valeur brute, celle que le bus ne rend pas.
+ */
+class WriteOnlyRegister extends Register(8) {
+    getValue() {
+        return 0xFF;
+    }
+
+    get written() {
+        return super.getValue();
+    }
+}
+
+/**
+ * LE HDMA — le second bouton-copie du CGB, celui qui vise la VRAM.
+ *
+ * Le DMG en avait déjà un (0xFF46), mais il ne remplit que l'OAM, toujours de la
+ * même longueur, et d'un seul geste. Celui-ci sait faire une chose de plus :
+ * **se découper en tranches**. Un déménagement en un camion plein qui bloque le
+ * programme (transfert général), ou le même chargement porté carton par carton,
+ * un carton de 16 octets à chaque fois que le PPU souffle en fin de ligne
+ * (transfert HBlank). Dans le second cas le jeu continue de tourner entre deux
+ * cartons : c'est ce qui permet de recharger tuiles et palettes PENDANT
+ * l'affichage, et la plupart des jeux CGB en dépendent.
+ *
+ * Deux règles qui ne se devinent pas :
+ *
+ *  - il n'y a pas de HBlank en VBlank. Rien ne bouge aux lignes 144-153, et le
+ *    transfert reprend tout seul à la ligne 0 ;
+ *  - le CPU en `halt` GÈLE le transfert. Le DMA emprunte le bus au processeur,
+ *    pas au PPU : processeur endormi, plus personne pour porter les cartons.
+ */
+class VramDma {
+    constructor(ppu) {
+        this.ppu = ppu;
+        this.HDMA1 = new WriteOnlyRegister(); // source, octet haut
+        this.HDMA2 = new WriteOnlyRegister(); // source, octet bas
+        this.HDMA3 = new WriteOnlyRegister(); // destination, octet haut
+        this.HDMA4 = new WriteOnlyRegister(); // destination, octet bas
+        this.source = 0;
+        this.destination = VRAM_START;
+        this.remaining = 0;   // blocs restant à porter
+        this.running = false; // un transfert HBlank est en cours
+    }
+
+    /**
+     * HDMA5 en lecture : le bit 7 dit « aucun transfert en cours », les sept
+     * autres comptent les blocs restants moins un. 0xFF = terminé.
+     */
+    get status() {
+        if (this.running) return (this.remaining - 1) & 0x7F;
+        if (this.remaining > 0) return 0x80 | ((this.remaining - 1) & 0x7F);
+        return 0xFF;
+    }
+
+    /**
+     * HDMA5 en écriture — un registre à DEUX usages, et c'est le piège :
+     * le même bit 7 à 0 démarre un transfert général quand rien ne tourne, et
+     * INTERROMPT le transfert HBlank en cours quand il y en a un.
+     */
+    write(value) {
+        const hblankMode = byte.getFlag(value, 7);
+        if (this.running && !hblankMode) {
+            this.running = false; // interrompu : `remaining` reste lisible
+            return;
+        }
+
+        this.source = ((this.HDMA1.written << 8) | this.HDMA2.written) & 0xFFF0;
+        // La destination est toujours en VRAM : seuls les bits 12-4 comptent.
+        this.destination = VRAM_START | (((this.HDMA3.written << 8) | this.HDMA4.written) & 0x1FF0);
+        this.remaining = (value & 0x7F) + 1;
+        this.running = true;
+
+        if (hblankMode) return;
+        // Transfert général : le camion part une fois, plein. Le vrai matériel
+        // arrête le processeur pendant ce temps ; ici la copie est instantanée,
+        // comme celle de l'OAM (0xFF46), et les cycles ne sont pas facturés.
+        while (this.running) this.copyBlock();
+    }
+
+    /** Le souffle de fin de ligne : un carton, s'il reste quelqu'un pour le porter. */
+    onHBlank() {
+        if (!this.running) return;
+        if (this.ppu.machine.cpu.halted) return;
+        this.copyBlock();
+    }
+
+    copyBlock() {
+        const memory = this.ppu.machine.memory;
+        for (let i = 0; i < HDMA_BLOCK; i++) {
+            // La source passe par le bus du PROCESSEUR (`read`) et non par la
+            // mémoire plate : elle est presque toujours en ROM, donc derrière le
+            // MBC et sa banque courante.
+            this.ppu.vramWrite(this.destination, memory.read(this.source));
+            this.source = (this.source + 1) & 0xFFFF;
+            this.destination++;
+        }
+        this.remaining--;
+        // Fini, ou sorti de la VRAM par le haut : dans les deux cas on s'arrête.
+        if (this.remaining === 0 || this.destination > VRAM_END) {
+            this.remaining = 0;
+            this.running = false;
+        }
+    }
+}
+
+/** HDMA5, vu du bus : il ne fait que relayer vers le contrôleur. */
+function hdmaRegister(dma) {
+    return {
+        getValue() { return dma.status; },
+        setValue(value) { return dma.write(value); },
+    };
+}
+
 /**
  * LE PPU CGB — une surcharge du DMG, pas un second PPU.
  *
@@ -139,18 +262,29 @@ export default function(machine) {
             this.bgPalettes = new PaletteAccess();
             this.objPalettes = new PaletteAccess();
             this.OPRI = new OPRIRegister();
+            this.hdma = new VramDma(this);
         }
 
         buildRegistersMapping() {
             return {
                 ...super.buildRegistersMapping(),
                 0xFF4F: this.VBK,
+                0xFF51: this.hdma.HDMA1,
+                0xFF52: this.hdma.HDMA2,
+                0xFF53: this.hdma.HDMA3,
+                0xFF54: this.hdma.HDMA4,
+                0xFF55: hdmaRegister(this.hdma),
                 0xFF68: paletteRegister(this.bgPalettes, 'spec'),
                 0xFF69: paletteRegister(this.bgPalettes, 'data'),
                 0xFF6A: paletteRegister(this.objPalettes, 'spec'),
                 0xFF6B: paletteRegister(this.objPalettes, 'data'),
                 0xFF6C: this.OPRI,
             };
+        }
+
+        /** Le CGB porte un carton de HDMA à chaque fin de ligne. */
+        enterHBlank() {
+            this.hdma.onHBlank();
         }
 
         /** La banque que le CPU voit en ce moment. */
