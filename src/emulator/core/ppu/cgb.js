@@ -1,4 +1,5 @@
 import { Register } from "../../lib/register";
+import byte from "../../lib/byte";
 import PPU, { Fetcher } from "./index.js";
 
 const VRAM_START = 0x8000;
@@ -154,6 +155,49 @@ export default function(machine) {
             // Hors VRAM (l'OAM, notamment) il n'y a pas de banque : on retombe
             // sur la lecture plate, quelle que soit la banque demandée.
             return super.vramReadBank(addr, 0);
+        }
+
+        // ─── L'ÉTIQUETTE DE TUILE, et tout ce qu'elle commande ───
+
+        /**
+         * Elle vit à la MÊME adresse que l'identifiant, mais dans la banque 1.
+         * C'est toute l'astuce du CGB : la carte de tuiles n'a pas bougé d'un
+         * octet, on a mis un second tiroir derrière.
+         */
+        tileAttributes(mapAddress) {
+            return this.vramReadBank(mapAddress, 1);
+        }
+
+        /**
+         * Bit 3 : le motif de cette tuile vit dans l'une ou l'autre banque.
+         *
+         * `getBit` et non `getFlag` : la couture rend un NUMÉRO de banque, pas un
+         * booléen, et `vramReadBank` compare strictement. Un `true` s'y lisait
+         * comme « pas la banque 1 », et le motif revenait silencieusement de la
+         * banque 0 — le fond restait juste assez plausible pour ne rien voir.
+         */
+        patternBank(attrs) {
+            return byte.getBit(attrs, 3);
+        }
+
+        /** Bit 6 : miroir vertical — on lit la rangée depuis l'autre bout. */
+        patternRow(row, attrs) {
+            return byte.getFlag(attrs, 6) ? 7 - row : row;
+        }
+
+        /** Bit 5 : miroir horizontal — on lit les huit bits à l'envers. */
+        patternBit(column, attrs) {
+            return byte.getFlag(attrs, 5) ? column : 7 - column;
+        }
+
+        /** Bit 7 : cette tuile passe devant les sprites. Croisé au lot 5. */
+        tilePriority(attrs) {
+            return byte.getBit(attrs, 7);
+        }
+
+        /** Bits 0-2 : laquelle des huit palettes de fond colorie cette tuile. */
+        backgroundColor(shade, attrs) {
+            return this.bgPalettes.color(attrs & 0x07, shade);
         }
     }
 

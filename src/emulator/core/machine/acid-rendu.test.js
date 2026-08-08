@@ -10,6 +10,7 @@ import buildMachine from './index';
 import buildCartridge from '../cartridge/Cartridge';
 import { CGB } from '../models';
 import { DMG_COLORS } from '../ppu/index';
+import { toRgb555, comparePixels } from '../../../test/refPng';
 
 /**
  * LE HARNAIS DE RENDU — prérequis P1 du jalon CGB.
@@ -32,6 +33,7 @@ import { DMG_COLORS } from '../ppu/index';
 
 const ROM = resolve(process.cwd(), 'src/test/fixtures/dmg-acid2.gb');
 const ROM_CGB = resolve(process.cwd(), 'src/test/fixtures/cgb-acid2.gbc');
+const REFERENCE = resolve(process.cwd(), 'src/test/fixtures/reference.png');
 
 // De quoi laisser la ROM s'installer et peindre : elle dessine dès les premières
 // trames, la marge est là pour ne pas dépendre d'un compte exact.
@@ -133,7 +135,29 @@ describe.skipIf(!existsSync(ROM_CGB))('cgb-acid2 : la ligne de base du jalon CGB
       .toBeGreaterThan(1);
   });
 
-  it('instantané de l\'état AVANT tout support CGB', () => {
+  it('instantané : ce que le lot en cours produit', () => {
     expect(toAscii(runRom(ROM_CGB, FRAMES, CGB).ppu.screen)).toMatchSnapshot();
+  });
+
+  /**
+   * LE CLIQUET — l'oracle réel du jalon, depuis que l'image de référence est là.
+   *
+   * On ne peut pas exiger zéro avant le dernier lot, mais on peut exiger que le
+   * compte ne REMONTE jamais. Chaque lot qui avance le baisse et resserre la
+   * borne ; un lot qui la ferait remonter casse ce test, et on sait tout de
+   * suite QUEL lot, au lieu de le découvrir à la fin avec quatre suspects.
+   *
+   * Baisser cette borne fait partie du travail d'un lot. La remonter, jamais.
+   */
+  it.skipIf(!existsSync(REFERENCE))('ne s\'éloigne pas de l\'image de référence', () => {
+    const MAX_WRONG = 6476; // lot 4 : le fond est colorié, les sprites non
+    const { pixels } = toRgb555(REFERENCE);
+    const { wrong, total, first } = comparePixels(runRom(ROM_CGB, FRAMES, CGB).ppu.screen, pixels);
+
+    expect(
+      wrong,
+      `${wrong}/${total} pixels faux (${((100 * wrong) / total).toFixed(1)} %)`
+        + (first ? ` — premier écart en (${first.x},${first.y})` : ''),
+    ).toBeLessThanOrEqual(MAX_WRONG);
   });
 });

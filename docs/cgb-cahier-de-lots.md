@@ -441,7 +441,7 @@ lot 5 (sprites) qui iront y chercher leurs couleurs.
 
 ---
 
-### Lot 4 — Les étiquettes de tuile et le fond CGB
+### Lot 4 — Les étiquettes de tuile et le fond CGB — **FERMÉ**
 
 **Objectif** : le fetcher lit l'octet d'attribut dans la banque 1, à la même
 adresse que l'identifiant de tuile dans la banque 0, et l'applique : palette 0-7,
@@ -455,10 +455,26 @@ ne peut pas trancher.
 
 **TU** : chaque bit de l'attribut isolément, puis en combinaison (miroir X + Y).
 
-**Oracle** : `cgb-acid2.gbc`, en MESURE et non en verdict — l'écart avec
-l'instantané du lot précédent dit ce que le lot a changé à l'image. Déposé et
-branché depuis le lot 1.5 ; l'image de référence de son dépôt reste à récupérer
-pour transformer la mesure en preuve.
+**Oracle** : `cgb-acid2.gbc` **contre l'image de référence**, désormais présente
+(`src/test/fixtures/reference.png`, décodée sans dépendance). Elle devient un
+CLIQUET : on ne peut pas exiger zéro avant le dernier lot, mais on exige que le
+compte de pixels faux ne REMONTE jamais.
+
+```
+avant le lot 4   ~100 %   (aucune couleur CGB)
+étiquettes        29,1 %   6716 / 23040
++ correction de la banque   28,1 %   6476 / 23040
+```
+
+**Le bug que le lot a révélé, et qui n'aurait pas fait de bruit** : `byte.getFlag`
+rend un BOOLÉEN, et `vramReadBank` compare `bank === 1` strictement. `true !== 1`,
+donc le motif revenait silencieusement de la banque 0 — un fond juste assez
+plausible pour ne rien voir à l'œil. La comparaison stricte est restée telle
+quelle : c'est elle qui a fait tomber le test. Les coutures qui rendent un
+NUMÉRO utilisent `getBit`, celles qui rendent une condition gardent `getFlag`.
+
+Les 28 % restants sont attendus : les sprites portent encore des couleurs DMG.
+C'est le lot 5.
 
 ---
 

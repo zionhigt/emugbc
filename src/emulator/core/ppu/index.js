@@ -160,17 +160,19 @@ export class Fetcher {
                 this.step = 1;
                 break;
             case 1:
-                tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
-                    0x8000 + this.id * 16 :
-                    0x9000 + byte.sign8(this.id) * 16;
-                this.low = this.parent.bus.ppuRead(tile + (dy % 8) * 2);
+                tile = this.parent.tileAddress(this.id);
+                this.low = this.parent.bus.ppuReadBank(
+                    tile + this.parent.patternRow(dy % 8, this.fetchedAttrs) * 2,
+                    this.parent.patternBank(this.fetchedAttrs),
+                );
                 this.step = 2;
                 break;
             case 2:
-                tile = byte.getFlag(this.parent.LCDC.getValue(), 4) ?
-                    0x8000 + this.id * 16 :
-                    0x9000 + byte.sign8(this.id) * 16;
-                this.high = this.parent.bus.ppuRead(tile + (dy % 8) * 2 + 1);
+                tile = this.parent.tileAddress(this.id);
+                this.high = this.parent.bus.ppuReadBank(
+                    tile + this.parent.patternRow(dy % 8, this.fetchedAttrs) * 2 + 1,
+                    this.parent.patternBank(this.fetchedAttrs),
+                );
                 this.step = 3;
                 break;
             case 3:
@@ -179,7 +181,8 @@ export class Fetcher {
                     // tuile : on la fige ici, avant que l'étape 0 du tour suivant
                     // n'aille chercher celle d'après.
                     this.attrs = this.fetchedAttrs;
-                    for (let bit = 7; bit >= 0; bit--) {
+                    for (let column = 0; column < 8; column++) {
+                        const bit = this.parent.patternBit(column, this.attrs);
                         const teinte = byte.getBit(this.high, bit) * 2 + byte.getBit(this.low, bit);
                         this.fifo.push(teinte);
                     }
@@ -196,6 +199,7 @@ export class Fetcher {
             }
             const pixel = this.fifo.shift();
             this.parent.bgLine[this.x] = pixel;
+            this.parent.bgPriority[this.x] = this.parent.tilePriority(this.attrs);
             this.parent.screen[line * 160 + this.x] = this.parent.backgroundColor(pixel, this.attrs);
             this.x++;
         }
@@ -264,6 +268,9 @@ export default function(machine) {
             this.screen.fill(BLANK_COLOR);
             this.windowLine = 0;
             this.bgLine = new Uint8Array(160);
+            // Le plan de priorité du fond : le bit 7 de l'étiquette, un par pixel.
+            // Toujours 0 en DMG. Le lot 5 le croisera avec l'attribut du sprite.
+            this.bgPriority = new Uint8Array(160);
             this.remain = this.duration(this.mode);
             this.lastSeen = 0;
             this.origin = 0;
@@ -344,6 +351,44 @@ export default function(machine) {
         /** En DMG la banque demandée n'existe pas : il n'y en a qu'une. */
         vramReadBank(addr, bank) {
             return this.machine.memory._read(addr);
+        }
+
+        /**
+         * L'ADRESSE DU MOTIF d'une tuile de fond, depuis son identifiant. Les deux
+         * modes d'adressage de LCDC bit 4 : indexé depuis 0x8000, ou SIGNÉ autour
+         * de 0x9000 — la moitié haute des identifiants vit alors sous 0x9000.
+         */
+        tileAddress(id) {
+            return byte.getFlag(this.LCDC.getValue(), 4) ?
+                0x8000 + id * 16 :
+                0x9000 + byte.sign8(id) * 16;
+        }
+
+        /**
+         * LES TROIS COUTURES DU MOTIF. En DMG elles ne font rien — une tuile se
+         * lit toujours dans la seule banque, à l'endroit, dans l'ordre. Le CGB y
+         * branche ce que dit l'étiquette : la banque (bit 3), le miroir vertical
+         * (bit 6) et le miroir horizontal (bit 5).
+         */
+        patternRow(row, attrs) {
+            return row;
+        }
+
+        patternBank(attrs) {
+            return 0;
+        }
+
+        patternBit(column, attrs) {
+            return 7 - column;
+        }
+
+        /**
+         * La tuile passe-t-elle DEVANT les sprites ? Jamais en DMG : là-bas, seul
+         * l'attribut du sprite décide. Le CGB ajoute le bit 7 de l'étiquette, et
+         * les deux se combinent au lot 5.
+         */
+        tilePriority(attrs) {
+            return 0;
         }
 
         /**
@@ -453,14 +498,15 @@ export default function(machine) {
                 const mapAddress = card + (wrow >> 3) * 32 + (wx >> 3);
                 const id = this.bus.ppuRead(mapAddress);
                 const attrs = this.tileAttributes(mapAddress);
-                const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
-                    0x8000 + id * 16 :
-                    0x9000 + byte.sign8(id) * 16;
-                const low = this.bus.ppuRead(tile + (wrow & 7) * 2);
-                const high = this.bus.ppuRead(tile + (wrow & 7) * 2 + 1);
-                const bit = 7 - (wx & 7)
+                const tile = this.tileAddress(id);
+                const row = this.patternRow(wrow & 7, attrs);
+                const bank = this.patternBank(attrs);
+                const low = this.bus.ppuReadBank(tile + row * 2, bank);
+                const high = this.bus.ppuReadBank(tile + row * 2 + 1, bank);
+                const bit = this.patternBit(wx & 7, attrs);
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.bgLine[x] = teinte;
+                this.bgPriority[x] = this.tilePriority(attrs);
                 this.screen[line * 160 + x] = this.backgroundColor(teinte, attrs);
 
             }
