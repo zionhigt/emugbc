@@ -5,7 +5,15 @@ import buildInstructions from '../cpu/instructions';
 import buildMemory from '../memory';
 import buildDecoder from '../decodeur';
 import buildMachine from '../machine';
-import buildPPU, { Fetcher } from './index';
+import buildPPU, { Fetcher, DMG_COLORS, BLANK_COLOR } from './index';
+
+// Depuis le lot 3 du jalon CGB, `screen` porte du RGB555 pour les DEUX modèles
+// (décision D1). Les tests ci-dessous raisonnent en TEINTES : `T[n]` les traduit.
+// Les bancs posent tous BGP/OBP en identité, donc teinte n = couleur T[n].
+const T = DMG_COLORS;
+// Relire l'écran EN TEINTES : tous les bancs posent une palette identité, donc
+// l'index d'une couleur dans T est la teinte qui l'a produite.
+const teintes = (slice) => Array.from(slice).map((c) => T.indexOf(c));
 
 const hex = (n, width = 4) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(width, '0');
 
@@ -428,9 +436,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
 
     it('éteindre efface la dalle en blanc (teinte 0) — pas de fossiles de la dernière image', () => {
       const { ppu } = makePPU();
-      ppu.screen.fill(3); // une image quelconque à l\'écran
+      ppu.screen.fill(T[3]); // une image quelconque à l'écran
       ppu.write(0xff40, OFF);
-      expect(ppu.screen.every((p) => p === 0), 'LCD coupé = dalle laiteuse').toBe(true);
+      expect(ppu.screen.every((p) => p === BLANK_COLOR), 'LCD coupé = dalle laiteuse').toBe(true);
     });
 
     it('rallumer : la trame repart de ZÉRO — l\'ancre renaît', () => {
@@ -531,7 +539,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     it('ppu.screen : 160 × 144 teintes, blanc (0) à la naissance', () => {
       const { ppu } = makeRig();
       expect(ppu.screen.length, 'un pixel par point d\'écran').toBe(160 * 144);
-      expect(ppu.screen.every((p) => p === 0), 'écran vierge').toBe(true);
+      expect(ppu.screen.every((p) => p === BLANK_COLOR), 'écran vierge').toBe(true);
     });
 
     it('décodage 2bpp : la tuile 0 en case (0,0), renderLine(0) déroule ses teintes', () => {
@@ -540,7 +548,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ram[0x9800] = 0; // case (0,0) = tuile 0
       ppu.renderLine(0);
       expect(
-        Array.from(ppu.screen.slice(0, 8)),
+        teintes(ppu.screen.slice(0, 8)),
         'bits faibles + bits forts recombinés, pixel par pixel',
       ).toEqual(RAMPE);
     });
@@ -551,7 +559,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       rows[1] = [3, 3, 0, 0, 1, 1, 2, 2];
       poseTuile(ram, 0, rows);
       ppu.renderLine(1);
-      expect(Array.from(ppu.screen.slice(160, 168)), 'la rangée 1 de la tuile').toEqual(rows[1]);
+      expect(teintes(ppu.screen.slice(160, 168)), 'la rangée 1 de la tuile').toEqual(rows[1]);
     });
 
     it('BGP traduit : palette inversée, les teintes se retournent', () => {
@@ -560,7 +568,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ppu.write(0xff47, 0b0001_1011); // 0→3, 1→2, 2→1, 3→0
       ppu.renderLine(0);
       expect(
-        Array.from(ppu.screen.slice(0, 8)),
+        teintes(ppu.screen.slice(0, 8)),
         'teinte finale = (BGP >> teinte×2) & 3',
       ).toEqual([3, 2, 1, 0, 3, 2, 1, 0]);
     });
@@ -572,9 +580,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ram[0x9800 + 1] = 1; // case (1,0)
       ram[0x9800 + 32] = 2; // case (0,1) — la carte fait 32 cases de large
       ppu.renderLine(0);
-      expect(Array.from(ppu.screen.slice(8, 16)), 'la deuxième case de la première rangée').toEqual(Array(8).fill(1));
+      expect(teintes(ppu.screen.slice(8, 16)), 'la deuxième case de la première rangée').toEqual(Array(8).fill(1));
       ppu.renderLine(8);
-      expect(Array.from(ppu.screen.slice(8 * 160, 8 * 160 + 8)), 'la ligne 8 tombe sur la rangée 1 de la carte').toEqual(Array(8).fill(2));
+      expect(teintes(ppu.screen.slice(8 * 160, 8 * 160 + 8)), 'la ligne 8 tombe sur la rangée 1 de la carte').toEqual(Array(8).fill(2));
     });
 
     it('SCX décale l\'échantillonnage : scroll de 3, l\'écran commence au pixel 3 de la tuile', () => {
@@ -583,7 +591,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ppu.write(0xff42 + 1, 3); // SCX (0xFF43)
       ppu.renderLine(0);
       expect(
-        Array.from(ppu.screen.slice(0, 5)),
+        teintes(ppu.screen.slice(0, 5)),
         'la rampe décalée de 3 : on lit (x + SCX) dans le décor',
       ).toEqual([3, 0, 1, 2, 3]);
     });
@@ -596,7 +604,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ram[0x9800 + 32] = 5; // 9 ÷ 8 = rangée 1 de la carte
       ppu.write(0xff42, 9); // SCY
       ppu.renderLine(0);
-      expect(Array.from(ppu.screen.slice(0, 8)), '(y + SCY) : carte ET rangée décalées').toEqual(rows[1]);
+      expect(teintes(ppu.screen.slice(0, 8)), '(y + SCY) : carte ET rangée décalées').toEqual(rows[1]);
     });
 
     it('adressage SIGNÉ (LCDC bit 4 = 0) : l\'id 0xFF pointe 0x9000 − 16 = 0x8FF0', () => {
@@ -613,7 +621,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ram[0x9800] = 0xff;
       ppu.renderLine(0);
       expect(
-        Array.from(ppu.screen.slice(0, 8)),
+        teintes(ppu.screen.slice(0, 8)),
         'sign8(0xFF) = −1 : la moitié haute des ids vit SOUS 0x9000 — le piège classique',
       ).toEqual(rows[0]);
     });
@@ -624,7 +632,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       ppu.renderLine(0); // d'abord peinte...
       ppu.write(0xff40, 0b0001_0000); // ...puis BG coupé
       ppu.renderLine(0);
-      expect(ppu.screen.slice(0, 8).every((p) => p === 0), 'décor coupé = blanc').toBe(true);
+      expect(ppu.screen.slice(0, 8).every((p) => p === BLANK_COLOR), 'décor coupé = blanc').toBe(true);
     });
 
     it('check() par ligne : une ligne se peint à sa phase de dessin (offset 20)', () => {
@@ -635,10 +643,10 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       // la ligne 3 est à son offset 0 (mode 2) — pas encore dessinée.
       machine.totalCycles = 114 * 3;
       ppu.check();
-      expect(ppu.screen[0], 'ligne 0 peinte').toBe(3);
-      expect(ppu.screen[160], 'ligne 1 peinte').toBe(3);
-      expect(ppu.screen[2 * 160], 'ligne 2 peinte').toBe(3);
-      expect(ppu.screen[3 * 160], 'ligne 3 pas encore (son dessin est à l\'offset 20)').toBe(0);
+      expect(ppu.screen[0], 'ligne 0 peinte').toBe(T[3]);
+      expect(ppu.screen[160], 'ligne 1 peinte').toBe(T[3]);
+      expect(ppu.screen[2 * 160], 'ligne 2 peinte').toBe(T[3]);
+      expect(ppu.screen[3 * 160], 'ligne 3 pas encore (son dessin est à l\'offset 20)').toBe(BLANK_COLOR);
     });
   });
 
@@ -741,7 +749,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     };
 
     const plein = (t) => Array(8).fill(Array(8).fill(t));
-    const row = (ppu, line) => Array.from(ppu.screen.slice(line * 160, line * 160 + 160));
+    // Relu en TEINTES : le banc pose une palette identité, donc l'index dans T
+    // est la teinte que la ligne portait avant le passage au RGB555.
+    const row = (ppu, line) => teintes(ppu.screen.slice(line * 160, line * 160 + 160));
 
     // Chaque sprite rallonge le mode 3 : +6 dots par sprite, plus, pour chaque X
     // UNIQUE, un alignement max(0, 5 - ((X + SCX) mod 8)). Ligne 0 sans sprite : le
@@ -985,7 +995,9 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       });
     };
     const plein = (t) => Array(8).fill(Array(8).fill(t));
-    const row = (ppu, line) => Array.from(ppu.screen.slice(line * 160, line * 160 + 160));
+    // Relu en TEINTES : le banc pose une palette identité, donc l'index dans T
+    // est la teinte que la ligne portait avant le passage au RGB555.
+    const row = (ppu, line) => teintes(ppu.screen.slice(line * 160, line * 160 + 160));
 
     // un décor de teinte 1 partout (tuile 1 en case 0 de la carte BG 0x9800)
     const poseDecor = (ram, t = 1) => {
@@ -1456,7 +1468,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       machine.totalCycles = 114 * N;
       ppu.check();
       expect(machine.IF & 0b10, 'la coïncidence STAT a frappé à l\'offset 0').toBe(0b10);
-      expect(ppu.screen[N * 160], 'la ligne 30 n\'est PAS encore dessinée').toBe(0);
+      expect(ppu.screen[N * 160], 'la ligne 30 n\'est PAS encore dessinée').toBe(BLANK_COLOR);
 
       // le "gestionnaire STAT" change SCX — comme dmg-acid2 le fait
       ppu.write(0xff43, 8); // SCX = 8
@@ -1465,7 +1477,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       machine.totalCycles = 114 * N + 25;
       ppu.check();
       expect(
-        ppu.screen[N * 160],
+        T.indexOf(ppu.screen[N * 160]),
         'le dessin lit SCX=8 (teinte 2), PAS SCX=0 (teinte 1) : le fix de timing',
       ).toBe(2);
     });

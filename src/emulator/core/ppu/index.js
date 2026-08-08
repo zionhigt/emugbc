@@ -1,6 +1,30 @@
 import { Register } from "../../lib/register";
 import byte from "../../lib/byte";
 
+/**
+ * LE FORMAT DE SORTIE DU PPU — décision D1 du cahier CGB.
+ *
+ * `screen` porte du RGB555 (0bxBBBBBGGGGGRRRRR), POUR LES DEUX MODÈLES. Le DMG
+ * n'a que quatre teintes, mais il les traverse ici plutôt que de laisser le
+ * front deviner : sinon l'affichage garderait un « si CGB » permanent, et la
+ * promesse « le CGB est une surcharge » s'arrêterait à la frontière du rendu.
+ *
+ * C'est aussi le format du matériel : le CGB range ses palettes exactement
+ * comme ça, cinq bits par composante, le bleu en haut.
+ */
+export const toRgb555 = (r, g, b) => ((b >> 3) << 10) | ((g >> 3) << 5) | (r >> 3);
+
+/** Les quatre verts de la dalle DMG, dans l'ordre des teintes 0 à 3. */
+export const DMG_COLORS = [
+    toRgb555(155, 188, 15),
+    toRgb555(139, 172, 15),
+    toRgb555(48, 98, 48),
+    toRgb555(15, 56, 15),
+];
+
+/** Le blanc de l'écran éteint : la dalle laiteuse, pas du noir. */
+export const BLANK_COLOR = DMG_COLORS[0];
+
 class LYregister extends Register(8) {
     
     constructor(parent) {
@@ -180,7 +204,7 @@ export class Fetcher {
 
     renderFifo(line) {
         if (line === 0) this.parent.windowLine = 0;
-        if (!byte.getFlag(this.parent.LCDC.getValue(), 0)) return this.parent.screen.fill(0, line * 160, line * 160 + 160);
+        if (!byte.getFlag(this.parent.LCDC.getValue(), 0)) return this.parent.screen.fill(BLANK_COLOR, line * 160, line * 160 + 160);
         const scx = this.parent.SCX.getValue();
         this.fifo = [];
         this.fetchX = scx >> 3;
@@ -236,7 +260,8 @@ export default function(machine) {
             this.line = 0;
             this.mode = 2;
 
-            this.screen = new Uint8Array(160 * 144);
+            this.screen = new Uint16Array(160 * 144);
+            this.screen.fill(BLANK_COLOR);
             this.windowLine = 0;
             this.bgLine = new Uint8Array(160);
             this.remain = this.duration(this.mode);
@@ -257,7 +282,8 @@ export default function(machine) {
         }
 
         sleep() {
-            this.screen.fill(0);
+            // Écran coupé : la dalle redevient laiteuse, pas noire.
+            this.screen.fill(BLANK_COLOR);
         }
 
         wake() {
@@ -340,7 +366,7 @@ export default function(machine) {
          * chercher la couleur dans sa RAM de palette.
          */
         backgroundColor(shade, attrs) {
-            return (this.BGP.getValue() >> (shade * 2)) & 0b11;
+            return DMG_COLORS[(this.BGP.getValue() >> (shade * 2)) & 0b11];
         }
 
         /**
@@ -350,7 +376,7 @@ export default function(machine) {
          */
         spriteColor(shade, sprite) {
             const palette = byte.getFlag(sprite.attrs, 4) ? this.OBP1 : this.OBP0;
-            return (palette.getValue() >> (shade * 2)) & 0b11;
+            return DMG_COLORS[(palette.getValue() >> (shade * 2)) & 0b11];
         }
 
         /**

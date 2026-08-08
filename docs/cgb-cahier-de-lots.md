@@ -404,7 +404,7 @@ VRAM et sa table de registres. Le trajet du pixel n'a pas bougé d'un iota.
 
 ---
 
-### Lot 3 — Les palettes CGB et la sortie couleur
+### Lot 3 — Les palettes CGB et la sortie couleur — **FERMÉ**
 
 **Objectif** : 0xFF68-0xFF6B (BCPS/BCPD/OCPS/OCPD), deux fois 64 octets de RAM de
 palette, auto-incrément sur le bit 7 de l'index, et le RGB555 qui en sort.
@@ -413,10 +413,31 @@ palette, auto-incrément sur le bit 7 de l'index, et le RGB555 qui en sort.
 relecture fidèle ; décodage RGB555 ; huit palettes de quatre couleurs de chaque
 côté ; en DMG ces registres n'existent pas.
 
-**Oracle** : `unused_hwio-C.gb` arbitre `$FF68` et `$FF6A` — `%01000000`, donc le
-bit 6 lu à 1 des deux côtés. C'est ici aussi que se prend la décision D1, et que
-`cgb-acid2` doit commencer à tourner en MESURE, même très rouge : le compte de
-pixels faux devient le chiffre qu'on suit jusqu'au lot 5.
+**Oracle** : `unused_hwio-C.gb` arbitre `$FF68` et `$FF6A`. **Ses trois entrées
+qui relèvent du PPU passent maintenant** — vérifié en les rejouant une par une :
+
+```
+$FF4F  OK      $FF68  OK      $FF6A  OK      $FF4C (non mappé)  OK
+$FF72  ECHEC   $FF75  ECHEC   $FF76  ECHEC   $FF77  ECHEC
+```
+
+Ce qui reste rouge est le lot des quatre registres CGB **indocumentés**, hors
+PPU : c'est du lot 7, et c'est tout ce qui sépare `unused_hwio-C` du vert.
+
+**D1 est tranchée : RGB555 unifié.** `screen` est un `Uint16Array` pour les deux
+modèles, le DMG traverse ses quatre verts DANS le PPU, et `CanvasRenderer` n'a
+plus qu'un seul chemin — une table de 32 768 entrées bâtie une fois, sans « si
+CGB ». **Les instantanés de rendu sont restés identiques à l'octet près** : la
+meilleure preuve possible que la décision n'a rien changé à ce qui est dessiné,
+seulement à son encodage. Réversible si tu préfères une autre option.
+
+**Le piège du lot** : l'auto-incrément n'avance QU'À L'ÉCRITURE. Un curseur qui
+avancerait aussi en lecture décalerait toutes les palettes d'un cran dès qu'un
+jeu relit ce qu'il vient d'écrire — et ça ne se voit qu'à l'image, longtemps
+après. Un test le tient.
+
+Les palettes ne sont pas encore CÂBLÉES au rendu : c'est le lot 4 (fond) et le
+lot 5 (sprites) qui iront y chercher leurs couleurs.
 
 ---
 

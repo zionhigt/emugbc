@@ -9,6 +9,7 @@ import buildDecoder from '../decodeur';
 import buildMachine from './index';
 import buildCartridge from '../cartridge/Cartridge';
 import { CGB } from '../models';
+import { DMG_COLORS } from '../ppu/index';
 
 /**
  * LE HARNAIS DE RENDU — prérequis P1 du jalon CGB.
@@ -61,14 +62,24 @@ const runRom = (path, frames, model) => {
   return machine;
 };
 
-// Les quatre teintes DMG, de la plus claire à la plus sombre.
+// `screen` porte du RGB555 depuis le lot 3 (décision D1). Pour l'instantané on
+// le ramène à des caractères : les quatre verts DMG d'abord, de la plus claire à
+// la plus sombre, puis un caractère par couleur SUPPLÉMENTAIRE rencontrée — le
+// CGB en produit bien au-delà de quatre. Un « ? » signale un débordement, ce qui
+// est en soi une information : l'image en compte plus qu'on ne sait en nommer.
 const SHADES = [' ', '.', '+', '#'];
+const EXTRA = '*=%@oxOX&$0123456789abcdefghijklmnpqrstuvwyz';
 
 const toAscii = (screen) => {
+  const chars = new Map(DMG_COLORS.map((color, i) => [color, SHADES[i]]));
+  for (const color of screen) {
+    if (chars.has(color)) continue;
+    chars.set(color, EXTRA[chars.size - DMG_COLORS.length] ?? '?');
+  }
   const lines = [];
   for (let y = 0; y < 144; y++) {
     let line = '';
-    for (let x = 0; x < 160; x++) line += SHADES[screen[y * 160 + x] & 3];
+    for (let x = 0; x < 160; x++) line += chars.get(screen[y * 160 + x]);
     lines.push(line);
   }
   return lines.join('\n');

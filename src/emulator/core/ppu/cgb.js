@@ -26,6 +26,77 @@ class VBKRegister extends Register(8) {
     }
 }
 
+/** Huit palettes de quatre couleurs, deux octets par couleur. */
+const PALETTE_BYTES = 64;
+
+const AUTO_INCREMENT = 0x80;
+const INDEX_MASK = 0x3F;
+/** Le bit 6 n'existe pas et se lit à 1 (`unused_hwio-C` : `test $FF68 %01000000`). */
+const SPEC_READ_MASK = 0x40;
+
+/**
+ * LES PALETTES — 64 octets derrière une meurtrière de deux registres.
+ *
+ * Le CGB ne donne pas 64 adresses à sa RAM de palette : il en donne DEUX. Un
+ * registre d'INDEX (BCPS/OCPS) qui dit où l'on est, et un registre de DONNÉE
+ * (BCPD/OCPD) qui lit ou écrit là. Le bit 7 de l'index demande d'avancer tout
+ * seul après chaque écriture — c'est ce qui permet de verser une palette entière
+ * en huit écritures d'affilée sans jamais retoucher l'index.
+ *
+ * PIÈGE, et il est arbitré par blargg comme par le bon sens : l'auto-incrément
+ * n'avance QU'À L'ÉCRITURE. Une lecture ne bouge pas le curseur. Un émulateur qui
+ * avance aussi en lecture décale toutes les palettes d'un cran dès qu'un jeu
+ * relit ce qu'il vient d'écrire.
+ */
+class PaletteAccess {
+    constructor() {
+        this.data = new Uint8Array(PALETTE_BYTES);
+        this._spec = 0;
+    }
+
+    get index() {
+        return this._spec & INDEX_MASK;
+    }
+
+    get autoIncrement() {
+        return (this._spec & AUTO_INCREMENT) !== 0;
+    }
+
+    readSpec() {
+        return this._spec | SPEC_READ_MASK;
+    }
+
+    writeSpec(value) {
+        this._spec = value & (AUTO_INCREMENT | INDEX_MASK);
+    }
+
+    readData() {
+        return this.data[this.index];
+    }
+
+    writeData(value) {
+        this.data[this.index] = value;
+        if (!this.autoIncrement) return;
+        // Le curseur boucle sur 64 : c'est un compteur de 6 bits, il ne déborde
+        // pas sur le bit d'auto-incrément.
+        this._spec = (this._spec & AUTO_INCREMENT) | ((this.index + 1) & INDEX_MASK);
+    }
+
+    /** La couleur RGB555 d'une teinte dans une palette : deux octets, petit-boutiste. */
+    color(palette, shade) {
+        const at = (palette & 0x07) * 8 + (shade & 0x03) * 2;
+        return ((this.data[at + 1] << 8) | this.data[at]) & 0x7FFF;
+    }
+}
+
+/** Le registre vu du bus : il ne fait que relayer vers l'accès ci-dessus. */
+function paletteRegister(access, kind) {
+    return {
+        getValue() { return kind === 'spec' ? access.readSpec() : access.readData(); },
+        setValue(value) { return kind === 'spec' ? access.writeSpec(value) : access.writeData(value); },
+    };
+}
+
 /**
  * LE PPU CGB — une surcharge du DMG, pas un second PPU.
  *
@@ -44,12 +115,18 @@ export default function(machine) {
             // Seule la banque 1 est un tampon à part.
             this._vramBank1 = new Uint8Array(VRAM_SIZE);
             this.VBK = new VBKRegister();
+            this.bgPalettes = new PaletteAccess();
+            this.objPalettes = new PaletteAccess();
         }
 
         buildRegistersMapping() {
             return {
                 ...super.buildRegistersMapping(),
                 0xFF4F: this.VBK,
+                0xFF68: paletteRegister(this.bgPalettes, 'spec'),
+                0xFF69: paletteRegister(this.bgPalettes, 'data'),
+                0xFF6A: paletteRegister(this.objPalettes, 'spec'),
+                0xFF6B: paletteRegister(this.objPalettes, 'data'),
             };
         }
 
