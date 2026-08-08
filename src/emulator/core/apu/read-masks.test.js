@@ -31,6 +31,8 @@ const TROU = 0xFF15; // entre NR14 et NR21, non câblé
 const buildHarness = () => {
     const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         timer: null,
         // Une valeur reconnaissable : si elle ressort d'une lecture, c'est que l'APU a
         // laissé passer l'adresse au bus nu au lieu de répondre lui-même.

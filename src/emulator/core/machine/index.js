@@ -37,6 +37,9 @@ export default function(memory, cpu, decoder, clock, serial) {
             this.interruptsAcc = 1;
             this.clock.onTick(this.handleTick.bind(this));
             this.totalCycles = 0;
+            // Le temps du monde, compté en DEMIS de cycle machine (voir le getter
+            // `systemCycles`) : en double régime, un cycle CPU n'en vaut qu'un.
+            this._systemHalfCycles = 0;
             this._observersCyclesUpdate = [];
             // Un PPU provisoire, le temps qu'une cartouche arrive : en 'auto' le
             // modèle n'est pas encore connu. plugCartridge le reconstruira avec le
@@ -59,8 +62,47 @@ export default function(memory, cpu, decoder, clock, serial) {
         }
 
         cyclesUpdate(cpu, n) {
-            if (n.type === "add") this.totalCycles += n.value;
+            if (n.type === "add") {
+                this.totalCycles += n.value;
+                // Le temps du MONDE avance en même temps, mais pas forcément du
+                // même pas : en double régime, un cycle du processeur ne vaut
+                // qu'un demi cycle système. On compte en demis pour ne rien
+                // perdre en route — un demi cycle machine, c'est deux dots, et
+                // le PPU les compte.
+                this._systemHalfCycles += n.value * (this.doubleSpeed ? 1 : 2);
+            }
             this.emitCyclesUpdate();
+        }
+
+        /**
+         * LES DEUX MONTRES.
+         *
+         * `totalCycles` est celle du PROCESSEUR : c'est lui qui la fait avancer
+         * en payant ses instructions, et le timer, DIV et le port série la
+         * suivent — ils comptent son horloge à lui.
+         *
+         * `systemCycles` est celle du MONDE : l'écran affiche 59,7 images par
+         * seconde et le haut-parleur sort un la à 440 Hz, que le processeur batte
+         * une ou deux fois plus vite. Le PPU et l'APU la suivent.
+         *
+         * En vitesse simple, les deux portent le même nombre. C'est la bascule
+         * qui les sépare — et il est essentiel que celle-ci s'ACCUMULE plutôt que
+         * de se recalculer depuis `totalCycles` : un compteur dérivé sauterait en
+         * arrière de la moitié de toute l'histoire de la machine au moment du
+         * changement de régime.
+         */
+        get systemCycles() {
+            return this._systemHalfCycles / 2;
+        }
+
+        /**
+         * Le régime en cours. Couture du lot 0 : elle rend toujours `false`, et
+         * c'est KEY1 qui la fera mentir au lot 1. La poser d'abord permet de
+         * prouver le câblage — qui regarde quelle montre — avant qu'il n'y ait
+         * quoi que ce soit à basculer.
+         */
+        get doubleSpeed() {
+            return false;
         }
 
         emitCyclesUpdate() {

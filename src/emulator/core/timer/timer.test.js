@@ -103,6 +103,8 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       const knocks = [];
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { knocks.push(v); this._if = v; },
@@ -254,6 +256,8 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
       const knocks = [];
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { knocks.push(v); this._if = v; },

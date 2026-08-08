@@ -497,8 +497,15 @@ export default function(machine) {
             });
         }
         
+        /**
+         * L'HEURE DU PPU, ET C'EST CELLE DU MONDE. L'écran affiche 59,7 images
+         * par seconde que le processeur batte une ou deux fois plus vite : en
+         * double régime, `systemCycles` avance de moitié pendant que
+         * `totalCycles` file. Un PPU branché sur l'horloge du CPU doublerait de
+         * vitesse avec lui, ce qui n'arrive sur aucune console.
+         */
         get totalMachineCycles() {
-            return this.machine.totalCycles;
+            return this.machine.systemCycles;
         }
 
         /**

@@ -114,8 +114,14 @@ export default function(machine) {
         get bus() {
             return this.machine.memory;
         }
+        /**
+         * L'HEURE DE L'APU, ET C'EST CELLE DU MONDE. « All Sound Timings and
+         * Frequencies » gardent leur cadence en double régime (pandocs) : un la
+         * reste un la. Seul le séquenceur de trames regarde l'autre montre, par
+         * DIV — voir `divTicks`.
+         */
         get totalMachineCycles() {
-            return this.machine.totalCycles;
+            return this.machine.systemCycles;
         }
 
         get registersMapping() {

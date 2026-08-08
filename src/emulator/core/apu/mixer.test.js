@@ -58,6 +58,8 @@ const T = 30;
 const buildHarness = () => {
     const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         timer: null,
         memory: { _read: () => 0x42, _write: () => {} },
     };

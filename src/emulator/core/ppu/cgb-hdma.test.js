@@ -41,6 +41,8 @@ const makeBench = (build) => {
   const ram = new Uint8Array(0x10000);
   const machine = {
     totalCycles: 0, _if: 0,
+    // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+    get systemCycles() { return this.totalCycles; },
     cpu: { halted: false },
     get IF() { return this._if; }, set IF(v) { this._if = v; },
     memory: {

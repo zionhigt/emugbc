@@ -31,6 +31,8 @@ const makePPU = () => {
   const knocks = [];
   const machine = {
     totalCycles: 0,
+    // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+    get systemCycles() { return this.totalCycles; },
     _if: 0,
     get IF() { return this._if; },
     set IF(v) { knocks.push(v); this._if = v; },
@@ -54,6 +56,8 @@ const makePPU = () => {
 describe('la FIFO de fond est injectée, pas construite', () => {
   const quietMachine = () => ({
     totalCycles: 0,
+    // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+    get systemCycles() { return this.totalCycles; },
     _if: 0,
     get IF() { return this._if; },
     set IF(v) { this._if = v; },
@@ -113,6 +117,8 @@ describe('les coutures du lot 0 : ce que le CGB surchargera', () => {
     const ram = new Uint8Array(0x10000);
     const machine = {
       totalCycles: 0,
+      // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+      get systemCycles() { return this.totalCycles; },
       _if: 0,
       get IF() { return this._if; },
       set IF(v) { this._if = v; },
@@ -505,6 +511,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const knocks = [];
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { knocks.push(v); this._if = v; },
@@ -657,6 +665,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const ram = new Uint8Array(0x10000);
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
@@ -711,6 +721,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const ram = new Uint8Array(0x10000);
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
@@ -970,6 +982,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const ram = new Uint8Array(0x10000);
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
@@ -1165,6 +1179,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
     const makeRig = () => {
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },
@@ -1438,6 +1454,8 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
       const ram = new Uint8Array(0x10000);
       const machine = {
         totalCycles: 0,
+        // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+        get systemCycles() { return this.totalCycles; },
         _if: 0,
         get IF() { return this._if; },
         set IF(v) { this._if = v; },

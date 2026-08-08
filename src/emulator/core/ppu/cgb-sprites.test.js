@@ -59,6 +59,8 @@ const makeBench = (build, lcdc = LCDC_BASE) => {
   const ram = new Uint8Array(0x10000);
   const machine = {
     totalCycles: 0, _if: 0,
+    // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+    get systemCycles() { return this.totalCycles; },
     get IF() { return this._if; }, set IF(v) { this._if = v; },
     memory: {
       read: (a) => ram[a], write: (a, v) => { ram[a] = v; },

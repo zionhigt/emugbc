@@ -50,6 +50,8 @@ const makeSystem = (apu = silentApu()) => {
   const ram = new Uint8Array(0x10000);
   const machine = {
     totalCycles: 0,
+    // Vitesse simple : les deux montres portent le même nombre (jalon KEY1, lot 0).
+    get systemCycles() { return this.totalCycles; },
     apu,
     memory: { _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
   };
