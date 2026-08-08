@@ -76,6 +76,29 @@ const WAVE_CORRUPTION_BLOCK_SIZE = 4;
  */
 const WAVE_TRIGGER_DELAY = 3;
 
+/**
+ * L'ÉCRITURE DE NR34 N'ATTERRIT PAS AU MÊME T-CYCLE QUE LA LECTURE DU CPU.
+ *
+ * Un cycle machine porte DEUX demi-cycles, et le canal peut accéder à la wave RAM sur
+ * l'un comme sur l'autre. Ce n'est pas que la corruption ait « son propre retard » : les
+ * deux règles regardent le même compteur d'accès, mais pas depuis le même endroit du
+ * cycle machine. La lecture et l'écriture de la wave RAM par le CPU voient l'accès du
+ * PREMIER demi-cycle — c'est `toHalfCycles`, `2 × cycle`, et rien d'autre ; l'écriture de
+ * NR34 qui déclenche, elle, attrape celui du SECOND. D'où ce décalage, appliqué au seul
+ * instant du trigger.
+ *
+ * CONSTANTE CALIBRÉE, PAS DÉRIVÉE, au même titre que `WAVE_TRIGGER_DELAY` juste au-dessus.
+ * Elle vient d'un balayage de 84 combinaisons — décalage × largeur de la fenêtre d'accès —
+ * chacune une exécution complète de `10-wave trigger while on.gb`, la ROM qui arbitre cet
+ * instant-là : ce décalage-ci est le seul qui passe. La piste d'une fenêtre plus large est
+ * réfutée au passage, aucune largeur ≥ 2 ne passe à aucun décalage — c'est bien une
+ * question de phase, et d'elle seule. Les ROMs `09-wave read while on` et
+ * `12-wave write while on` arbitrent l'autre instant et refusent celui-ci : les deux
+ * mesures ne se recouvrent sur aucune valeur commune. Ne pas la « corriger » au nom d'une
+ * explication matérielle, il n'y en a pas.
+ */
+const NR34_WRITE_HALF_CYCLE_OFFSET = 1;
+
 export default function(apu) {
     function ChanFactory(start, Parent) {
         class Chan extends Parent {
@@ -132,14 +155,26 @@ export default function(apu) {
              */
             isAccessingWaveAt(cycle) {
                 if (!this.isEnabledAt(cycle)) return false;
+                return this.isAccessingAtHalfCycle(this.toHalfCycles(cycle));
+            }
+
+            /**
+             * Le même « un accès tombe-t-il ici ? », mais posé directement sur la grille de
+             * la wave. La corruption au trigger vise un demi-cycle que `toHalfCycles` ne
+             * peut pas produire, d'où ce point d'entrée — plutôt qu'une seconde copie de la
+             * condition, qui divergerait au premier changement.
+             */
+            isAccessingAtHalfCycle(halfCycle) {
                 if (this._nextWaveAccess === null) return false;
-                const halfCycle = this.toHalfCycles(cycle);
                 if (halfCycle < this._nextWaveAccess) return false;
                 return (halfCycle - this._nextWaveAccess) % this.period === 0;
             }
 
             waveStep(cycle) {
-                const halfCycle = this.toHalfCycles(cycle);
+                return this.waveStepAtHalfCycle(this.toHalfCycles(cycle));
+            }
+
+            waveStepAtHalfCycle(halfCycle) {
                 const accesses = this.waveAccessCountAt(halfCycle);
                 return (this._wavePosition + accesses) % WAVE_SAMPLE_COUNT;
             }
@@ -211,16 +246,20 @@ export default function(apu) {
              *
              * Le déclencheur n'est donc pas le trigger seul : il faut que le canal ait été
              * EN TRAIN de lire un octet à cet instant précis — allumé, et dans sa fenêtre
-             * d'accès. `isAccessingWaveAt` porte les deux conditions.
+             * d'accès. Mais pas au même demi-cycle que la lecture du CPU : l'écriture de
+             * NR34 attrape l'accès du SECOND demi-cycle du cycle machine, d'où le décalage.
              *
              * Le quadruplet source commence toujours à 4 ou plus, la destination s'arrête à
              * 3 : source et destination ne se chevauchent jamais, l'ordre de copie est libre.
              */
             corruptWaveRAMOnTrigger() {
                 const now = this.apu.totalMachineCycles;
-                if (!this.isAccessingWaveAt(now)) return;
+                if (!this.isEnabledAt(now)) return;
 
-                const index = this.waveByteIndexAt(now);
+                const halfCycle = this.toHalfCycles(now) + NR34_WRITE_HALF_CYCLE_OFFSET;
+                if (!this.isAccessingAtHalfCycle(halfCycle)) return;
+
+                const index = Math.floor(this.waveStepAtHalfCycle(halfCycle) / 2);
                 if (index < WAVE_CORRUPTION_BLOCK_SIZE) {
                     this.copyWaveByte(index, 0);
                     return;
