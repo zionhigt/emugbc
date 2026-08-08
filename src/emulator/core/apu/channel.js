@@ -28,17 +28,42 @@ export class NRegister4 extends NRegister {
         const isExtraClock = !this.parent.apu.nextStepClocksLength(now);
         const trigger = byte.getFlag(val, 7);
         const isLengthEnabled = byte.getFlag(val, 6);
-        let hasEnableEdge = isLengthEnabled && !this.parent.isLengthEnabled;
+        const hasEnableEdge = isLengthEnabled && !this.parent.isLengthEnabled;
         let remain = this.parent.lengthRemaining(now);
         this.parent._lastLengthRemaining = remain;
         this.parent._lastLengthAt = now;
         super.setValue(val);
-        if (trigger && remain === 0) {
-            remain = this.parent._maxLength;
-            if (hasEnableEdge && isExtraClock) remain --;
-        } else if (hasEnableEdge && isExtraClock && remain !== 0) {
+
+        // RÈGLE 1 — le cran gratuit du branchement. Wiki gbdev, « Obscure Behavior » :
+        // « if the length counter was PREVIOUSLY disabled and now enabled and the length
+        //   counter is not zero, it is decremented. »
+        // Deux conditions sur le bit 6, donc un FRONT et pas un état.
+        //
+        // (Variante non implémentée, et ce n'est pas un oubli : sur CGB-02 « the length
+        // counter only has to have been disabled before; the current length enable state
+        // doesn't matter » — ce qui casse Prehistorik Man, corrigé sur CGB-04/05. On émule
+        // une DMG.)
+        if (hasEnableEdge && isExtraClock && remain !== 0) {
             remain --;
         }
+
+        // RÈGLE 2 — le cran du rechargement au trigger. Même source, phrase voisine :
+        // « if a channel is triggered [...] and the length counter IS NOW ENABLED and
+        //   length is being set to 64 [...] because it was previously zero, it is set to
+        //   63 instead. »
+        // Pas de « was previously disabled » ici : l'état courant du bit 6 suffit. Aligner
+        // cette condition sur celle de la règle 1 par souci de symétrie est la « correction »
+        // qui casse blargg 03-trigger.
+        //
+        // Et les deux règles s'ENCHAÎNENT sur une même écriture au lieu de s'exclure ;
+        // pandocs fixe l'ordre : « This ordering ensures the extra length clock takes
+        // precedence before the trigger-related reload occurs. » Le rechargement lit donc
+        // le compteur tel que la règle 1 vient de le laisser, pas tel qu'il était avant.
+        if (trigger && remain === 0) {
+            remain = this.parent._maxLength;
+            if (isLengthEnabled && isExtraClock) remain --;
+        }
+
         if (remain === 0) {
             this.parent._isEnabled = false;
         }
