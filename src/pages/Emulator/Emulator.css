@@ -4,7 +4,7 @@
  */
 
 .emu-page {
-  min-height: 100vh;
+  min-height: var(--vvh, 100dvh); /* --vvh posé par ViewportSync (App.jsx) */
   box-sizing: border-box;
   margin: -8px; /* avale la marge par défaut du body */
   padding: 40px 24px 80px;
@@ -370,7 +370,10 @@
 @media (max-width: 700px) {
 
   body {
-    max-height: 100dvh;
+    /* --vvh (posé par ViewportSync, visualViewport) prime sur 100dvh : sur
+       Android, la barre système du bas n'est pas toujours recalculée pareil
+       selon le contexte du reload — voir App.jsx */
+    max-height: var(--vvh, 100dvh);
   }
   /* IMMERSION : la page s'efface, la console EST l'écran */
   .emu-page {
@@ -400,7 +403,7 @@
     flex-flow: column nowrap;
     align-items: center;
     justify-content: space-between;
-    height: 100vh;
+    height: var(--vvh, 100dvh);
   }
 
   /* le volet : replié hors-écran au-dessus, il coulisse vers le bas —
