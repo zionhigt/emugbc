@@ -477,3 +477,39 @@
     height: 50px;
   }
 }
+
+/* ── overlay de debug (prop `debug`) : les zones RÉELLEMENT hit-testées,
+   hit box élargies comprises — jamais la simple apparence des boutons. */
+.gbc-console__debug-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none; /* ne doit JAMAIS intercepter un appui réel */
+  z-index: 9999;
+}
+
+.gbc-console__debug-hitbox {
+  position: fixed;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 0, 200, 0.85);
+  background: rgba(255, 0, 200, 0.15);
+  color: #ff00c8;
+  font: 9px/1 monospace;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* vert au press : quelle zone a déclenché, sans deviner depuis le bouton réel */
+.gbc-console__debug-hitbox[data-pressed] {
+  border-color: #00ff78;
+  background: rgba(0, 255, 120, 0.35);
+  color: #00ff78;
+}
+
+.gbc-console__debug-circle {
+  position: fixed;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px dashed rgba(80, 200, 255, 0.85);
+}

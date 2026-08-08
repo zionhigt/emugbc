@@ -40,6 +40,18 @@ beforeEach(() => {
     if (key && ZONES[key]) return ZONES[key];
     return rect(0, 0, 0, 0);
   });
+  // offsetWidth/offsetHeight : la boîte de mise en page, jamais affectée par
+  // transform (contrairement à getBoundingClientRect) — même taille que les
+  // ZONES par défaut, quoi qu'un test fasse dire au rect par ailleurs (sert à
+  // vérifier l'immunité à la rotation de la coque DMG, plus bas).
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
+    const key = this.dataset?.key;
+    return key && ZONES[key] ? ZONES[key].width : 0;
+  });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+    const key = this.dataset?.key;
+    return key && ZONES[key] ? ZONES[key].height : 0;
+  });
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -118,5 +130,81 @@ describe('Console : le traqueur géométrique pilote la manette', () => {
     const { container } = render(<Console />);
     const pad = container.querySelector('.gbc-console__buttons');
     expect(() => fire(pad, 'pointerdown', { pointerId: 1, clientX: 320, clientY: 5 })).not.toThrow();
+  });
+});
+
+describe('Console : A/B roulés — zone transparente au milieu', () => {
+  // b : 250-290×0-40 élargi de 30% (12px) → 238-302 ; a : 300-340×0-40 élargi
+  // pareil → 288-352. Recouvrement 288-302 : un point là-dedans presse les DEUX.
+  it('rouler B → A traverse un point où LES DEUX sont pressés, sans relâche intermédiaire', () => {
+    const { presses, releases, pad } = setup();
+    fire(pad, 'pointerdown', { pointerId: 1, ...dans(ZONES.b) });
+    expect(presses).toEqual(['b']);
+
+    fire(pad, 'pointermove', { pointerId: 1, clientX: 295, clientY: 20 }); // zone de recouvrement
+    expect(presses, 'a s\'ajoute, b ne se relâche pas au passage').toEqual(['b', 'a']);
+    expect(releases, 'aucun relâché pendant le roulé').toEqual([]);
+
+    fire(pad, 'pointermove', { pointerId: 1, ...dans(ZONES.a) }); // hors de la zone élargie de b
+    expect(releases, 'b se relâche seulement en quittant sa propre zone élargie').toEqual(['b']);
+  });
+});
+
+describe('Console : Select/Start — hit box plus haute, sans collision', () => {
+  // select : 100-130×200-230 → hauteur ×3, centrée : 100-130×170-260.
+  // start  : 150-180×200-230 → 150-180×170-260. Largeur inchangée : un
+  // écart de 20px (130 à 150) reste entre les deux zones élargies.
+  it('un appui au-dessus de la pastille visuelle presse quand même select', () => {
+    const { presses, pad } = setup();
+    fire(pad, 'pointerdown', { pointerId: 1, clientX: 115, clientY: 175 }); // hors 200-230, dans 170-260
+    expect(presses).toEqual(['select']);
+  });
+
+  it('un appui entre les deux ne presse ni select ni start — pas de collision', () => {
+    const { presses, pad } = setup();
+    fire(pad, 'pointerdown', { pointerId: 1, clientX: 140, clientY: 215 }); // entre 130 et 150
+    expect(presses).toEqual([]);
+  });
+
+  it('coque DMG (bouton pivoté -25°) : la taille vient d\'offsetHeight, pas de l\'AABB gonflée du rect', () => {
+    const { presses, pad } = setup();
+    // même centre (115,215) que ZONES.select, mais un rect deux fois plus
+    // grand — ce que rendrait getBoundingClientRect d'un bouton pivoté.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      if (this.dataset?.key === 'select') return rect(85, 185, 60, 60);
+      if (this.classList?.contains('gbc-console__buttons--cross')) return ZONES.cross;
+      const key = this.dataset?.key;
+      if (key && ZONES[key]) return ZONES[key];
+      return rect(0, 0, 0, 0);
+    });
+
+    // dans l'AABB gonflée (85-145) mais hors de la vraie zone élargie (100-130)
+    fire(pad, 'pointerdown', { pointerId: 1, clientX: 90, clientY: 215 });
+    expect(presses, 'la marge doit venir d\'offsetWidth (30), pas de la largeur gonflée (60)').toEqual([]);
+  });
+});
+
+describe('Console : overlay de debug — vert au press', () => {
+  it('le rectangle de debug passe data-pressed en même temps que le bouton réel', () => {
+    const { container } = render(<Console debug />);
+    const pad = container.querySelector('.gbc-console__buttons');
+    const dbg = () => container.querySelector('.gbc-console__debug-hitbox[data-key="a"]');
+
+    expect(dbg().hasAttribute('data-pressed'), 'pas encore pressé').toBe(false);
+    fire(pad, 'pointerdown', { pointerId: 1, ...dans(ZONES.a) });
+    expect(dbg().hasAttribute('data-pressed'), 'vert au press').toBe(true);
+    fire(pad, 'pointerup', { pointerId: 1, ...dans(ZONES.a) });
+    expect(dbg().hasAttribute('data-pressed'), 'revient normal au relâche').toBe(false);
+  });
+
+  it('un resize en pleine pression repeint le debug sans perdre le vert', () => {
+    const { container } = render(<Console debug />);
+    const pad = container.querySelector('.gbc-console__buttons');
+
+    fire(pad, 'pointerdown', { pointerId: 1, ...dans(ZONES.b) });
+    window.dispatchEvent(new Event('resize')); // remesure -> repeint tous les rects
+
+    const dbg = container.querySelector('.gbc-console__debug-hitbox[data-key="b"]');
+    expect(dbg.hasAttribute('data-pressed'), 'l\'état pressé survit au repaint').toBe(true);
   });
 });

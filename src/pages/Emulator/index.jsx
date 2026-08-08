@@ -368,7 +368,7 @@ class Emulator extends React.Component {
         </header>
 
         <main className="emu-page__stage">
-          <Console onPress={this.pressButton} onRelease={this.releaseButton}>
+          <Console onPress={this.pressButton} onRelease={this.releaseButton} debug={this.props.debug}>
             <Canvas ref={this.canvasRef} />
           </Console>
 
