@@ -397,8 +397,8 @@
        justement le débordement horizontal qu'on veut interdire. */
     width: 100%;
     /* hauteur FIXE, pas un minimum : la coque ne peut plus pousser la page. */
-    height: 100vh;
-    height: 100dvh; /* la vraie hauteur visible, barres du navigateur déduites */
+    height: 100%;
+    /* height: 100dvh; la vraie hauteur visible, barres du navigateur déduites */
     overflow: hidden; /* aucun défilement en mode console, dans aucun sens */
     /* peu de marge en haut : c'est là qu'est le gras, et c'est là qu'on rogne */
     padding: 8px 12px 28px;

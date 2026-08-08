@@ -4,13 +4,10 @@
  */
 
 .emu-page {
-  min-height: calc(100% + env(safe-area-inset-top));
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   min-height: 100vh;
-  /* max-height: 100vh; */
   box-sizing: border-box;
   margin: -8px; /* avale la marge par défaut du body */
-  /* padding: 40px 24px 80px; */
+  padding: 40px 24px 80px;
   position: relative;
   color: #e8edf2;
 
@@ -371,6 +368,10 @@
 }
 
 @media (max-width: 700px) {
+
+  body {
+    max-height: 100dvh;
+  }
   /* IMMERSION : la page s'efface, la console EST l'écran */
   .emu-page {
     padding: 0;
@@ -396,6 +397,10 @@
 
   .emu-page__stage {
     gap: 0;
+    flex-flow: column nowrap;
+    align-items: center;
+    justify-content: space-between;
+    height: 100vh;
   }
 
   /* le volet : replié hors-écran au-dessus, il coulisse vers le bas —

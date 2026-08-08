@@ -47,7 +47,7 @@ export default defineConfig(() => ({
         lang: 'fr',
         theme_color: '#2583af',
         background_color: '#0b1220',
-        display: 'standalone', // plein écran, sans barre de navigateur
+        display: 'fullscreen', // plein écran, sans barre de navigateur
         orientation: 'portrait',
         start_url: base,
         scope: base,

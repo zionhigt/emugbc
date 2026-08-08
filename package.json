@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --host --port 4173",
     "pwa": "vite build && vite preview --host --port 5173",
-    "tunnel": "cloudflared tunnel --url http://localhost:4173",
+    "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run src/emulator --environment node --exclude '**/blargg.test.js' --exclude '**/mooneye-*.test.js' --exclude '**/dmg-sound.test.js'",
