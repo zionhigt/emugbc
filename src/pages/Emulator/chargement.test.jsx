@@ -80,7 +80,7 @@ const rendre = () => {
 
 const inserer = (nom = 'test.gb') => {
   const file = new File([new Uint8Array(0x8000)], nom);
-  const input = screen.getByLabelText(/cartouche \(\.gb\)/i);
+  const input = screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i);
   fireEvent.change(input, { target: { files: [file] } });
   return input;
 };

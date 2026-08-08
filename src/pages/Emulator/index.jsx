@@ -5,8 +5,9 @@ import Console from '../../components/Console';
 import Canvas from '../../components/Canvas';
 import buildCartridge from '../../emulator/core/cartridge/Cartridge';
 import { cartridgeLoaded } from '../../store/slices/emulatorSlice';
-import { shellChanged, debugToggled } from '../../store/slices/settingsSlice';
+import { shellChanged, debugToggled, modelChanged } from '../../store/slices/settingsSlice';
 import { SHELLS, SHELL_KEYS } from '../../theme/shells';
+import { DMG, CGB, AUTO } from '../../emulator/core/models';
 
 import { MachineBuilder } from '../../emulator/core/index.js';
 
@@ -30,6 +31,14 @@ const KEYMAP = {
   enter: 'start',
   ' ': 'select',
 };
+
+// Les trois choix de modèle, dans l'ordre où on les propose. `auto` d'abord :
+// c'est le comportement d'une vraie console, et le défaut.
+const MODELES = [
+  [AUTO, 'Auto', 'suit la cartouche'],
+  [DMG, 'DMG', 'noir et blanc'],
+  [CGB, 'CGB', 'couleur'],
+];
 
 // Période d'une trame Game Boy (59,7275 Hz). Le cadencement vit au FRONT : rAF
 // se cale sur l'écran (60/90/120 Hz), et un accumulateur ramène l'émulation à
@@ -64,7 +73,10 @@ class Emulator extends React.Component {
   // geste qu'on vient faire ici neuf fois sur dix.
   // plus de `screen` dans le state : la trame ne passe plus par React (repaint
   // impératif du canvas via canvasRef), donc rien à stocker ni à re-rendre.
-  state = { dockOpen: false, tab: 'cartouche' };
+  // `model` : le modèle RÉSOLU de la partie en cours ('dmg' ou 'cgb'), à ne pas
+  // confondre avec la préférence du store, qui peut valoir 'auto'. Il vient de
+  // la machine — donc du worker quand elle y tourne.
+  state = { dockOpen: false, tab: 'cartouche', model: null };
 
   canvasRef = React.createRef();
 
@@ -137,6 +149,9 @@ class Emulator extends React.Component {
     this.profiler = { _stats: null, stats() { return this._stats; } };
     worker.onmessage = ({ data }) => {
       if (data.type === 'metrics') this.profiler._stats = data.stats;
+      // Le modèle RÉSOLU : en 'auto', seule la machine sait ce qu'elle est
+      // devenue, et elle est de l'autre côté du postMessage.
+      else if (data.type === 'model') this.setState({ model: data.model });
       else if (data.type === 'audio' && this.audioOutput) this.audioOutput.push(data.left, data.right);
     };
     // Une panne APRÈS le bonjour ne peut plus rien sauver (le canvas est parti),
@@ -146,7 +161,7 @@ class Emulator extends React.Component {
     const offscreen = canvasEl.transferControlToOffscreen();
     worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     const buf = bytes.buffer; // transféré (bytes est détaché ensuite, on n'en a plus besoin)
-    worker.postMessage({ type: 'load', bytes: buf }, [buf]);
+    worker.postMessage({ type: 'load', bytes: buf, model: this.props.model }, [buf]);
 
     // Le son EN DERNIER, et jamais bloquant : le worker n'a pas d'AudioContext
     // (hors d'un contexte Window), c'est nous qui jouons ce qu'il calcule. Placé
@@ -162,8 +177,9 @@ class Emulator extends React.Component {
     this.cartridge = new Cartridge(bytes);
     const renderer = canvasEl ? new CanvasRenderer(canvasEl) : null;
     this.profiler = new Profiler();
-    this.machine = MachineBuilder();
+    this.machine = MachineBuilder({ model: this.props.model });
     this.machine.plugCartridge(this.cartridge);
+    this.setState({ model: this.machine.model });
     this.audioOutput = new AudioOutput();
     this.audioOutput.start(); // le choix du fichier .gb EST le geste utilisateur
     const sampler = new AudioSampler();
@@ -285,16 +301,16 @@ class Emulator extends React.Component {
         <label className="emu-cart">
           <span className="emu-cart__ridges" aria-hidden="true"></span>
           <span className="emu-cart__label">
-            <span className="emu-cart__title">Cartouche (.gb)</span>
+            <span className="emu-cart__title">Cartouche (.gb/.gbc)</span>
             <span className="emu-cart__game">
               {/* l'extension est retirée : le nom complet vit dans le statut */}
-              {cartridge ? cartridge.fileName.replace(/\.gb$/i, '') : 'INSÉRER'}
+              {cartridge ? cartridge.fileName.replace(/\.gbc?$/i, '') : 'INSÉRER'}
             </span>
           </span>
           <input
             className="emu-cart__input"
             type="file"
-            accept=".gb"
+            accept=".gb,.gbc"
             onChange={this.handleFileChange}
           />
         </label>
@@ -311,7 +327,7 @@ class Emulator extends React.Component {
   }
 
   renderOptions() {
-    const { shell, shellChanged, debug, debugToggled } = this.props;
+    const { shell, shellChanged, debug, debugToggled, model, modelChanged } = this.props;
     return (
       <div
         className="emu-panel"
@@ -336,6 +352,27 @@ class Emulator extends React.Component {
             ))}
           </div>
           <p className="emu-options__current">{SHELLS[shell].nom}</p>
+        </fieldset>
+
+        <fieldset className="emu-options__group">
+          <legend className="emu-options__legend">Modèle de console</legend>
+          <div className="emu-models">
+            {MODELES.map(([cle, libelle, aide]) => (
+              <button
+                key={cle}
+                type="button"
+                aria-pressed={model === cle}
+                title={aide}
+                className={`emu-models__choice${model === cle ? ' emu-models__choice--active' : ''}`}
+                onClick={() => modelChanged(cle)}
+              >
+                {libelle}
+              </button>
+            ))}
+          </div>
+          <p className="emu-options__current">
+            {MODELES.find(([cle]) => cle === model)?.[2]} — prend effet à la prochaine cartouche
+          </p>
         </fieldset>
 
         <fieldset className="emu-options__group">
@@ -411,6 +448,7 @@ class Emulator extends React.Component {
           <DebugOverlay
             profiler={this.profiler}
             mode={this.worker ? 'WK' : `MT ${this._workerReason || ''}`}
+            model={this.state.model}
           />
         )}
         <header className="emu-page__header">
@@ -454,12 +492,14 @@ const mapStateToProps = (state) => ({
   cartridge: state.emulator.cartridge,
   shell: state.settings.shell,
   debug: state.settings.debug,
+  model: state.settings.model,
 });
 
 const mapDispatchToProps = {
   cartridgeLoaded,
   shellChanged,
   debugToggled,
+  modelChanged,
 };
 
 export default connect(mapStateToProps, mapDispatchToProps)(Emulator);

@@ -66,6 +66,9 @@ export default class DebugOverlay extends React.Component {
         <div className={`dbg__row dbg__fps${dropping ? ' dbg__bad' : ''}`}>
           <b>{val('fps')}</b> fps <span className="dbg__budget">/ 60</span>
           {this.props.mode && <span className="dbg__min">{this.props.mode}</span>}
+          {/* Le modèle RÉSOLU de la partie en cours : en réglage « auto », c'est
+              la seule façon de savoir ce que la cartouche a obtenu. */}
+          {this.props.model && <span className="dbg__min">{this.props.model.toUpperCase()}</span>}
         </div>
         <div className="dbg__row">
           trame <span className={heavy ? 'dbg__bad' : ''}>{val('total', ' ms')}</span>

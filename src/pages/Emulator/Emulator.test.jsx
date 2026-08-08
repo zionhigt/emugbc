@@ -39,12 +39,14 @@ const renderWithStore = () => {
 };
 
 describe('Emulator', () => {
-  it('propose un sélecteur de cartouche filtré sur .gb', () => {
+  // Porté au lot F : le filtre s'ouvre aux .gbc, sans quoi un jeu couleur ne
+  // peut même pas être choisi dans le sélecteur de fichiers.
+  it('propose un sélecteur de cartouche filtré sur .gb et .gbc', () => {
     renderWithStore();
-    const input = screen.getByLabelText(/cartouche \(\.gb\)/i);
+    const input = screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i);
     expect(input).toBeInTheDocument();
     expect(input).toHaveAttribute('type', 'file');
-    expect(input).toHaveAttribute('accept', '.gb');
+    expect(input).toHaveAttribute('accept', '.gb,.gbc');
   });
 
   it("n'affiche aucune cartouche chargée au départ", () => {
@@ -57,7 +59,7 @@ describe('Emulator', () => {
     const bytes = new Uint8Array(0x8000); // une ROM 32 Ko (vide, peu importe ici)
     const file = new File([bytes], 'test.gb');
 
-    const input = screen.getByLabelText(/cartouche \(\.gb\)/i);
+    const input = screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i);
     fireEvent.change(input, { target: { files: [file] } });
 
     // le handler est async (arrayBuffer) : on attend l'affichage
@@ -71,7 +73,7 @@ describe('Emulator', () => {
   it('le clavier (AZERTY) pilote la manette une fois la cartouche chargée', async () => {
     renderWithStore();
     const file = new File([new Uint8Array(0x8000)], 'test.gb');
-    fireEvent.change(screen.getByLabelText(/cartouche \(\.gb\)/i), { target: { files: [file] } });
+    fireEvent.change(screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i), { target: { files: [file] } });
     await screen.findByText(/test\.gb/); // attend la création de la machine
 
     const { joypad } = MachineBuilder.mock.results.at(-1).value;
@@ -94,7 +96,7 @@ describe('Emulator', () => {
         'aria-selected',
         'true',
       );
-      expect(screen.getByLabelText(/cartouche \(\.gb\)/i)).toBeInTheDocument();
+      expect(screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i)).toBeInTheDocument();
       expect(screen.queryByText(/couleur de coque/i)).not.toBeInTheDocument();
     });
 
@@ -103,7 +105,7 @@ describe('Emulator', () => {
       fireEvent.click(screen.getByRole('tab', { name: /options/i }));
 
       expect(screen.getByText(/couleur de coque/i)).toBeInTheDocument();
-      expect(screen.queryByLabelText(/cartouche \(\.gb\)/i)).not.toBeInTheDocument();
+      expect(screen.queryByLabelText(/cartouche \(\.gb\/\.gbc\)/i)).not.toBeInTheDocument();
 
       // les 5 coques du lancement — l'Atomic Purple transparente est exclue
       expect(screen.getByRole('button', { name: /teal/i })).toBeInTheDocument();
@@ -144,7 +146,7 @@ describe('Emulator', () => {
     it('revenir sur Cartouche ne perd pas la cartouche chargée', async () => {
       renderWithStore();
       const file = new File([new Uint8Array(0x8000)], 'test.gb');
-      fireEvent.change(screen.getByLabelText(/cartouche \(\.gb\)/i), { target: { files: [file] } });
+      fireEvent.change(screen.getByLabelText(/cartouche \(\.gb\/\.gbc\)/i), { target: { files: [file] } });
       await screen.findByText(/test\.gb/);
 
       fireEvent.click(screen.getByRole('tab', { name: /options/i }));

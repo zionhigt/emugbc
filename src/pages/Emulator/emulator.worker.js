@@ -60,8 +60,11 @@ self.onmessage = ({ data }) => {
       renderer = new CanvasRenderer(data.canvas);
       break;
     case 'load':
-      machine = MachineBuilder();
+      // La préférence vient du main (réglage persisté) ; le modèle RÉSOLU, lui,
+      // n'existe qu'ici, une fois la cartouche insérée — d'où le renvoi.
+      machine = MachineBuilder({ model: data.model });
       machine.plugCartridge(new Cartridge(new Uint8Array(data.bytes)));
+      self.postMessage({ type: 'model', model: machine.model });
       sampler = new AudioSampler(); // état propre (filtre + phase) pour chaque cartouche
       // À CHAQUE cycle, pas une fois par trame : apu.sample(cycle) partage son
       // curseur avec les lectures du CPU (NR52 avance le sweep du canal 1) —

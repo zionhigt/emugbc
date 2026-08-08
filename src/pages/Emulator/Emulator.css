@@ -191,6 +191,53 @@
   outline-offset: 4px;
 }
 
+/* ── le modèle de console : trois choix exclusifs, en un seul bloc ──
+   Pas de pastilles ici : les trois valeurs ne se distinguent pas par une
+   couleur mais par un nom, et « Auto » n'en a pas du tout. */
+
+.emu-models {
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  border: 2px solid rgba(0, 0, 0, 0.55);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.emu-models__choice {
+  flex: 1 1 0;
+  padding: 8px 4px;
+  border: 0;
+  border-right: 1px solid rgba(0, 0, 0, 0.45);
+  background: rgba(255, 255, 255, 0.05);
+  color: #b9c6d4;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.emu-models__choice:last-child {
+  border-right: 0;
+}
+
+.emu-models__choice:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.emu-models__choice--active {
+  background: var(--theme-accent, #35aadc);
+  color: #101720;
+}
+
+.emu-models__choice:focus-visible {
+  outline: 2px solid #e8edf2;
+  outline-offset: -4px;
+}
+
 .emu-options__current {
   margin: 14px 0 0;
   text-align: center;
