@@ -11,6 +11,7 @@ import { MachineBuilder } from '../../emulator/core/index.js';
 import buildCartridge from '../../emulator/core/cartridge/Cartridge.js';
 import CanvasRenderer from '../../components/Canvas/CanvasRenderer.js';
 import Profiler from '../../components/DebugOverlay/Profiler.js';
+import AudioSampler from '../../components/Audio/AudioSampler.js';
 
 const FRAME_MS = 1000 / 59.7275;
 // Retard rattrapable au plus 2 trames : au-delà, on abandonne le temps perdu
@@ -24,6 +25,7 @@ const hasRaf = typeof requestAnimationFrame === 'function';
 
 let machine = null;
 let renderer = null;
+let sampler = null;
 const profiler = new Profiler();
 let acc = 0;
 let last = 0;
@@ -60,11 +62,23 @@ self.onmessage = ({ data }) => {
     case 'load':
       machine = MachineBuilder();
       machine.plugCartridge(new Cartridge(new Uint8Array(data.bytes)));
+      sampler = new AudioSampler(); // état propre (filtre + phase) pour chaque cartouche
+      // À CHAQUE cycle, pas une fois par trame : apu.sample(cycle) partage son
+      // curseur avec les lectures du CPU (NR52 avance le sweep du canal 1) —
+      // l'interroger après coup, une fois la trame rejouée, lui redemanderait
+      // des dates déjà dépassées (voir channel1.js, frequencyAt).
+      machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.totalCycles));
       machine.onTick((mach) => {
-        if (!renderer) return;
-        const t = performance.now();
-        renderer.draw(mach.ppu.screen);
-        profiler.recordDraw(performance.now() - t);
+        if (renderer) {
+          const t = performance.now();
+          renderer.draw(mach.ppu.screen);
+          profiler.recordDraw(performance.now() - t);
+        }
+        // Le worker n'a pas d'AudioContext (hors d'un contexte Window) : on ne
+        // fait ici que le calcul, les échantillons partent au main-thread —
+        // un seul envoi par trame, pas un par cycle.
+        const { left, right } = sampler.drain();
+        if (left.length) self.postMessage({ type: 'audio', left, right }, [left.buffer, right.buffer]);
       });
       last = performance.now();
       acc = 0;

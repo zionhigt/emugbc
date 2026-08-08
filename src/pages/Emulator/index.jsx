@@ -13,6 +13,8 @@ import { MachineBuilder } from '../../emulator/core/index.js';
 import DebugOverlay from '../../components/DebugOverlay';
 import Profiler from '../../components/DebugOverlay/Profiler';
 import CanvasRenderer from '../../components/Canvas/CanvasRenderer';
+import AudioOutput from '../../components/Audio/AudioOutput';
+import AudioSampler from '../../components/Audio/AudioSampler';
 
 import './Emulator.css';
 
@@ -79,6 +81,7 @@ class Emulator extends React.Component {
   teardown = () => {
     if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
     if (this.worker) { this.worker.terminate(); this.worker = null; }
+    if (this.audioOutput) { this.audioOutput.close(); this.audioOutput = null; }
     this.machine = null;
   };
 
@@ -92,8 +95,13 @@ class Emulator extends React.Component {
     this.worker = new Worker(new URL('./emulator.worker.js', import.meta.url), { type: 'module' });
     const offscreen = canvasEl.transferControlToOffscreen();
     this.profiler = { _stats: null, stats() { return this._stats; } };
+    // Le worker n'a pas d'AudioContext (hors d'un contexte Window) : il calcule
+    // les échantillons et nous les envoie, nous les jouons ici.
+    this.audioOutput = new AudioOutput();
+    this.audioOutput.start(); // le choix du fichier .gb EST le geste utilisateur
     this.worker.onmessage = ({ data }) => {
       if (data.type === 'metrics') this.profiler._stats = data.stats;
+      else if (data.type === 'audio') this.audioOutput.push(data.left, data.right);
     };
     this.worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
     const buf = bytes.buffer; // transféré (bytes est détaché ensuite, on n'en a plus besoin)
@@ -108,11 +116,22 @@ class Emulator extends React.Component {
     this.profiler = new Profiler();
     this.machine = MachineBuilder();
     this.machine.plugCartridge(this.cartridge);
+    this.audioOutput = new AudioOutput();
+    this.audioOutput.start(); // le choix du fichier .gb EST le geste utilisateur
+    const sampler = new AudioSampler();
+    // À CHAQUE cycle, pas une fois par trame : apu.sample(cycle) partage son
+    // curseur avec les lectures du CPU (NR52 avance le sweep du canal 1) —
+    // l'interroger après coup, une fois la trame rejouée, lui redemanderait des
+    // dates déjà dépassées (voir channel1.js, frequencyAt).
+    this.machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.totalCycles));
     this.machine.onTick((mach) => {
-      if (!renderer) return;
-      const t = performance.now();
-      renderer.draw(mach.ppu.screen);
-      this.profiler.recordDraw(performance.now() - t);
+      if (renderer) {
+        const t = performance.now();
+        renderer.draw(mach.ppu.screen);
+        this.profiler.recordDraw(performance.now() - t);
+      }
+      const { left, right } = sampler.drain(); // un seul push par trame
+      this.audioOutput.push(left, right);
     });
     this.startLoop();
   };

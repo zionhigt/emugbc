@@ -15,6 +15,7 @@ vi.mock('../../emulator/core/index.js', () => ({
   MachineBuilder: vi.fn(() => ({
     plugCartridge() {},
     onTick() {},
+    subscribeCycleUpdate() {},
     start() {},
     joypad: {
       presses: [],
