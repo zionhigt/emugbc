@@ -320,7 +320,36 @@ function FactoryOAMSection(ppu) {
     return OAMSection;
 }
 
-export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
+/**
+ * Le propriétaire des registres CGB qui ne sont pas du dessin ($FF70, $FF72-77),
+ * et de la moitié haute de la WRAM, qu'il commute. Absent en DMG : la carte
+ * mémoire ne teste pas le modèle, elle route ce qu'un propriétaire déclare.
+ */
+function FactoryCgbSection(cgb) {
+    class CgbSection extends Section {
+        read(addr) {
+            return cgb.read(addr);
+        }
+        write(addr, value) {
+            return cgb.write(addr, value);
+        }
+    }
+    return CgbSection;
+}
+
+function FactoryWramBankSection(cgb) {
+    class WramBankSection extends Section {
+        read(addr) {
+            return cgb.wramRead(addr);
+        }
+        write(addr, value) {
+            return cgb.wramWrite(addr, value);
+        }
+    }
+    return WramBankSection;
+}
+
+export default function(cartridge, serialbus, timer, ppu, joypad, apu, cgb) {
     const memory = new Memory();
     if (arguments.length === 0) {
         memory.bindRange("flat", 0x000, 0xFFFF, Section);
@@ -364,6 +393,16 @@ export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
         .map(Number)
         .filter((addr) => addr < 0xFF40 || addr > 0xFF4B);
     memory.bindAddresses("ppu_extra", claimed, PPUSection);
+    // Le système CGB, quand il y en a un : ses registres à lui, et la moitié
+    // haute de la WRAM qui devient commutable (SVBK).
+    if (cgb) {
+        memory.bindAddresses(
+            "cgb",
+            Object.keys(cgb.registersMapping).map(Number),
+            FactoryCgbSection(cgb),
+        );
+        memory.bindRange("wram_bank", 0xD000, 0xDFFF, FactoryWramBankSection(cgb));
+    }
     // HRAM (0xFF80-0xFFFE) et IE (0xFFFF) : de la vraie mémoire, elle.
     memory.bindRange("hram", 0xFF80, 0xFFFF, Section);
     return memory;

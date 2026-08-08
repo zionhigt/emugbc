@@ -2,6 +2,7 @@ import MemoryBuilder from "../memory/index.js";
 import Timer from "../timer/index.js";
 import PPU, { Fetcher } from "../ppu/index.js"
 import CGBPPU from "../ppu/cgb.js"
+import CgbSystem from "../cgb/index.js"
 import APU from "../apu/index.js"
 import Joypad from "../joypad/index.js"
 import { DMG, CGB, AUTO, isPreference } from "../models.js"
@@ -41,6 +42,7 @@ export default function(memory, cpu, decoder, clock, serial) {
             // modèle n'est pas encore connu. plugCartridge le reconstruira avec le
             // bon, exactement comme il refait le timer.
             this.initPPU(modelPreference === CGB ? CGB : DMG);
+            this.initCgbSystem(modelPreference === CGB ? CGB : DMG);
             this.apu = new (APU(this));
             this.joypad = new (Joypad())
             this.subscribeCycleUpdate(function() {
@@ -98,6 +100,16 @@ export default function(memory, cpu, decoder, clock, serial) {
         initPPU(model) {
             const PPUClass = model === CGB ? CGBPPU(this) : PPU(this);
             this.ppu = new PPUClass(Fetcher);
+        }
+
+        /**
+         * Le reste du CGB, celui qui n'est pas du dessin : les registres
+         * indocumentés et les banques de WRAM. Null en DMG — et c'est cette
+         * absence, et non un test de modèle, qui laisse la carte mémoire vide à
+         * ces adresses-là.
+         */
+        initCgbSystem(model) {
+            this.cgb = model === CGB ? new (CgbSystem(this)) : null;
         }
 
         resolveModel(cartridge) {
@@ -234,6 +246,7 @@ export default function(memory, cpu, decoder, clock, serial) {
             // Le PPU AVANT la mémoire : c'est lui qui déclare les registres à
             // router (VBK et, plus tard, les palettes), et MemoryBuilder les lit.
             this.initPPU(this._model);
+            this.initCgbSystem(this._model);
             this.initTimer();
             const timer = this.timer;
             const newMemory = MemoryBuilder(
@@ -242,7 +255,8 @@ export default function(memory, cpu, decoder, clock, serial) {
                 timer,
                 this.ppu,
                 this.joypad,
-                this.apu
+                this.apu,
+                this.cgb
             );
             this._memory = newMemory;
             this.cpu.initMemory(newMemory);
