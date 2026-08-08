@@ -5,7 +5,7 @@ import buildInstructions from '../cpu/instructions';
 import buildMemory from '../memory';
 import buildDecoder from '../decodeur';
 import buildMachine from '../machine';
-import buildPPU from './index';
+import buildPPU, { Fetcher } from './index';
 
 const hex = (n, width = 4) => '0x' + (n >>> 0).toString(16).toUpperCase().padStart(width, '0');
 
@@ -30,8 +30,288 @@ const makePPU = () => {
     memory: { read: () => 0, write: () => {}, _read: () => 0, _write: () => {} },
   };
   const PPU = buildPPU(machine);
-  return { machine, knocks, ppu: new PPU() };
+  return { machine, knocks, ppu: new PPU(Fetcher) };
 };
+
+/**
+ * LA COUTURE DU LOT 0 — le PPU ne construit plus sa FIFO de fond, on la lui
+ * injecte.
+ *
+ * C'est le point d'entrée du CGB : il fournira la sienne, celle qui va lire
+ * l'étiquette de tuile rangée dans la banque 1 de VRAM. Ces tests ne mesurent
+ * aucun comportement de rendu — ils tiennent la couture elle-même : qu'elle
+ * existe, qu'elle serve VRAIMENT au rendu (et pas seulement à ranger un objet
+ * dans un champ), et qu'on ne puisse pas l'oublier en silence.
+ */
+describe('la FIFO de fond est injectée, pas construite', () => {
+  const quietMachine = () => ({
+    totalCycles: 0,
+    _if: 0,
+    get IF() { return this._if; },
+    set IF(v) { this._if = v; },
+    memory: { read: () => 0, write: () => {}, _read: () => 0, _write: () => {} },
+  });
+
+  it('le Fetcher du DMG est exporté : une classe CGB pourra en dériver', () => {
+    expect(typeof Fetcher).toBe('function');
+    expect(typeof Fetcher.prototype.renderFifo, 'c\'est renderFifo qu\'on surchargera').toBe('function');
+  });
+
+  it('le PPU instancie la classe reçue, en se passant lui-même comme parent', () => {
+    const parents = [];
+    class SpyFetcher extends Fetcher {
+      constructor(parent) { super(parent); parents.push(parent); }
+    }
+    const PPU = buildPPU(quietMachine());
+    const ppu = new PPU(SpyFetcher);
+
+    expect(ppu.fetcher, 'c\'est bien la classe injectée qui sert').toBeInstanceOf(SpyFetcher);
+    expect(parents[0], 'le PPU se passe lui-même').toBe(ppu);
+  });
+
+  it('le rendu d\'une ligne passe par la FIFO injectée', () => {
+    const lines = [];
+    class SpyFetcher extends Fetcher {
+      renderFifo(line) { lines.push(line); }
+    }
+    const PPU = buildPPU(quietMachine());
+    new PPU(SpyFetcher).renderLine(42);
+
+    expect(lines, 'renderLine délègue à la FIFO reçue, pas à une autre').toEqual([42]);
+  });
+
+  it('oublier la FIFO échoue à la construction, pas au premier pixel', () => {
+    const PPU = buildPPU(quietMachine());
+    // Pas de valeur par défaut : un défaut ferait retomber le CGB sur la FIFO
+    // DMG en silence, et la panne se lirait comme un bug de rendu.
+    expect(() => new PPU()).toThrow(/Fetcher/);
+  });
+});
+
+/**
+ * LES AUTRES COUTURES DU LOT 0.
+ *
+ * Le CGB ne change pas le trajet du pixel : il change ce qu'on LIT au passage
+ * (l'étiquette de tuile, rangée dans la banque 1 de VRAM) et COMMENT on colorie.
+ * Ces deux choses étaient écrites en clair au milieu des boucles, et recopiées —
+ * le coloriage du fond l'était deux fois, dans le fetcher et dans la fenêtre.
+ *
+ * Chaque test ici DESSINE vraiment avant de conclure : une couture qu'on se
+ * contente de déclarer sans vérifier qu'elle est sur le trajet du pixel ne vaut
+ * rien, c'est exactement l'erreur qui laisserait le CGB peindre en DMG.
+ */
+describe('les coutures du lot 0 : ce que le CGB surchargera', () => {
+  const makeBench = () => {
+    const ram = new Uint8Array(0x10000);
+    const machine = {
+      totalCycles: 0,
+      _if: 0,
+      get IF() { return this._if; },
+      set IF(v) { this._if = v; },
+      memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
+    };
+    return { ram, machine, PPU: buildPPU(machine) };
+  };
+
+  // écran allumé, BG allumé, adressage 0x8000, carte 0x9800
+  const LCDC_BASE = 0b1001_0001;
+  const setup = (ppu, lcdc = LCDC_BASE) => {
+    ppu.write(0xff40, lcdc);
+    ppu.write(0xff47, 0b1110_0100); // BGP identité
+    ppu.write(0xff48, 0b1110_0100); // OBP0 identité
+    return ppu;
+  };
+
+  // une tuile unie, tous ses pixels à la même teinte
+  const solidTile = (ram, id, shade) => {
+    for (let r = 0; r < 8; r++) {
+      ram[0x8000 + id * 16 + r * 2] = (shade & 1) ? 0xff : 0x00;
+      ram[0x8000 + id * 16 + r * 2 + 1] = (shade >> 1) ? 0xff : 0x00;
+    }
+  };
+
+  describe('tileAttributes : l\'étiquette de la tuile', () => {
+    it('rend 0 en DMG — le neutre : pas de miroir, pas de palette, pas de priorité', () => {
+      const { PPU } = makeBench();
+      expect(new PPU(Fetcher).tileAttributes(0x9800)).toBe(0);
+    });
+
+    it('est demandée à l\'adresse de la CARTE, là où l\'identifiant a été lu', () => {
+      const { machine, PPU } = makeBench();
+      const asked = [];
+      class Spy extends PPU {
+        tileAttributes(mapAddress) { asked.push(mapAddress); return 0; }
+      }
+      setup(new Spy(Fetcher)).renderLine(0);
+
+      expect(asked.length, 'une étiquette par tuile lue').toBeGreaterThan(0);
+      expect(
+        asked.every((a) => a >= 0x9800 && a <= 0x9bff),
+        'toujours dans la carte, jamais dans les motifs',
+      ).toBe(true);
+    });
+
+    it('chaque pixel porte l\'étiquette de SA tuile, pas celle de la suivante', () => {
+      // Le piège du pipeline : la tuile suivante est allée chercher son
+      // identifiant alors qu'il reste sept pixels de la précédente à sortir.
+      // Sans le verrou posé au moment de l'empilement, ces sept-là prendraient
+      // l'étiquette d'après — invisible en DMG (tout vaut 0), fatal en CGB.
+      const { ram, PPU } = makeBench();
+      for (let i = 0; i < 20; i++) ram[0x9800 + i] = i; // carte : tuile i en case i
+
+      class Spy extends PPU {
+        tileAttributes(mapAddress) { return this.bus.ppuRead(mapAddress); } // étiquette = identifiant
+        backgroundColor(shade, attrs) { return attrs; }                     // on peint l'étiquette
+      }
+      const ppu = setup(new Spy(Fetcher));
+      ppu.renderLine(0);
+
+      expect([...ppu.screen.slice(0, 24)], 'huit pixels par étiquette, dans l\'ordre').toEqual(
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2],
+      );
+    });
+  });
+
+  describe('backgroundColor : un seul coloriage pour le fond ET la fenêtre', () => {
+    // 7 est impossible par le chemin DMG réel (il ne rend que 0-3) : le trouver
+    // à l'écran prouve que le pixel est passé par la couture.
+    it('le fond passe par la couture', () => {
+      const { PPU } = makeBench();
+      class SpyPPU extends PPU {
+        backgroundColor() { return 7; }
+      }
+      const ppu = setup(new SpyPPU(Fetcher));
+      ppu.renderLine(0);
+
+      expect([...ppu.screen.slice(0, 160)].every((p) => p === 7)).toBe(true);
+    });
+
+    it('la fenêtre aussi — c\'était la seconde copie de la même expression', () => {
+      const { PPU } = makeBench();
+      let windows = 0;
+      class SpyPPU extends PPU {
+        backgroundColor() { return 7; }
+        renderWindow(line) { windows++; return super.renderWindow(line); }
+      }
+      const ppu = setup(new SpyPPU(Fetcher), LCDC_BASE | 0b0010_0000); // bit 5 : fenêtre
+      ppu.write(0xff4a, 0);  // WY = 0
+      ppu.write(0xff4b, 7);  // WX = 7 : la fenêtre commence à x = 0
+      ppu.renderLine(0);
+
+      expect(windows, 'la fenêtre a bien été dessinée').toBe(1);
+      expect([...ppu.screen.slice(0, 160)].every((p) => p === 7)).toBe(true);
+    });
+  });
+
+  describe('spriteColor et spriteOrder', () => {
+    const withSprite = (ram) => {
+      solidTile(ram, 1, 1);          // tuile 1 : teinte 1 partout (non transparente)
+      ram[0xfe00] = 16;              // y = 16 -> ligne 0
+      ram[0xfe01] = 8;               // x = 8  -> colonne 0
+      ram[0xfe02] = 1;               // tuile 1
+      ram[0xfe03] = 0;               // attributs
+    };
+
+    it('spriteColor colorie les sprites', () => {
+      const { ram, PPU } = makeBench();
+      withSprite(ram);
+      class SpyPPU extends PPU {
+        spriteColor() { return 7; }
+      }
+      const ppu = setup(new SpyPPU(Fetcher), LCDC_BASE | 0b0000_0010); // bit 1 : objets
+      ppu.renderLine(0);
+
+      expect(ppu.screen[0], 'le pixel du sprite vient de la couture').toBe(7);
+    });
+
+    it('spriteOrder est consulté avant de dessiner', () => {
+      const { ram, PPU } = makeBench();
+      withSprite(ram);
+      let orders = 0;
+      class SpyPPU extends PPU {
+        spriteOrder(visibles) { orders++; return super.spriteOrder(visibles); }
+      }
+      setup(new SpyPPU(Fetcher), LCDC_BASE | 0b0000_0010).renderLine(0);
+
+      expect(orders).toBeGreaterThan(0);
+    });
+
+    it('l\'ordre DMG est conservé : X décroissant, l\'index OAM départage', () => {
+      // Décroissant parce que renderSprites écrase au fur et à mesure : le
+      // DERNIER dessiné gagne, donc le plus petit X doit passer en dernier.
+      const { PPU } = makeBench();
+      const ordered = new PPU(Fetcher).spriteOrder([
+        { x: 10, index: 0 },
+        { x: 5, index: 1 },
+        { x: 10, index: 2 },
+      ]);
+
+      expect(ordered.map((s) => [s.x, s.index])).toEqual([[10, 2], [10, 0], [5, 1]]);
+    });
+  });
+
+  describe('le bus', () => {
+    it('est le MÊME objet d\'un appel à l\'autre', () => {
+      // Il était rebâti à chaque accès, et le fetcher l'appelle plusieurs fois
+      // par pixel : un objet de deux méthodes alloué ~100 000 fois par trame.
+      const { PPU } = makeBench();
+      const ppu = new PPU(Fetcher);
+      expect(ppu.bus).toBe(ppu.bus);
+    });
+
+    it('ppuReadBank ignore la banque en DMG : il n\'y a qu\'une VRAM', () => {
+      const { ram, PPU } = makeBench();
+      ram[0x8000] = 0x42;
+      const { bus } = new PPU(Fetcher);
+
+      expect(bus.ppuReadBank(0x8000, 0)).toBe(0x42);
+      expect(bus.ppuReadBank(0x8000, 1), 'la banque 1 n\'existe pas encore').toBe(0x42);
+    });
+  });
+
+  describe('la table de registres', () => {
+    const fakeRegister = () => ({
+      _v: 0,
+      getValue() { return this._v; },
+      setValue(v) { this._v = v; },
+    });
+
+    it('une sous-classe y ajoute les siens, et read/write les atteignent', () => {
+      const { PPU } = makeBench();
+      class WithVBK extends PPU {
+        constructor(FetcherClass) {
+          super(FetcherClass);
+          this.VBK = fakeRegister();
+        }
+        buildRegistersMapping() {
+          return { ...super.buildRegistersMapping(), 0xff4f: this.VBK };
+        }
+      }
+      const ppu = new WithVBK(Fetcher);
+      ppu.write(0xff4f, 1);
+
+      expect(ppu.read(0xff4f), 'le registre ajouté répond').toBe(1);
+      expect(ppu.read(0xff44), 'les registres de base répondent toujours').toBeDefined();
+    });
+
+    it('la table est bâtie APRÈS le constructeur de la sous-classe', () => {
+      // Si elle était figée dans le constructeur de base, `this.VBK` n'existerait
+      // pas encore au moment de la bâtir : les champs d'une sous-classe ne sont
+      // posés qu'au retour de `super()`. La construction paresseuse règle ça.
+      const { PPU } = makeBench();
+      class WithVBK extends PPU {
+        constructor(FetcherClass) {
+          super(FetcherClass);
+          this.VBK = fakeRegister();
+        }
+        buildRegistersMapping() {
+          return { ...super.buildRegistersMapping(), 0xff4f: this.VBK };
+        }
+      }
+      expect(new WithVBK(Fetcher).registersMapping[0xff4f]).toBeDefined();
+    });
+  });
+});
 
 describe('PPU fantôme : il bat, il ne dessine pas', () => {
   it('la factory (machine injectée) rend la classe : read, write et check exposés', () => {
@@ -223,7 +503,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
-      const ppu = new PPU();
+      const ppu = new PPU(Fetcher);
       // réglage de base : ÉCRAN allumé (bit 7 !), BG allumé, adressage 0x8000, carte 0x9800
       ppu.write(0xff40, 0b1001_0001);
       ppu.write(0xff47, 0b1110_0100); // BGP identité : 0=0, 1=1, 2=2, 3=3
@@ -375,7 +655,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
-      return { ram, ppu: new PPU() };
+      return { ram, ppu: new PPU(Fetcher) };
     };
 
     it('écrire 0xC0 copie 0xC000-0xC09F vers l\'OAM 0xFE00-0xFE9F (160 octets)', () => {
@@ -429,7 +709,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
-      const ppu = new PPU();
+      const ppu = new PPU(Fetcher);
       ppu.write(0xff40, lcdc);
       ppu.write(0xff47, 0b1110_0100); // BGP identité
       ppu.write(0xff48, 0b1110_0100); // OBP0 identité
@@ -686,7 +966,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
-      const ppu = new PPU();
+      const ppu = new PPU(Fetcher);
       ppu.write(0xff40, lcdc);
       ppu.write(0xff47, 0b1110_0100); // BGP identité (la fenêtre l'utilise aussi)
       return { ram, ppu };
@@ -879,7 +1159,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: () => 0, write: () => {}, _read: () => 0, _write: () => {} },
       };
       const PPU = buildPPU(machine);
-      const ppu = new PPU();
+      const ppu = new PPU(Fetcher);
       return { machine, ppu };
     };
     // amène l'horloge au début de la ligne `n` ET pilote le PPU jusque-là :
@@ -1152,7 +1432,7 @@ describe('PPU fantôme : il bat, il ne dessine pas', () => {
         memory: { read: (a) => ram[a], write: (a, v) => { ram[a] = v; }, _read: (a) => ram[a], _write: (a, v) => { ram[a] = v; } },
       };
       const PPU = buildPPU(machine);
-      const ppu = new PPU();
+      const ppu = new PPU(Fetcher);
       ppu.write(0xff40, 0b1001_0001); // écran + BG + adressage 0x8000
       ppu.write(0xff47, 0b1110_0100); // BGP identité
       // tuile 1 = teinte 1 partout, tuile 2 = teinte 2 partout

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import buildPPU from './index';
+import buildPPU, { Fetcher } from './index';
 
 /**
  * AXE 1 — le PPU passe de « prédire » à « décompter ».
@@ -54,7 +54,7 @@ const makePPU = () => {
     memory: { read: () => 0, write: () => {}, _read: () => 0, _write: () => {} },
   };
   const PPU = buildPPU(machine);
-  return { machine, knocks, ppu: new PPU() };
+  return { machine, knocks, ppu: new PPU(Fetcher) };
 };
 
 describe('AXE 1 — la machine à décompte : prédire devient décompter', () => {

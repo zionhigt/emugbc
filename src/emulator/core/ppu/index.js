@@ -92,7 +92,18 @@ class DMAregister extends Register(8) {
     }
 }
 
-class Fetcher {
+/**
+ * LA FIFO DE FOND — exportée, et injectée dans le PPU plutôt qu'instanciée par
+ * lui (voir le constructeur de PPU).
+ *
+ * C'est ici que se lit la tuile de fond : l'identifiant dans la carte, puis les
+ * deux octets de motif. Un PPU CGB doit lire au même endroit un octet de PLUS,
+ * l'étiquette rangée dans la banque 1 de VRAM, qui dit quelle palette prendre,
+ * s'il faut retourner la tuile et si elle passe devant les sprites. Tant que
+ * cette classe restait privée du module et construite en dur, aucune sous-classe
+ * ne pouvait l'atteindre — d'où la couture.
+ */
+export class Fetcher {
     constructor(parent) {
         this.fifo = [];
         this.step = 0;
@@ -104,6 +115,13 @@ class Fetcher {
         this.dy = 0;
         this.parent = parent;
         this.discard = 0;
+        // L'étiquette de la tuile qu'on vient d'aller chercher, et celle des
+        // pixels actuellement dans la FIFO. Deux champs et pas un : la tuile
+        // SUIVANTE est lue alors qu'il reste sept pixels de la précédente à
+        // sortir — un seul champ les colorierait avec la mauvaise étiquette.
+        // En DMG les deux valent toujours 0 (voir PPU.tileAttributes).
+        this.fetchedAttrs = 0;
+        this.attrs = 0;
     }
 
     tick(line) {
@@ -114,6 +132,7 @@ class Fetcher {
         switch (this.step) {
             case 0:
                 this.id = this.parent.bus.ppuRead(addr);
+                this.fetchedAttrs = this.parent.tileAttributes(addr);
                 this.step = 1;
                 break;
             case 1:
@@ -132,6 +151,10 @@ class Fetcher {
                 break;
             case 3:
                 if (this.fifo.length === 0) {
+                    // Les huit pixels qu'on pousse portent l'étiquette de LEUR
+                    // tuile : on la fige ici, avant que l'étape 0 du tour suivant
+                    // n'aille chercher celle d'après.
+                    this.attrs = this.fetchedAttrs;
                     for (let bit = 7; bit >= 0; bit--) {
                         const teinte = byte.getBit(this.high, bit) * 2 + byte.getBit(this.low, bit);
                         this.fifo.push(teinte);
@@ -149,7 +172,7 @@ class Fetcher {
             }
             const pixel = this.fifo.shift();
             this.parent.bgLine[this.x] = pixel;
-            this.parent.screen[line * 160 + this.x] = (this.parent.BGP.getValue() >> (pixel * 2)) & 0b11;
+            this.parent.screen[line * 160 + this.x] = this.parent.backgroundColor(pixel, this.attrs);
             this.x++;
         }
 
@@ -164,6 +187,8 @@ class Fetcher {
         this.step = 0;
         this.x = 0;
         this.discard = scx & 7;
+        this.fetchedAttrs = 0;
+        this.attrs = 0;
         this.dy = (line + this.parent.SCY.getValue()) & 0xFF;
         while (this.x < 160) {
             this.tick(line);
@@ -180,7 +205,19 @@ class Fetcher {
 
 export default function(machine) {
     class PPU {
-        constructor() {
+        /**
+         * `FetcherClass` est une DÉPENDANCE, pas un réglage : le PPU ne connaît
+         * plus la classe qui remplit sa FIFO, on la lui donne. C'est ce qui
+         * permettra à un PPU CGB d'en fournir une autre sans toucher à celle-ci.
+         *
+         * Elle n'a pas de valeur par défaut, volontairement : un défaut ferait
+         * silencieusement retomber le CGB sur la FIFO DMG le jour où un appelant
+         * oublie de la passer, et la panne se lirait comme un bug de rendu.
+         */
+        constructor(FetcherClass) {
+            if (typeof FetcherClass !== 'function') {
+                throw new Error('PPU : il faut lui injecter une classe de Fetcher');
+            }
             this.machine = machine;
             this.LY = new LYregister(this);
             this.LCDC = new LCDCregister(this);
@@ -214,24 +251,9 @@ export default function(machine) {
 
             this.coincidence = 0;
 
-            this.fetcher = new Fetcher(this);
-
-            // Bâtie UNE fois : les douze registres naissent ici et ne sont jamais
-            // remplacés. Voir le getter plus bas.
-            this._registersMapping = {
-                0xFF40: this.LCDC,
-                0xFF41: this.STAT,
-                0xFF42: this.SCY,
-                0xFF43: this.SCX,
-                0xFF44: this.LY,
-                0xFF45: this.LYC,
-                0xFF46: this.DMA,
-                0xFF47: this.BGP,
-                0xFF48: this.OBP0,
-                0xFF49: this.OBP1,
-                0xFF4A: this.WY,
-                0xFF4B: this.WX,
-            };
+            this.fetcher = new FetcherClass(this);
+            this._bus = this.buildBus();
+            this._registersMapping = null; // bâtie à la première demande, voir le getter
         }
 
         sleep() {
@@ -248,16 +270,82 @@ export default function(machine) {
             this.updateStat();
         }
 
-        get bus() {
+        /**
+         * Le bus est bâti UNE fois. Il était reconstruit à chaque accès, or le
+         * fetcher l'appelle plusieurs fois par pixel : c'était un objet de deux
+         * méthodes alloué ~100 000 fois par trame, sur le chemin le plus chaud
+         * du PPU. Même motif que les tables de registres (voir apu/index.js).
+         */
+        buildBus() {
             const self = this;
             return {
                 ppuRead(addr) {
                     return self.machine.memory._read(addr);
                 },
+                /**
+                 * Lire en visant une banque de VRAM. En DMG il n'y en a qu'une :
+                 * la banque demandée est ignorée. Le CGB rangera ses étiquettes
+                 * de tuile dans la banque 1 et surchargera ceci.
+                 */
+                ppuReadBank(addr, bank) {
+                    return this.ppuRead(addr);
+                },
                 ppuWrite(addr, value) {
                     return self.machine.memory._write(addr, value);
                 }
             }
+        }
+
+        get bus() {
+            return this._bus;
+        }
+
+        /**
+         * L'ÉTIQUETTE D'UNE TUILE DE FOND, à l'adresse où son identifiant a été lu.
+         *
+         * En DMG il n'y en a pas : on rend 0, le neutre — pas de miroir, pas de
+         * palette à choisir, pas de priorité sur les sprites. Le CGB lira l'octet
+         * rangé à la MÊME adresse dans la banque 1 de VRAM.
+         */
+        tileAttributes(mapAddress) {
+            return 0;
+        }
+
+        /**
+         * LE COLORIAGE DU FOND — un seul endroit, alors qu'il était recopié dans
+         * le fetcher et dans la fenêtre.
+         *
+         * En DMG, les deux bits de teinte traversent BGP et rien d'autre : `attrs`
+         * ne sert pas. Le CGB y lira le numéro de palette (bits 0-2) pour aller
+         * chercher la couleur dans sa RAM de palette.
+         */
+        backgroundColor(shade, attrs) {
+            return (this.BGP.getValue() >> (shade * 2)) & 0b11;
+        }
+
+        /**
+         * LE COLORIAGE D'UN SPRITE. En DMG le bit 4 des attributs OAM choisit entre
+         * les deux palettes d'objet ; le CGB ignore ces deux-là et lit un numéro de
+         * palette sur les bits 0-2.
+         */
+        spriteColor(shade, sprite) {
+            const palette = byte.getFlag(sprite.attrs, 4) ? this.OBP1 : this.OBP0;
+            return (palette.getValue() >> (shade * 2)) & 0b11;
+        }
+
+        /**
+         * L'ORDRE DE DESSIN DES SPRITES D'UNE LIGNE.
+         *
+         * Tri DESCENDANT, et ce n'est pas un détail : `renderSprites` dessine dans
+         * cet ordre et chaque sprite écrase le précédent, donc le dernier dessiné
+         * est celui qui gagne. En DMG le plus petit X gagne, l'index OAM départage
+         * les égalités. Le CGB, lui, ne regardera que l'index — sauf si OPRI
+         * réclame le comportement DMG.
+         */
+        spriteOrder(visibles) {
+            return visibles.sort(function(a, b) {
+                return (b.x - a.x) || (b.index - a.index);
+            });
         }
         
         get totalMachineCycles() {
@@ -265,11 +353,46 @@ export default function(machine) {
         }
 
         /**
-         * Table figée après construction, comme celle de l'APU : la rebâtir à chaque
-         * `read`/`write` mettait un objet de douze clés entières sur le chemin de tout
-         * accès à 0xFF40-0xFF4B, dont STAT et LY que les jeux sondent en boucle.
+         * La table adresse -> registre. Une sous-classe y ajoute les siens :
+         *
+         *   buildRegistersMapping() {
+         *       return { ...super.buildRegistersMapping(), 0xFF4F: this.VBK };
+         *   }
+         *
+         * (Le routage mémoire ne couvre aujourd'hui que 0xFF40-0xFF4B : l'élargir
+         * fera partie du lot qui introduira ces registres-là.)
+         */
+        buildRegistersMapping() {
+            return {
+                0xFF40: this.LCDC,
+                0xFF41: this.STAT,
+                0xFF42: this.SCY,
+                0xFF43: this.SCX,
+                0xFF44: this.LY,
+                0xFF45: this.LYC,
+                0xFF46: this.DMA,
+                0xFF47: this.BGP,
+                0xFF48: this.OBP0,
+                0xFF49: this.OBP1,
+                0xFF4A: this.WY,
+                0xFF4B: this.WX,
+            };
+        }
+
+        /**
+         * Bâtie à la PREMIÈRE DEMANDE, pas dans le constructeur, et gardée ensuite.
+         *
+         * Deux raisons qui vont ensemble. La rebâtir à chaque appel mettait un objet
+         * de douze clés entières sur le chemin de tout accès à 0xFF40-0xFF4B — dont
+         * STAT et LY, que les jeux sondent en boucle. Et la bâtir dans le
+         * constructeur de base la figerait AVANT qu'une sous-classe ait eu le temps
+         * de créer ses propres registres : ses champs à elle ne sont posés qu'au
+         * retour de `super()`, donc ils manqueraient à l'appel.
          */
         get registersMapping() {
+            if (!this._registersMapping) {
+                this._registersMapping = this.buildRegistersMapping();
+            }
             return this._registersMapping;
         }
 
@@ -281,7 +404,9 @@ export default function(machine) {
             for (let x = 0; x < 160; x++) {
                 if (x < startX) continue;
                 const wx = x - startX;
-                const id = this.bus.ppuRead(card + (wrow >> 3) * 32 + (wx >> 3));
+                const mapAddress = card + (wrow >> 3) * 32 + (wx >> 3);
+                const id = this.bus.ppuRead(mapAddress);
+                const attrs = this.tileAttributes(mapAddress);
                 const tile = byte.getFlag(this.LCDC.getValue(), 4) ?
                     0x8000 + id * 16 :
                     0x9000 + byte.sign8(id) * 16;
@@ -290,7 +415,7 @@ export default function(machine) {
                 const bit = 7 - (wx & 7)
                 const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
                 this.bgLine[x] = teinte;
-                this.screen[line * 160 + x] = (this.BGP.getValue() >> (teinte * 2)) & 0b11;
+                this.screen[line * 160 + x] = this.backgroundColor(teinte, attrs);
 
             }
         }
@@ -315,11 +440,7 @@ export default function(machine) {
                 }
             }
 
-            visibles = visibles.sort(
-                function(a, b) {
-                    return (b.x - a.x) || (b.index - a.index);
-                }
-            )
+            visibles = this.spriteOrder(visibles);
             this._visibleLineSprites = {[line]: visibles};
             return this._visibleLineSprites[line];
         }
@@ -362,10 +483,7 @@ export default function(machine) {
                 const adr = 0x8000 + tile * 16;
                 const low = this.bus.ppuRead(adr + row * 2);
                 const high = this.bus.ppuRead(adr + row * 2 + 1);
-                const palette = byte.getFlag(sprite.attrs, 4) ?
-                    this.OBP1 :
-                    this.OBP0;
-                
+
                 for (let col = 0; col < 8; col++) {
                     const bit = byte.getFlag(sprite.attrs, 5) ? col : 7 - col;
                     const teinte = byte.getBit(high, bit) * 2 + byte.getBit(low, bit);
@@ -374,7 +492,7 @@ export default function(machine) {
 
                     if (ex < 0 || ex >= 160) continue;
                     if (byte.getFlag(sprite.attrs, 7) && this.bgLine[ex] != 0) continue;
-                    this.screen[line * 160 + ex] = (palette.getValue() >> (teinte * 2)) & 0b11;
+                    this.screen[line * 160 + ex] = this.spriteColor(teinte, sprite);
                 }
             
             }

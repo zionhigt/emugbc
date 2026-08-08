@@ -1,6 +1,6 @@
 import MemoryBuilder from "../memory/index.js";
 import Timer from "../timer/index.js";
-import PPU from "../ppu/index.js"
+import PPU, { Fetcher } from "../ppu/index.js"
 import APU from "../apu/index.js"
 import Joypad from "../joypad/index.js"
 
@@ -20,7 +20,9 @@ export default function(memory, cpu, decoder, clock, serial) {
             this.clock.onTick(this.handleTick.bind(this));
             this.totalCycles = 0;
             this._observersCyclesUpdate = [];
-            this.ppu = new (PPU(this));
+            // La FIFO de fond est injectée : c'est ici que se choisira celle du
+            // CGB, sans que le PPU ait à connaître les deux.
+            this.ppu = new (PPU(this))(Fetcher);
             this.apu = new (APU(this));
             this.joypad = new (Joypad())
             this.subscribeCycleUpdate(function() {
