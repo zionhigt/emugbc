@@ -365,7 +365,7 @@ implémentation, pas le matériel.
 
 ---
 
-### Lot 2 — La VRAM double et VBK
+### Lot 2 — La VRAM double et VBK — **FERMÉ**
 
 **Objectif** : deux banques de 8 Ko, commutées par 0xFF4F, et un PPU capable de
 lire une banque précise sans passer par la commutation.
@@ -377,10 +377,30 @@ les contourner en tapant `memory._read` directement.
 **TU** : écriture/lecture par banque ; en DMG l'écriture de VBK est sans effet ;
 le blocage mode 3 reste intact.
 
-**Oracle** : `unused_hwio-C.gb` arbitre nommément `$FF4F` — `test $FF4F %11111110`,
-donc les bits 1 à 7 lus à 1. Plus `boot_hwio-C.gb` pour sa valeur au démarrage.
-C'est aussi ici que se choisit enfin la CLASSE de PPU selon le modèle, puisqu'il
-y en a désormais deux.
+**Oracle** : `unused_hwio-C.gb` arbitre nommément `$FF4F`. Il reste ROUGE — les
+palettes manquent encore — mais son test `$FF4F` passe désormais.
+
+**Ce que le lot a appris :**
+
+- **VBK est un aiguillage CÔTÉ PROCESSEUR, et lui seul.** Le PPU ne le consulte
+  jamais : il lit la carte en banque 0 et son étiquette en banque 1 dans le même
+  souffle. Confondre les deux ferait clignoter le fond au rythme des écritures
+  du jeu. D'où deux chemins distincts : `vramRead` (le CPU, qui suit VBK) et
+  `vramReadBank` (le PPU, qui vise).
+- **La banque 0 reste dans la mémoire plate.** Seule la banque 1 est un tampon à
+  part. Tout le reste de l'émulateur — le DMA, le PPU DMG, les tests — continue
+  de lire la VRAM par `memory._read` sans rien savoir de cette histoire.
+- **Le PPU DÉCLARE ses registres, `MemoryBuilder` les lui route** (`bindAddresses`).
+  0xFF4F tombe hors de la plage historique 0xFF40-0xFF4B, au milieu des trous
+  fermés au lot 1.5 : plutôt qu'une carte mémoire par modèle, qui divergerait au
+  premier ajout, la table du PPU fait foi. Les palettes du lot 3 arriveront
+  gratuitement par le même chemin.
+- **La section VRAM délègue au PPU** au lieu de taper la mémoire plate — après
+  le verrou de mode, jamais avant : le blocage dot-précis conquis au chapitre PPU
+  s'applique aux DEUX banques.
+
+Le PPU CGB existe donc, et n'est qu'une sous-classe : il ne redéfinit que la
+VRAM et sa table de registres. Le trajet du pixel n'a pas bougé d'un iota.
 
 ---
 

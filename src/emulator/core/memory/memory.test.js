@@ -34,14 +34,28 @@ describe('Blocage VRAM/OAM : le PPU verrouille l\'accès CPU selon son mode', ()
   // La section lit le mode via `computeState` (dot-précis) ; ici on le rend
   // constant quel que soit l'offset, donc le blocage se réduit à « ce mode bloque-t-il ? ».
   // (serial/timer/joypad restent undefined : les tests ne touchent que VRAM/OAM.)
-  const buildMem = (mode, isOn = true) => buildMemory(
-    buildFakeCartridge(),
-    undefined,
-    undefined,
-    { computeState: () => ({ mode }), totalMachineCycles: 0, LCDC: { isOn }, read: () => 0, write: () => {}, check: () => {} },
-    undefined,
-    buildFakeAPU(),
-  );
+  const buildMem = (mode, isOn = true) => {
+    // Depuis le lot 2, la section VRAM DÉLÈGUE l'accès au PPU : c'est lui qui
+    // sait quelle banque le CPU regarde (une seule en DMG, deux en CGB). Le
+    // double porte donc `vramRead`/`vramWrite`, et reçoit la mémoire comme le
+    // vrai la reçoit de la machine.
+    const ppu = {
+      computeState: () => ({ mode }),
+      totalMachineCycles: 0,
+      LCDC: { isOn },
+      read: () => 0,
+      write: () => {},
+      check: () => {},
+      memory: null,
+      vramRead(addr) { return this.memory._read(addr); },
+      vramWrite(addr, value) { return this.memory._write(addr, value); },
+    };
+    const memory = buildMemory(
+      buildFakeCartridge(), undefined, undefined, ppu, undefined, buildFakeAPU(),
+    );
+    ppu.memory = memory;
+    return memory;
+  };
 
   it('VRAM : lecture CPU rend 0xFF en mode 3 (dessin)', () => {
     const mem = buildMem(3);

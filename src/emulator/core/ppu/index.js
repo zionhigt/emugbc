@@ -284,11 +284,11 @@ export default function(machine) {
                 },
                 /**
                  * Lire en visant une banque de VRAM. En DMG il n'y en a qu'une :
-                 * la banque demandée est ignorée. Le CGB rangera ses étiquettes
-                 * de tuile dans la banque 1 et surchargera ceci.
+                 * la banque demandée est ignorée. Le CGB range ses étiquettes de
+                 * tuile dans la banque 1 et surcharge `vramReadBank`.
                  */
                 ppuReadBank(addr, bank) {
-                    return this.ppuRead(addr);
+                    return self.vramReadBank(addr, bank);
                 },
                 ppuWrite(addr, value) {
                     return self.machine.memory._write(addr, value);
@@ -298,6 +298,26 @@ export default function(machine) {
 
         get bus() {
             return this._bus;
+        }
+
+        /**
+         * LA VRAM, VUE DU CPU (0x8000-0x9FFF). Une seule banque en DMG, deux en
+         * CGB, commutées par VBK — c'est un aiguillage CÔTÉ PROCESSEUR, et lui
+         * seul : le PPU, lui, lit les deux banques quand il veut (`vramReadBank`).
+         * La section mémoire passe par ici, ce qui laisse au CGB un unique
+         * endroit à surcharger.
+         */
+        vramRead(addr) {
+            return this.machine.memory._read(addr);
+        }
+
+        vramWrite(addr, value) {
+            return this.machine.memory._write(addr, value);
+        }
+
+        /** En DMG la banque demandée n'existe pas : il n'y en a qu'une. */
+        vramReadBank(addr, bank) {
+            return this.machine.memory._read(addr);
         }
 
         /**

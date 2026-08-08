@@ -60,6 +60,12 @@ const buildFakePPU = () => ({
   // toujours ouvert, ce qui rend ce mock inoffensif pour les tests machine.
   mode: 0,
   LCDC: { isOn: false },
+  // Depuis le lot 2, la section VRAM passe par le PPU pour savoir quelle banque
+  // le CPU regarde. Ce double-ci sert au bus d'AVANT plugCartridge, qui n'a pas
+  // de mémoire à lui : un tampon de 8 Ko suffit à tenir le contrat.
+  _vram: new Uint8Array(0x2000),
+  vramRead(addr) { return this._vram[addr - 0x8000]; },
+  vramWrite(addr, value) { this._vram[addr - 0x8000] = value; },
 });
 
 // Un joypad factice : 0xFF = aucune touche pressée (actif bas).

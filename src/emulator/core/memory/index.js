@@ -51,6 +51,21 @@ class Memory {
             this._ram[s] = instance;
         }
     }
+
+    /**
+     * Router des adresses ÉPARSES vers une même section. Le CGB pose ses
+     * registres au milieu de trous (VBK en 0xFF4F, les palettes en 0xFF68-6B) :
+     * ce ne sont pas des plages, et les énumérer ici évite d'inventer une carte
+     * mémoire par modèle. Le PPU déclare ce qu'il possède, on le lui route.
+     */
+    bindAddresses(tag, addresses, cls) {
+        if (!addresses.length) return;
+        const instance = new cls(this);
+        this._sections[tag] = { addresses, instance };
+        for (const addr of addresses) {
+            this._ram[addr] = instance;
+        }
+    }
 }
 
 class Section {
@@ -269,13 +284,18 @@ function FactoryVRAMSection(ppu) {
             super(memory, ppu);
         }
 
+        // Le verrou du mode 3 d'abord, l'aiguillage de banque ensuite : c'est le
+        // PPU qui sait laquelle des deux banques le CPU regarde (VBK en CGB, une
+        // seule en DMG), donc on passe par lui plutôt que par la mémoire plate.
         read(addr) {
             if (this.mode === 3 || this.mode === 2 && this.nextMode === 3) return 0xFF;
-            return this.memory._read(addr);
+            if (!this.ppu) return this.memory._read(addr);
+            return this.ppu.vramRead(addr);
         }
         write(addr, value) {
             if (this.getMode(0) === 3) return;
-            return this.memory._write(addr, value);
+            if (!this.ppu) return this.memory._write(addr, value);
+            return this.ppu.vramWrite(addr, value);
         }
     }
 
@@ -332,10 +352,18 @@ export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
     memory.bindRange("interrupt_flag", 0xFF0F, 0xFF0F, FactoryMaskedSection(0xE0));
     apu = FactoryAPUSection(apu);
     memory.bindRange("apu", 0xFF10, 0xFF3F, apu);
-    ppu = FactoryPPUSection(ppu);
-    memory.bindRange("ppu", 0xFF40, 0xFF4B, ppu);
-    // Tout ce bloc est vide sur DMG. C'est là que le CGB posera ses registres.
+    // Tout ce bloc est vide sur DMG. C'est là que le CGB pose ses registres —
+    // d'où l'ordre : les trous d'abord, le PPU par-dessus (voir juste en dessous).
     memory.bindRange("unmapped_ff4c", 0xFF4C, 0xFF7F, UnmappedSection);
+    const PPUSection = FactoryPPUSection(ppu);
+    memory.bindRange("ppu", 0xFF40, 0xFF4B, PPUSection);
+    // Les registres que le PPU réclame HORS de sa plage historique : VBK, et
+    // demain les palettes. Il les DÉCLARE dans sa table, on les lui route — plutôt
+    // qu'une carte mémoire par modèle, qui divergerait au premier ajout.
+    const claimed = Object.keys(ppu?.registersMapping || {})
+        .map(Number)
+        .filter((addr) => addr < 0xFF40 || addr > 0xFF4B);
+    memory.bindAddresses("ppu_extra", claimed, PPUSection);
     // HRAM (0xFF80-0xFFFE) et IE (0xFFFF) : de la vraie mémoire, elle.
     memory.bindRange("hram", 0xFF80, 0xFFFF, Section);
     return memory;

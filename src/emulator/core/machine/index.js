@@ -1,6 +1,7 @@
 import MemoryBuilder from "../memory/index.js";
 import Timer from "../timer/index.js";
 import PPU, { Fetcher } from "../ppu/index.js"
+import CGBPPU from "../ppu/cgb.js"
 import APU from "../apu/index.js"
 import Joypad from "../joypad/index.js"
 import { DMG, CGB, AUTO, isPreference } from "../models.js"
@@ -36,9 +37,10 @@ export default function(memory, cpu, decoder, clock, serial) {
             this.clock.onTick(this.handleTick.bind(this));
             this.totalCycles = 0;
             this._observersCyclesUpdate = [];
-            // La FIFO de fond est injectée : c'est ici que se choisira celle du
-            // CGB, sans que le PPU ait à connaître les deux.
-            this.ppu = new (PPU(this))(Fetcher);
+            // Un PPU provisoire, le temps qu'une cartouche arrive : en 'auto' le
+            // modèle n'est pas encore connu. plugCartridge le reconstruira avec le
+            // bon, exactement comme il refait le timer.
+            this.initPPU(modelPreference === CGB ? CGB : DMG);
             this.apu = new (APU(this));
             this.joypad = new (Joypad())
             this.subscribeCycleUpdate(function() {
@@ -88,6 +90,16 @@ export default function(memory, cpu, decoder, clock, serial) {
          * cartouche qui ne se déclare pas — le cas de TOUTES les ROMs mooneye,
          * qui portent 0x143 = 0x00 et mesurent ce que la console a laissé.
          */
+        /**
+         * LE SEUL ENDROIT OÙ LE MODÈLE CHOISIT UNE CLASSE. La FIFO de fond est
+         * injectée dans les deux cas : au lot 2 le CGB se contente de celle du
+         * DMG, il ne diverge encore que sur la VRAM et ses registres.
+         */
+        initPPU(model) {
+            const PPUClass = model === CGB ? CGBPPU(this) : PPU(this);
+            this.ppu = new PPUClass(Fetcher);
+        }
+
         resolveModel(cartridge) {
             if (this._modelPreference !== AUTO) return this._modelPreference;
             return cartridge?.header?.supportsCgb ? CGB : DMG;
@@ -219,6 +231,9 @@ export default function(memory, cpu, decoder, clock, serial) {
             // Le modèle se fige ICI et pas avant : en 'auto' il dépend de la
             // cartouche, qui n'existe pas à la construction de la machine.
             this._model = this.resolveModel(cartridge);
+            // Le PPU AVANT la mémoire : c'est lui qui déclare les registres à
+            // router (VBK et, plus tard, les palettes), et MemoryBuilder les lit.
+            this.initPPU(this._model);
             this.initTimer();
             const timer = this.timer;
             const newMemory = MemoryBuilder(
