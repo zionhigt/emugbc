@@ -183,7 +183,7 @@ le droit de faire rougir les **1746 tests** existants.
 
 ---
 
-### Lot 0 — La base de temps système, sans changer une seconde
+### Lot 0 — La base de temps système, sans changer une seconde — **FERMÉ**
 
 **Objectif** : que `machine.systemCycles` existe, que le PPU et l'APU s'en
 servent, et que **rien ne bouge** — parce qu'en vitesse simple les deux compteurs
@@ -196,10 +196,18 @@ jalon précédent, et pour la même raison : c'est un refactor sous les pieds de
 trois chapitres clos.
 
 **Oracle** : la suite elle-même, `dmg-acid2` et `cgb-acid2` en particulier.
+**Tenu : 1746 -> 1755 tests, instantanés identiques, blargg et mooneye inchangés.**
+
+Ce que le lot a appris : **vingt-quatre bancs d'essai à porter**. Leurs fausses
+machines n'exposaient que `totalCycles`, et l'APU comme le PPU lisaient soudain
+`undefined` — 229 tests rouges d'un coup, tous pour la même raison. Le contrat
+d'une machine a changé, les doublures doivent le suivre :
+`get systemCycles() { return this.totalCycles; }`, ce qui EST la vérité en
+vitesse simple.
 
 ---
 
-### Lot 1 — KEY1 et STOP : la bascule se déclare
+### Lot 1 — KEY1 et STOP : la bascule se déclare — **FERMÉ**
 
 **Objectif** : le registre existe et se relit juste, `STOP` fait la bascule, et
 `systemCycles` se met à compter par demis quand elle est enclenchée.
@@ -216,8 +224,23 @@ dans sa table. Ce n'est pas une régression : c'est encore le mode de
 compatibilité DMG (voir P3 du cahier CGB), qui verrouille KEY1 comme il verrouille
 les autres. Le test doit être porté, pas contourné.
 
-**Oracle** : `spsw-stop-prefetch-cgbBCE.gb`, et les sept autres qui doivent au
-minimum cesser de rester figées à `PC=0x12D0`.
+**Oracle** : `spsw-stop-prefetch-cgbBCE.gb`. **Il reste rouge**, comme les sept
+autres — et c'est ce qu'on attendait : ce lot fait exister la bascule, il ne
+prétend pas la rendre juste à la microseconde.
+
+**Ce qu'on a mesuré à la place, et qui vaut mieux qu'un vert** : la bascule a
+lieu, entre 4 et 168 fois selon la ROM. C'est la preuve que le chemin
+`KEY1 -> STOP -> machine` est complet ; ce que les ROMs reprochent maintenant est
+en aval, dans les lots 2 à 5.
+
+**Correction de lecture au passage** : `PC=0x12D0` n'était pas un `STOP` qui
+bloque, contrairement à ce que ce cahier a d'abord écrit. C'est `EI / HALT / JR`,
+la boucle de parking que ces ROMs exécutent APRÈS avoir rendu leur verdict. Elles
+allaient au bout depuis le début ; elles échouaient, simplement.
+
+**L'attendu s'est réalisé** : `unused_hwio-C` s'arrête désormais sur `$FF4D` au
+lieu de `$FF69`. Le test a été porté, pas contourné, et son message explique
+maintenant les DEUX façons dont il peut bouger.
 
 ---
 
@@ -295,7 +318,25 @@ la veille reste ce qu'elle est.
 
 ## 7. Où on en est
 
-**Ouvert.** Les oracles sont déposés et mesurés (8/8 rouges, uniformément), les
-trois décisions sont proposées, le découpage est posé.
+**Lots 0 et 1 fermés. 1774 tests au vert.**
 
-**Le prochain lot est le 0**, et il ne doit rien changer du tout.
+| lot | état | ce qu'il reste à prouver |
+|---|---|---|
+| 0 — base de temps système | **FERMÉ** | — |
+| 1 — KEY1 et STOP | **FERMÉ** | — |
+| 2 — le PPU garde son heure | ouvert | `spsw-mode0` |
+| 3 — le timer double vraiment | ouvert | `spsw-div`, `spsw-tima` ×2 |
+| 4 — l'APU et ses deux montres | ouvert | `spsw-ch2-lc-delay`, filet `dmg_sound` |
+| 5 — les IRQ pendant l'arrêt | ouvert | `spsw-interrupts` ×2 |
+| F — le régime dans l'overlay | ouvert | — |
+
+Les huit oracles sont toujours rouges, et le tableau de bord
+(`age-speed-switch.test.js`) les tient ligne par ligne. **Ce qui a changé et ne
+se voit pas dans ce tableau** : la bascule a désormais lieu pour de bon, et le
+temps du monde se dédouble avec elle. Ce qui manque est du détail de cadence —
+c'est-à-dire précisément ce que ces huit ROMs savent mesurer et que rien d'autre
+ne sait voir.
+
+**Le prochain lot est le 3**, et pas le 2 : DIV qui ne tourne pas pendant les
+2050 cycles d'arrêt est la seule pièce dont on connaît déjà la forme exacte
+(l'origine du timer se décale, une ligne), et trois des huit ROMs en dépendent.

@@ -45,6 +45,46 @@ class MaskedRegister extends Register(8) {
 }
 
 /**
+ * KEY1 ($FF4D) — la bascule de régime, en DEUX GESTES.
+ *
+ * On ARME (bit 0), puis on exécute `STOP`. Le premier geste ne fait rien tout
+ * seul, le second ne fait rien sans le premier. C'est le seul usage de `STOP`
+ * dans les jeux sous licence.
+ *
+ * Le bit 7 dit le régime EN COURS, et il est en lecture seule : ce n'est pas
+ * l'écriture qui bascule. Un émulateur qui le prendrait au mot changerait de
+ * régime au moment où le jeu ne fait que relire et réécrire ce qu'il a lu.
+ *
+ * Le régime lui-même n'est pas rangé ici mais sur la MACHINE : il est consulté à
+ * chaque cycle payé — le chemin le plus chaud de l'émulateur — alors que ce
+ * registre-ci n'est lu que quelques fois par partie. Une seule vérité, rangée du
+ * côté de celui qui la demande souvent.
+ */
+class KEY1Register extends Register(8) {
+    constructor(machine) {
+        super();
+        this.machine = machine;
+    }
+
+    /** Bit 0 seulement : le reste du registre n'appartient pas au programme. */
+    get armed() {
+        return (super.getValue() & 0x01) === 1;
+    }
+
+    disarm() {
+        super.setValue(0);
+    }
+
+    getValue() {
+        return 0x7E | (this.machine.doubleSpeed ? 0x80 : 0) | (super.getValue() & 0x01);
+    }
+
+    setValue(value) {
+        super.setValue(value & 0x01);
+    }
+}
+
+/**
  * PCM12 / PCM34 ($FF76-$FF77) — une FENÊTRE SUR L'APU, pas un registre.
  *
  * Ces deux-là ont longtemps été rangés parmi les indocumentés, et ils ne le sont
@@ -80,6 +120,7 @@ export default function(machine) {
     class CgbSystem {
         constructor() {
             this.SVBK = new SVBKRegister();
+            this.KEY1 = new KEY1Register(machine);
             // La banque 1 reste dans la mémoire plate, là où elle a toujours été :
             // tout le reste de l'émulateur continue de lire 0xD000 sans rien
             // savoir de cette histoire. Même geste qu'au lot 2 pour la VRAM.
@@ -96,6 +137,7 @@ export default function(machine) {
 
         buildRegistersMapping() {
             return {
+                0xFF4D: this.KEY1,
                 0xFF70: this.SVBK,
                 0xFF72: this.FF72,
                 0xFF73: this.FF73,

@@ -11,6 +11,9 @@ const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
 const DEFAULT_BUDGET = Number.parseInt(MACHINE_FREQUENCE / MACHINE_FRAMES_PER_SECONDES);
 
+/** Le CPU s'arrête 2050 cycles machine (8200 dots) après une bascule de régime. */
+const STOP_PAUSE = 2050;
+
 export default function(memory, cpu, decoder, clock, serial) {
     class Machine {
         /**
@@ -40,6 +43,10 @@ export default function(memory, cpu, decoder, clock, serial) {
             // Le temps du monde, compté en DEMIS de cycle machine (voir le getter
             // `systemCycles`) : en double régime, un cycle CPU n'en vaut qu'un.
             this._systemHalfCycles = 0;
+            // Le régime en cours. Il vit ICI et pas sur KEY1 : il est consulté à
+            // chaque cycle payé, alors que le registre n'est lu que quelques
+            // fois par partie.
+            this._doubleSpeed = false;
             this._observersCyclesUpdate = [];
             // Un PPU provisoire, le temps qu'une cartouche arrive : en 'auto' le
             // modèle n'est pas encore connu. plugCartridge le reconstruira avec le
@@ -56,6 +63,7 @@ export default function(memory, cpu, decoder, clock, serial) {
             this._tickObservers = [];
 
             this.cpu.onCyclesUpdate(this.cyclesUpdate.bind(this));
+            this.cpu.onStop(this.onStop.bind(this));
 
             this._timerTickCallback = this.onTimer.bind(this);
             this.initTimer();
@@ -102,7 +110,28 @@ export default function(memory, cpu, decoder, clock, serial) {
          * quoi que ce soit à basculer.
          */
         get doubleSpeed() {
-            return false;
+            return this._doubleSpeed;
+        }
+
+        /**
+         * LA BASCULE, demandée par `STOP` et par lui seul.
+         *
+         * Le CPU ne connaît pas la machine : il ANNONCE son arrêt, on décide ici
+         * de ce que ça veut dire. Sans bascule armée, `STOP` reste ce qu'il a
+         * toujours été chez nous — un drapeau que personne ne lit. C'est
+         * volontaire : la veille du DMG (celle qui attend un appui sur la
+         * manette) n'est utilisée par aucun jeu sous licence, et pandocs lui
+         * consacre un diagramme entier de cas tordus.
+         */
+        onStop() {
+            if (!this.cgb || !this.cgb.KEY1.armed) return;
+            this._doubleSpeed = !this._doubleSpeed;
+            this.cgb.KEY1.disarm();
+            this.cpu.resumeFromStop();
+            // Le processeur s'arrête le temps que l'oscillateur se stabilise. Ce
+            // n'est pas du confort : `spsw-div` et `spsw-tima` mesurent
+            // exactement ce que le timer a fait, ou pas, pendant cet arrêt.
+            this.cpu.pay(STOP_PAUSE);
         }
 
         emitCyclesUpdate() {

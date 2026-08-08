@@ -116,18 +116,25 @@ describe.skipIf(!present(GS_ROM))('Mooneye unused_hwio : les trous du plan $FFxx
    * Ce test garde donc sa valeur, mais change de nature : il ne dit plus « il
    * reste du travail », il dit **jusqu'où** elle va. Reculer, c'est casser un
    * lot déjà fermé.
+   *
+   * ELLE RECULE À CHAQUE FOIS QU'ON POSE UN REGISTRE QUE LE MODE DE
+   * COMPATIBILITÉ VERROUILLE, et c'est normal. Elle s'arrêtait sur `$FF69` à la
+   * fin du jalon CGB ; depuis que KEY1 existe (lot 1 du jalon double vitesse),
+   * elle s'arrête sur **`$FF4D`**, qui vient plus tôt dans sa table. Même cause,
+   * pas une régression : un CGB bridé ne donne pas accès à KEY1 non plus.
    */
   it.skipIf(!present(C_ROM))(
-    'unused_hwio-C.gb passe tout le plan jusqu\'à $FF69, où le mode de compatibilité le bloque',
+    'unused_hwio-C.gb passe le plan jusqu\'à $FF4D, où le mode de compatibilité le bloque',
     () => {
       const { verdict, failedAt } = runRom(C_ROM, CGB);
 
       expect(verdict, 'toujours rouge, et pour une raison nommée').toEqual(ECHEC);
       expect(
         failedAt,
-        'si ce n\'est plus $FF69, quelque chose a reculé AVANT — masques DMG (lot 1.5), '
-        + 'VBK (2), palettes (3) ou registres indocumentés (7)',
-      ).toBe(0x69);
+        'si ce n\'est plus $FF4D, quelque chose a bougé : soit un lot fermé a reculé '
+        + '(masques DMG 1.5, VBK 2, palettes 3, indocumentés 7), soit un nouveau '
+        + 'registre verrouillé en compatibilité vient d\'être posé plus tôt dans sa table',
+      ).toBe(0x4D);
     },
   );
 });

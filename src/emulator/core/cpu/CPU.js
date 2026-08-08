@@ -110,6 +110,7 @@ export default class CPU {
         this._imeScheduled = false;
         this._halt = false;
         this._stopped = false;
+        this._stopObservers = [];
         this.cycles = 0;
 
         this._cyclesUpdateObservers = [];
@@ -172,9 +173,30 @@ export default class CPU {
         this._halt = false;
     }
 
+    /**
+     * `STOP` — le CPU ne sait pas ce que ça veut dire, et c'est voulu.
+     *
+     * Sur CGB, cette instruction sert à basculer le régime d'horloge, ce qui
+     * regarde la machine entière et pas le processeur. Il lève donc son drapeau
+     * et l'ANNONCE ; c'est la machine qui décide s'il y a une bascule à faire et
+     * qui le remet en marche.
+     */
     stop(n8) {
-        
         this._stopped = true;
+        for (let ob of this._stopObservers) {
+            ob.call(null, this, n8);
+        }
+    }
+
+    /** Fin de l'arrêt : la machine a fait ce qu'elle avait à faire. */
+    resumeFromStop() {
+        this._stopped = false;
+    }
+
+    onStop(cb) {
+        if (cb && typeof cb === "function") {
+            this._stopObservers.push(cb);
+        }
     }
 
     updateZeroFlag(value) {
