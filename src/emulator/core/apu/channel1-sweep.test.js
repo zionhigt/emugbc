@@ -56,6 +56,9 @@ const TIC = 2048;
 /** Date du n-ième coup de la cloche sweep : elle frappe aux tics 2, 6, 10, 14... */
 const clocheSweep = (n) => (4 * n - 1) * TIC;
 
+/** Une date en tics de carillon (le frame sequencer), pour viser entre deux cloches. */
+const tic = (n) => n * TIC;
+
 /** NR10 assemblé depuis ses trois champs. */
 const nr10 = ({ pace = 0, down = false, shift = 0 }) =>
     ((pace & 0x07) << 4) | (down ? 0x08 : 0x00) | (shift & 0x07);
@@ -395,9 +398,6 @@ describe('Sweep - la cadence 0', () => {
  */
 describe('Sweep - écrire NR10 purge le retard', () => {
 
-    /** Une date en tics de carillon (le frame sequencer), pour viser entre deux cloches. */
-    const tic = (n) => n * TIC;
-
     /**
      * 512 avec cadence 1 et décalage 1, puis deux écritures dans NR10, et JAMAIS la moindre
      * interrogation du canal entre les deux : c'est tout l'enjeu. Une lecture de NR52 ou un
@@ -453,5 +453,220 @@ describe('Sweep - écrire NR10 purge le retard', () => {
         expect(chan1.frequencyAt(clocheSweep(3)), '1296 + 162').toBe(1458);
         expect(chan1.frequencyAt(clocheSweep(4)), '1458 + 182').toBe(1640);
         expect(chan1.isEnabledAt(clocheSweep(4)), 'et vivante comme sans l\'écriture').toBe(true);
+    });
+});
+
+/**
+ * LE DRAPEAU DU MODE NÉGATIF.
+ *
+ * Pandocs, `Audio_details.md`, section « Obscure Behavior » :
+ *
+ *   « Clearing the sweep direction bit in NR10 after at least one sweep calculation has been
+ *     made using the substraction mode since the last trigger causes the channel to be
+ *     immediately disabled. This prevents you from having the sweep lower the frequency then
+ *     raise the frequency without a trigger inbetween. »
+ *
+ * Le wiki gbdev dit la même chose sous le nom de « negate mode ». La phrase tient en trois
+ * points, et chacun a son test ci-dessous :
+ *
+ *   - TOUT calcul fait pendant que le bit de sens est levé arme le drapeau, MÊME STÉRILE.
+ *     `05-sweep details` #4 déclenche avec un registre fantôme à 0 et un décalage de 1 : le
+ *     calcul donne 0 - 0, ne réécrit rien, ne déborde pas — et il compte quand même. La
+ *     lecture concurrente « seul un décalage non nul arme » a été essayée : elle fait
+ *     échouer #5.
+ *   - effacer le bit de sens pendant que le drapeau est armé éteint le canal SUR-LE-CHAMP,
+ *     sans attendre la moindre cloche ;
+ *   - le trigger remet le drapeau à zéro, et il le fait AVANT son propre calcul — c'est le
+ *     « since the last trigger » de la citation. Le couple « le trigger désarme » /
+ *     « et son calcul réarme » plus bas ne tient ensemble que dans cet ordre : une remise à
+ *     zéro APRÈS le calcul laisserait le second cas allumé.
+ *
+ * CE QUE CES TESTS NE TRANCHENT PAS, sciemment : le désarmement peut se lire comme un FRONT
+ * (le bit passe de 1 à 0) ou comme un ÉTAT (le bit vaut 0 alors que le drapeau est armé).
+ * Les deux lectures ont été mesurées et les douze ROMs passent dans les deux cas — le
+ * drapeau ne s'arme qu'avec le bit levé, donc toute écriture qui le trouve armé vient elle-même
+ * de baisser ce bit, et les deux lectures se confondent. La doc écrit « CLEARING the sweep
+ * direction bit », ce qui penche pour le front ; rien ici n'oblige à choisir.
+ */
+describe('Sweep - le drapeau du mode négatif', () => {
+
+    it.each([
+        { nom: '0x000', frequency: 0x000 }, // 0 - 0 : stérile, et pourtant compté (#4)
+        { nom: '0x400', frequency: 0x400 }, // 1024 - 512 : un contrôle, jamais réécrit
+    ])('le calcul du trigger sur la fréquence $nom arme le drapeau', ({ frequency }) => {
+        // Cadence 0 : il n'y aura pas d'échéance, le seul calcul de toute la scène est celui
+        // du trigger. Décalage 1, sens descendant : il a donc bien lieu, et en mode négatif.
+        const { apu, chan1 } = buildSweeping({
+            sweep: { pace: 0, down: true, shift: 1 }, frequency,
+        });
+        expect(chan1.frequencyAt(0), 'le contrôle du trigger ne réécrit rien').toBe(frequency);
+        expect(chan1.isEnabledAt(0), 'et ne tue pas la note').toBe(true);
+
+        apu.write(NR10, nr10({ pace: 0, shift: 1 })); // le bit 3 tombe
+        expect(chan1.isEnabledAt(0), 'effacer le sens éteint le canal sur-le-champ').toBe(false);
+    });
+
+    it('le trigger remet le drapeau à zéro : après lui, effacer le sens n\'éteint plus', () => {
+        const { machine, apu, chan1 } = buildSweeping({
+            sweep: { pace: 0, down: true, shift: 1 }, frequency: 0x400,
+        });
+
+        // Le décalage passe à 0 SANS toucher au sens : le prochain trigger n'aura donc rien
+        // à calculer, et le drapeau qu'il remet à zéro restera à zéro.
+        machine.totalCycles = tic(1);
+        apu.write(NR10, nr10({ pace: 0, down: true, shift: 0 }));
+        expect(chan1.isEnabledAt(tic(1)), 'garder le bit levé n\'éteint jamais').toBe(true);
+
+        machine.totalCycles = tic(2);
+        apu.write(NR14, TRIGGER | 0x04); // 0x400 de nouveau
+
+        machine.totalCycles = tic(3);
+        apu.write(NR10, nr10({ pace: 0, shift: 0 }));
+        expect(chan1.isEnabledAt(tic(3)), 'plus rien à désarmer depuis le trigger').toBe(true);
+    });
+
+    it('mais le calcul du trigger, lui, réarme aussitôt : la remise à zéro le précède', () => {
+        // Même départ, à ceci près que le décalage reste à 1 : le trigger calcule, en mode
+        // négatif, et c'est ce calcul-là qui décide. Si la remise à zéro venait APRÈS lui,
+        // le canal survivrait.
+        const { machine, apu, chan1 } = buildSweeping({
+            sweep: { pace: 0, down: true, shift: 1 }, frequency: 0x400,
+        });
+
+        machine.totalCycles = tic(2);
+        apu.write(NR14, TRIGGER | 0x04);
+
+        machine.totalCycles = tic(3);
+        apu.write(NR10, nr10({ pace: 0, shift: 1 }));
+        expect(chan1.isEnabledAt(tic(3)), 'le calcul du trigger avait réarmé').toBe(false);
+    });
+
+    /**
+     * Le sens descendant posé APRÈS le trigger : le calcul du trigger, lui, s'est fait en
+     * montant (0x100 + 0x40) et n'a donc rien armé. Tout ce qui arme ensuite vient des
+     * échéances — c'est ce qui permet de faire varier la cadence toutes choses égales.
+     */
+    const buildDownAfterTrigger = (pace) => {
+        const harness = buildSweeping({ sweep: { pace, shift: 2 }, frequency: 0x100 });
+        const { machine, apu } = harness;
+        machine.totalCycles = tic(1); // avant la première cloche, au tic 3
+        apu.write(NR10, nr10({ pace, down: true, shift: 2 }));
+        return harness;
+    };
+
+    it('un calcul d\'échéance en mode négatif arme le drapeau', () => {
+        const { machine, apu, chan1 } = buildDownAfterTrigger(1);
+        expect(chan1.frequencyAt(clocheSweep(1)), '256 - 64').toBe(192);
+
+        machine.totalCycles = clocheSweep(1);
+        apu.write(NR10, nr10({ pace: 1, shift: 2 }));
+        expect(chan1.isEnabledAt(clocheSweep(1)), 'ce calcul-là comptait').toBe(false);
+    });
+
+    it('cadence 0 : aucune échéance ne calcule, donc rien ne s\'arme', () => {
+        // Le pendant exact du test précédent, à la seule cadence près. Le minuteur tourne et
+        // se recharge (voir « la cadence 0 » plus haut), mais il ne calcule pas : le sens a
+        // beau être descendant depuis le tic 1, aucune soustraction n'a eu lieu.
+        const { machine, apu, chan1 } = buildDownAfterTrigger(0);
+        expect(chan1.frequencyAt(clocheSweep(10)), 'dix cloches, pas un calcul').toBe(0x100);
+
+        machine.totalCycles = clocheSweep(10);
+        apu.write(NR10, nr10({ pace: 0, shift: 2 }));
+        expect(chan1.isEnabledAt(clocheSweep(10)), 'il n\'y a rien à désarmer').toBe(true);
+    });
+
+    it.each([
+        { nom: '0x08', valeur: 0x08 }, // cadence 0, décalage 0
+        { nom: '0x0F', valeur: 0x0F }, // cadence 0, décalage 7
+        { nom: '0x38', valeur: 0x38 }, // cadence 3, décalage 0
+        { nom: '0x7F', valeur: 0x7F }, // cadence 7, décalage 7
+    ])('NR10 = $nom garde le bit de sens : le drapeau armé ne tue rien', ({ valeur }) => {
+        // Seule la CHUTE du bit 3 est en cause : changer la cadence et le décalage sous un
+        // drapeau armé n'éteint jamais rien, quelles que soient les valeurs posées.
+        const { machine, apu, chan1 } = buildSweeping({
+            sweep: { pace: 1, down: true, shift: 2 }, frequency: 1024,
+        });
+        expect(chan1.frequencyAt(clocheSweep(1)), '1024 - 256').toBe(768);
+
+        machine.totalCycles = clocheSweep(1);
+        apu.write(NR10, valeur);
+        expect(chan1.isEnabledAt(clocheSweep(1)), 'le bit 3 est resté levé').toBe(true);
+    });
+
+    it('un calcul négatif EN RETARD, rejoué par la purge de l\'écriture qui efface le sens, compte', () => {
+        // Le cas subtil, et le seul que la ROM sépare vraiment. Depuis le tic 1, rien n'a
+        // interrogé le canal : la cloche du tic 3 est due et non comptée. L'écriture du tic 4
+        // fait donc deux choses dans cet ordre — elle purge le retard, ce qui rejoue la
+        // soustraction avec l'ANCIEN NR10 et arme le drapeau, puis elle efface le bit de sens.
+        // Le drapeau se lit APRÈS la purge : lu avant, il serait encore vierge et le canal
+        // survivrait. C'est cette lecture-là qui fait échouer #5.
+        const { machine, apu, chan1 } = buildDownAfterTrigger(1);
+
+        machine.totalCycles = tic(4);
+        apu.write(NR10, nr10({ pace: 1, shift: 2 }));
+
+        expect(chan1.frequencyAt(tic(4)), 'la cloche en retard a bien été rejouée : 256 - 64').toBe(192);
+        expect(chan1.isEnabledAt(tic(4)), 'et son calcul arme le drapeau que la même écriture efface').toBe(false);
+    });
+});
+
+/**
+ * ÉCRIRE DANS NR13 PURGE D'ABORD LE RETARD.
+ *
+ * Quatrième occurrence de la même famille après NR10 (juste au-dessus), NR33/NR34
+ * (`captureWaveStep`) et NR43 (`captureLfsrStep`), et toujours pour la même raison :
+ * l'unité de sweep ne se réveille que quand on l'interroge, et son rattrapage RÉÉCRIT
+ * NR13/NR14. Une écriture CPU qui ne la réveille pas d'abord se fait donc recouvrir plus tard
+ * par un coup de cloche pourtant ANTÉRIEUR à elle.
+ *
+ * Ce n'est pas une règle matérielle — sur la machine le sweep écrit à l'instant de sa cloche,
+ * il n'y a rien à purger — mais l'artefact de notre évaluation paresseuse. C'est ce que mesure
+ * `05-sweep details` #9, « Update channel frequency only when period is reloaded ».
+ *
+ * Le registre fantôme, lui, ne suit PAS cette écriture : il ne se recharge qu'au trigger, et
+ * le balayage suivant repart donc de la valeur balayée, pas de celle que le CPU vient de
+ * poser. Second test.
+ */
+describe('Sweep - écrire NR13 purge le retard', () => {
+
+    /**
+     * 1024 en descente, cadence 1, décalage 2 : la cloche du tic 3 ramène à 768 = 0x300 et
+     * réécrit les deux registres. Rien n'interroge le canal entre le trigger et l'écriture
+     * du CPU — c'est tout l'enjeu, une seule lecture suffirait à masquer le défaut.
+     */
+    const buildLateSweep = () => {
+        const harness = buildSweeping({
+            sweep: { pace: 1, down: true, shift: 2 }, frequency: 1024,
+        });
+        harness.machine.totalCycles = tic(4); // après la cloche du tic 3, avant celle du tic 7
+        return harness;
+    };
+
+    it('l\'écriture CPU se pose SUR le retard rejoué, pas avant lui', () => {
+        const { apu, chan1 } = buildLateSweep();
+        apu.write(NR13, 0x55);
+
+        // La purge a rejoué la cloche : NR13/NR14 portaient 0x300. L'octet bas du CPU tombe
+        // par-dessus, l'octet haut balayé reste. Sans purge, NR14 porterait encore le 0x4 du
+        // trigger et la paire vaudrait 0x455.
+        expect(chan1.frequency, 'la basse du CPU sur la haute balayée').toBe(0x355);
+    });
+
+    it('et le rattrapage ne repasse plus par-dessus', () => {
+        const { apu, chan1 } = buildLateSweep();
+        apu.write(NR13, 0x55);
+
+        expect(chan1.frequencyAt(tic(6)), 'le registre fantôme, lui, ignore le CPU').toBe(768);
+        expect(chan1.frequency, 'et l\'octet bas du CPU tient').toBe(0x355);
+    });
+
+    it('le balayage suivant repart du registre fantôme, pas de la valeur posée', () => {
+        // Le fantôme ne se recharge qu'au trigger : la cloche du tic 7 calcule 768 - 192, elle
+        // n'a jamais vu passer le 0x355 du CPU — qu'elle recouvre alors légitimement.
+        const { apu, chan1 } = buildLateSweep();
+        apu.write(NR13, 0x55);
+
+        expect(chan1.frequencyAt(clocheSweep(2)), '768 - 192').toBe(576);
+        expect(chan1.frequency, 'et les registres suivent le fantôme').toBe(576);
     });
 });
