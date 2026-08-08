@@ -24,7 +24,16 @@ export default class AudioOutput {
       return Promise.resolve();
     }
 
-    this.ctx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
+    // Le constructeur lui-même peut lever : certains Android refusent une
+    // fréquence d'échantillonnage imposée qui n'est pas celle du matériel, et
+    // un navigateur plafonne le nombre d'AudioContext vivants. Le son est un
+    // agrément, pas une condition pour jouer — on n'emporte pas la partie avec.
+    try {
+      this.ctx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
+    } catch (e) {
+      this.ctx = null;
+      return Promise.resolve();
+    }
     const url = new URL('./pcm-player.worklet.js', import.meta.url);
     this._ready = this.ctx.audioWorklet
       .addModule(url)

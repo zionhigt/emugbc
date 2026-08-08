@@ -37,6 +37,12 @@ export default defineConfig(() => ({
     VitePWA({
       // le service worker se met à jour tout seul au prochain chargement
       registerType: 'autoUpdate',
+      // L'enregistrement est fait À LA MAIN dans main.jsx, via
+      // `virtual:pwa-register`. Le script que le plugin injecterait ici ne
+      // fait QUE `navigator.serviceWorker.register` : il ne recharge pas la
+      // page quand un nouveau service worker prend le contrôle, alors que
+      // `autoUpdate` le fait basculer sous la page en cours. Voir main.jsx.
+      injectRegister: null,
       // inactif pendant les tests (vitest) : rien à générer là
       disable: process.env.VITEST === 'true',
       includeAssets: ['apple-touch-icon.png'],

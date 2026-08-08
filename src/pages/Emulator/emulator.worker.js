@@ -93,6 +93,13 @@ self.onmessage = ({ data }) => {
   }
 };
 
+// « Je suis vivant ». Le main attend ce message AVANT de détacher son canvas :
+// un `new Worker()` dont le script ne se charge pas (404 après une bascule de
+// service worker, CSP, module refusé) ne lève rien de synchrone, et un canvas
+// transféré ne revient jamais. Tant qu'on n'a pas dit bonjour, le repli
+// main-thread doit rester possible.
+self.postMessage({ type: 'ready' });
+
 // Métriques renvoyées ~5×/s : le main les stocke, l'overlay les lit.
 setInterval(() => {
   const stats = profiler.stats();

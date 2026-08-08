@@ -39,6 +39,12 @@ const FRAME_MS = 1000 / 59.7275;
 // plutôt que de fast-forwarder une rafale de trames (glitch visible à l'appui).
 const MAX_CATCHUP = 2 * FRAME_MS;
 
+// Délai laissé au worker pour dire bonjour. Il ne fait qu'évaluer son module :
+// une seconde est déjà large, même sur un téléphone tiède. Au-delà, on considère
+// qu'il ne se chargera pas et on part sur le repli — mieux vaut un repli tout de
+// suite qu'un écran noir muet.
+const WORKER_HELLO_MS = 1000;
+
 // FileReader plutôt que file.arrayBuffer() : même résultat, mais compatible
 // avec tous les environnements (jsdom des tests compris)
 const readBytes = (file) =>
@@ -85,27 +91,69 @@ class Emulator extends React.Component {
     this.machine = null;
   };
 
+  // Attend le « je suis vivant » du worker. Construire un Worker ne lève RIEN de
+  // synchrone quand son script ne se charge pas — 404 sur un morceau au hash
+  // périmé (voir src/pwa.js), CSP, module refusé : la promesse ne se résout
+  // simplement jamais. D'où l'écoute de `error` ET le délai de garde.
+  waitForWorker = (worker) =>
+    new Promise((resolve, reject) => {
+      const abandon = (raison) => {
+        clearTimeout(timer);
+        worker.removeEventListener('message', onHello);
+        worker.removeEventListener('error', onError);
+        reject(new Error(raison));
+      };
+      const onHello = ({ data }) => {
+        if (!data || data.type !== 'ready') return;
+        clearTimeout(timer);
+        worker.removeEventListener('message', onHello);
+        worker.removeEventListener('error', onError);
+        resolve();
+      };
+      const onError = () => abandon('worker-error');
+      const timer = setTimeout(() => abandon('worker-timeout'), WORKER_HELLO_MS);
+      worker.addEventListener('message', onHello);
+      worker.addEventListener('error', onError);
+    });
+
   // CHEMIN OPTIMAL : émulation + rendu dans un worker (OffscreenCanvas). Le
   // thread principal ne fait que transmettre les touches → il ne peut plus
   // retarder l'émulation ni le rendu. Un profiler DISTANT reçoit les métriques.
-  startWorker = (canvasEl, bytes) => {
-    // Le worker D'ABORD : si sa construction échoue, le canvas n'est pas encore
-    // détaché → l'appelant peut retomber proprement sur le main-thread. Le
-    // transfert, lui, ne détache le canvas que s'il réussit.
-    this.worker = new Worker(new URL('./emulator.worker.js', import.meta.url), { type: 'module' });
-    const offscreen = canvasEl.transferControlToOffscreen();
+  //
+  // ORDRE CRITIQUE : le canvas n'est détaché qu'APRÈS le bonjour du worker.
+  // `transferControlToOffscreen()` est irréversible — un canvas transféré ne
+  // rend plus de contexte 2D, donc le repli main-thread ne peut plus rien y
+  // dessiner. Tant qu'on n'est pas sûr du worker, on ne touche pas au canvas.
+  startWorker = async (canvasEl, bytes) => {
+    const worker = new Worker(new URL('./emulator.worker.js', import.meta.url), { type: 'module' });
+    try {
+      await this.waitForWorker(worker);
+    } catch (e) {
+      worker.terminate(); // le canvas est intact : l'appelant peut se replier
+      throw e;
+    }
+
+    this.worker = worker;
     this.profiler = { _stats: null, stats() { return this._stats; } };
-    // Le worker n'a pas d'AudioContext (hors d'un contexte Window) : il calcule
-    // les échantillons et nous les envoie, nous les jouons ici.
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'metrics') this.profiler._stats = data.stats;
+      else if (data.type === 'audio' && this.audioOutput) this.audioOutput.push(data.left, data.right);
+    };
+    // Une panne APRÈS le bonjour ne peut plus rien sauver (le canvas est parti),
+    // mais elle doit au moins se voir dans l'overlay au lieu d'un écran noir muet.
+    worker.onerror = () => { this._workerReason = 'worker-crash'; };
+
+    const offscreen = canvasEl.transferControlToOffscreen();
+    worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
+    const buf = bytes.buffer; // transféré (bytes est détaché ensuite, on n'en a plus besoin)
+    worker.postMessage({ type: 'load', bytes: buf }, [buf]);
+
+    // Le son EN DERNIER, et jamais bloquant : le worker n'a pas d'AudioContext
+    // (hors d'un contexte Window), c'est nous qui jouons ce qu'il calcule. Placé
+    // plus haut, un AudioContext qui refuse de naître emportait avec lui la
+    // partie entière, canvas déjà détaché.
     this.audioOutput = new AudioOutput();
     this.audioOutput.start(); // le choix du fichier .gb EST le geste utilisateur
-    this.worker.onmessage = ({ data }) => {
-      if (data.type === 'metrics') this.profiler._stats = data.stats;
-      else if (data.type === 'audio') this.audioOutput.push(data.left, data.right);
-    };
-    this.worker.postMessage({ type: 'canvas', canvas: offscreen }, [offscreen]);
-    const buf = bytes.buffer; // transféré (bytes est détaché ensuite, on n'en a plus besoin)
-    this.worker.postMessage({ type: 'load', bytes: buf }, [buf]);
   };
 
   // REPLI : émulation + rendu sur le thread principal (OffscreenCanvas absent).
@@ -335,11 +383,11 @@ class Emulator extends React.Component {
 
     if (reason === 'ok') {
       try {
-        this.startWorker(canvasEl, bytes);
+        await this.startWorker(canvasEl, bytes);
       } catch (e) {
-        // Worker refusé malgré la détection (CSP, module, transfert impossible) :
+        // Worker refusé malgré la détection (script introuvable, CSP, module) :
         // repli. Le canvas n'a pas été détaché → le main-thread peut y dessiner.
-        this._workerReason = 'error';
+        this._workerReason = e.message || 'error';
         this.teardown();
         this.startMainThread(canvasEl, bytes);
       }
@@ -349,6 +397,11 @@ class Emulator extends React.Component {
 
     this.props.cartridgeLoaded({ fileName: file.name, size });
     this.setState({ dockOpen: false }); // cartouche insérée, le volet se referme
+
+    // Le sélecteur est remis à zéro : sans ça, re-choisir LE MÊME fichier
+    // n'émet aucun `change` (la valeur n'a pas bougé), et la seule façon de
+    // relancer une partie qui a mal démarré est de recharger la page.
+    event.target.value = '';
   };
 
   render() {
