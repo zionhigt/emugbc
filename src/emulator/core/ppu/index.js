@@ -208,26 +208,35 @@ export class Fetcher {
 
     renderFifo(line) {
         if (line === 0) this.parent.windowLine = 0;
-        if (!byte.getFlag(this.parent.LCDC.getValue(), 0)) return this.parent.screen.fill(BLANK_COLOR, line * 160, line * 160 + 160);
-        const scx = this.parent.SCX.getValue();
-        this.fifo = [];
-        this.fetchX = scx >> 3;
-        this.step = 0;
-        this.x = 0;
-        this.discard = scx & 7;
-        this.fetchedAttrs = 0;
-        this.attrs = 0;
-        this.dy = (line + this.parent.SCY.getValue()) & 0xFF;
-        while (this.x < 160) {
-            this.tick(line);
+
+        // Le fond d'abord, s'il est visible. LCDC bit 0 ne dit pas la même chose
+        // dans les deux modèles — d'où la couture : en DMG il éteint le décor, en
+        // CGB il ne fait que lui retirer sa priorité, et le décor reste peint.
+        if (this.parent.backgroundVisible()) {
+            const scx = this.parent.SCX.getValue();
+            this.fifo = [];
+            this.fetchX = scx >> 3;
+            this.step = 0;
+            this.x = 0;
+            this.discard = scx & 7;
+            this.fetchedAttrs = 0;
+            this.attrs = 0;
+            this.dy = (line + this.parent.SCY.getValue()) & 0xFF;
+            while (this.x < 160) {
+                this.tick(line);
+            }
+
+            if (byte.getFlag(this.parent.LCDC.getValue(), 5) && line >= this.parent.WY.getValue() && this.parent.WX.getValue() <= 166) {
+                this.parent.renderWindow(line);
+                this.parent.windowLine++;
+            }
+        } else {
+            this.parent.blankLine(line);
         }
 
-        if (byte.getFlag(this.parent.LCDC.getValue(), 5) && line >= this.parent.WY.getValue() && this.parent.WX.getValue() <= 166) {
-            this.parent.renderWindow(line);
-            this.parent.windowLine++;
-        }
+        // Les objets, eux, sont dessinés dans les deux cas : un décor éteint est
+        // blanc, pas absent, et rien n'empêche un objet de passer par-dessus.
         if (byte.getFlag(this.parent.LCDC.getValue(), 1)) this.parent.renderSprites(line);
-        
     }
 }
 
@@ -269,8 +278,12 @@ export default function(machine) {
             this.windowLine = 0;
             this.bgLine = new Uint8Array(160);
             // Le plan de priorité du fond : le bit 7 de l'étiquette, un par pixel.
-            // Toujours 0 en DMG. Le lot 5 le croisera avec l'attribut du sprite.
+            // Toujours 0 en DMG. Le lot 5 le croise avec l'attribut du sprite.
             this.bgPriority = new Uint8Array(160);
+            // Le pixel d'objet retenu pour chaque colonne, et l'objet dont il
+            // vient. Bâtis une fois : `renderSprites` les remplit à chaque ligne.
+            this.objLine = new Uint8Array(160);
+            this.objOwner = new Array(160).fill(null);
             this.remain = this.duration(this.mode);
             this.lastSeen = 0;
             this.origin = 0;
@@ -425,6 +438,51 @@ export default function(machine) {
         }
 
         /**
+         * LE DÉCOR EST-IL VISIBLE ? C'est LCDC bit 0, et c'est le bit qui change
+         * de SENS d'un modèle à l'autre :
+         *
+         *   DMG  — décor et fenêtre deviennent blancs, la fenêtre est ignorée.
+         *          Seuls les objets peuvent encore s'afficher.
+         *   CGB  — le décor reste dessiné. Le bit ne fait que lui retirer sa
+         *          priorité : les objets passent devant, quoi qu'en disent les
+         *          bits 7 de l'OAM et de l'étiquette.
+         *
+         * Confondre les deux peint des bandes entières en blanc — c'est
+         * exactement ce que faisait le PPU CGB avant le lot 5.
+         */
+        backgroundVisible() {
+            return byte.getFlag(this.LCDC.getValue(), 0);
+        }
+
+        /** Décor éteint : la ligne est blanche, et transparente pour les objets. */
+        blankLine(line) {
+            this.screen.fill(BLANK_COLOR, line * 160, line * 160 + 160);
+            this.bgLine.fill(0);
+            this.bgPriority.fill(0);
+        }
+
+        /**
+         * LA BANQUE DU MOTIF D'UN OBJET — le pendant de `patternBank` pour les
+         * sprites. Toujours 0 en DMG ; le CGB lit le bit 3 des attributs OAM.
+         * Un NUMÉRO, pas un booléen (voir la règle apprise au lot 4).
+         */
+        spriteBank(sprite) {
+            return 0;
+        }
+
+        /**
+         * CE PIXEL D'OBJET PASSE-T-IL DEVANT LE FOND ?
+         *
+         * En DMG la règle tient en une ligne : le bit 7 des attributs OAM range
+         * l'objet derrière les teintes 1-3 du décor. Le CGB y ajoute deux entrées
+         * (LCDC bit 0 et le bit 7 de l'étiquette de tuile) et surcharge.
+         */
+        spriteOverBackground(sprite, x) {
+            if (this.bgLine[x] === 0) return true;
+            return !byte.getFlag(sprite.attrs, 7);
+        }
+
+        /**
          * L'ORDRE DE DESSIN DES SPRITES D'UNE LIGNE.
          *
          * Tri DESCENDANT, et ce n'est pas un détail : `renderSprites` dessine dans
@@ -558,8 +616,24 @@ export default function(machine) {
 
         }
 
+        /**
+         * LES OBJETS, EN DEUX TEMPS — et l'ordre des deux temps est du matériel,
+         * pas une commodité d'écriture.
+         *
+         * Le PPU choisit d'abord UN pixel d'objet par colonne : le premier opaque
+         * dans l'ordre de priorité, sans jamais regarder le bit « BG over OBJ ».
+         * Ce n'est qu'ensuite qu'il demande à ce pixel-là s'il passe devant le
+         * fond. Conséquence contre-intuitive, mais bien réelle : un objet
+         * prioritaire qui perd contre le décor MASQUE ceux de derrière au lieu de
+         * leur céder la place. Les jeux s'en servent pour ne cacher qu'une partie
+         * d'un objet derrière le décor.
+         */
         renderSprites(line) {
             const h = byte.getFlag(this.LCDC.getValue(), 2) ? 16 : 8;
+
+            // Premier temps : qui gagne la colonne. `spriteOrder` rend l'ordre
+            // croissant de priorité, donc le dernier à écrire est le bon.
+            this.objLine.fill(0);
             for (let sprite of this.visibleLineSprites(line)) {
                 let row = line - sprite.y;
                 if (byte.getFlag(sprite.attrs, 6)) {
@@ -573,8 +647,9 @@ export default function(machine) {
                 }
 
                 const adr = 0x8000 + tile * 16;
-                const low = this.bus.ppuRead(adr + row * 2);
-                const high = this.bus.ppuRead(adr + row * 2 + 1);
+                const bank = this.spriteBank(sprite);
+                const low = this.bus.ppuReadBank(adr + row * 2, bank);
+                const high = this.bus.ppuReadBank(adr + row * 2 + 1, bank);
 
                 for (let col = 0; col < 8; col++) {
                     const bit = byte.getFlag(sprite.attrs, 5) ? col : 7 - col;
@@ -583,13 +658,19 @@ export default function(machine) {
                     const ex = sprite.x + col;
 
                     if (ex < 0 || ex >= 160) continue;
-                    if (byte.getFlag(sprite.attrs, 7) && this.bgLine[ex] != 0) continue;
-                    this.screen[line * 160 + ex] = this.spriteColor(teinte, sprite);
+                    this.objLine[ex] = teinte;
+                    this.objOwner[ex] = sprite;
                 }
-            
             }
 
-
+            // Second temps : le fond peut encore reprendre la colonne.
+            for (let x = 0; x < 160; x++) {
+                const teinte = this.objLine[x];
+                if (teinte === 0) continue;
+                const sprite = this.objOwner[x];
+                if (!this.spriteOverBackground(sprite, x)) continue;
+                this.screen[line * 160 + x] = this.spriteColor(teinte, sprite);
+            }
         }
 
         renderLine(line) {

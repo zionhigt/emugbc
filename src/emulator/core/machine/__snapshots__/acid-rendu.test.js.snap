@@ -1,13 +1,13 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`cgb-acid2 : la ligne de base du jalon CGB > instantané : ce que le lot en cours produit 1`] = `
-"********************************                    ****    *****      *********        *      *       *    ****       ***====**********************************
-********************************                    ****    ****        ********                            ****        **=%%=**********************************
-********************************                    ****    ****        ********                            ****        **=%%=**********************************
-********************************               *    ****    ****        ********                            ****        **=%%=**********************************
-********************************                                        ********                                        **====**********************************
-********************************                                        ********                                        **=%%=**********************************
-********************************                                *      **********      **      *                       ***====**********************************
+"********************************====================****====*****======*********========*======*=======*====****=======***====**********************************
+********************************=%%==%%==%%%%%%==%%=****=%%=****==%%%%==********=%%===%===%%%%===%%%%%===%%=****=%%%%%==**=%%=**********************************
+********************************=%%==%%==%%======%%=****=%%=****=%%==%%=********=%%===%==%%==%%==%%==%%==%%=****=%%==%%=**=%%=**********************************
+********************************=%%%%%%==%%%%%=*=%%=****=%%=****=%%==%%=********=%%=%=%==%%==%%==%%%%%===%%=****=%%==%%=**=%%=**********************************
+********************************=%%==%%==%%======%%======%%======%%==%%=********=%%=%=%==%%==%%==%%=%====%%======%%==%%=**====**********************************
+********************************=%%==%%==%%%%%%==%%%%%%==%%%%%%===%%%%==********==%%%%====%%%%===%%==%%==%%%%%%==%%%%%==**=%%=**********************************
+********************************================================*======**********======**======*=======================***====**********************************
 ****************************************************************************************************************************************************************
 ****************************************************************************************************************************************************************
 ****************************************************************************************************************************************************************
@@ -41,70 +41,70 @@ exports[`cgb-acid2 : la ligne de base du jalon CGB > instantané : ce que le lot
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************
-********************************@@@@@@@@oooooooooooooooooooooo@@        oooooooooooooooooooooo@@        oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooooooo@@@@        oooooooooooooooooooo@@@@        oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@ooooooooooooooooooo@@@**        ooooooooooooooooooo@@@**        oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooooo@@**          oooooooooooooooooo@@**          oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@ooooooooooooooooo@@**           ooooooooooooooooo@@**           oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@ooooooooooooooooo@@*            ooooooooooooooooo@@*            oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo@@*             oooooooooooooooo@@*             oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo@@*             oooooooooooooooo@@*             oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        *xxxxxxxxxx*@@oooooooooooooooo@@*xxxxxxxxxx*        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        *xxxxxxxxxx*@@oooooooooooooooo@@*xxxxxxxxxx*        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        @*xxxxxxxx*@@oooooooooooooooooo@@*xxxxxxxx*@        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        @**xxxxxx**@@oooooooooooooooooo@@**xxxxxx**@        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        @@**xxxx**@@oooooooooooooooooooo@@**xxxx**@@        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        o@@@****@@@oooooooooooooooooooooo@@@****@@@o        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        oo@@@@@@@@oooooooooooooooooooooooo@@@@@@@@oo        oooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooo        oooo@@@@oooooooooooooooooooooooooooo@@@@oooo        oooooooooo@@@@@@@@********************************
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-                                                                                                                                                                
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooo        oooooooooooooooooooooooooooooooooooooooooooooooo        oooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
-********************************@@@@@@@@oooooooooooooooo                                                oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooooooxxoooooo@@@@oooooooooooooooooooooooooooo@@@@ooooooxxoooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooooxOOxoooo@@@@@@@@oooooooooooooooooooooooo@@@@@@@@ooooxOOxoooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooxOOxoooo@@@****@@@oooooooooooooooooooooo@@@****@@@ooooxOOxooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooOOxoooo@@**XXXX**@@oooooooooooooooooooo@@**XXXX**@@ooooxOOooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooxOOxooo@@**XXXXXX**@@oooooooooooooooooo@@**XXXXXX**@@oooxOOxoooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooOOxoooo@@*XXXXXXXX*@@oooooooooooooooooo@@*XXXXXXXX*@@ooooxOOoooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooOOxooo@@*XXXXXXXXXX*@@oooooooooooooooo@@*XXXXXXXXXX*@@oooxOOoooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooOOxooo@@*XXXXXXXXXX*@@oooooooooooooooo@@*XXXXXXXXXX*@@oooxOOoooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooxOOooo@@*XXXXXXXXXX*@@oooooooooooooooo@@*XXXXXXXXXX*@@oooOOxoooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooOOooo@@*XXXXXXXXXX*@@oooooooooooooooo@@*XXXXXXXXXX*@@oooOOooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooxOxooo@@*XXXXXXXX*@@oooooooooooooooooo@@*XXXXXXXX*@@oooxOxooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooooxOooo@@**XXXXXX**@@oooooooooooooooooo@@**XXXXXX**@@oooOxoooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooxxooo@@**XXXX**@@oooooooooooooooooooo@@**XXXX**@@oooxxooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@ooooooooooooooooooo@@@****@@@oooooooooooooooooooooo@@@****@@@ooooooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooooooo@@@@@@@@oooooooooooooooooooooooo@@@@@@@@oooooooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooooooooo@@@@oooooooooooooooooooooooooooo@@@@oooooooooooooooooooooo@@@@@@@@********************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooooooo@@ooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooo@@@@oooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooooo@@@@@@ooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@oooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@@@ooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@@@@@oooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@@@@@oooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@@@ooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@@@oooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooooo@@@@@@ooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooo@@@@oooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@ooooooooooooooooooooooooooooooooooooooooooooooo@@ooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooo@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@oooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
+********************************@@@@@@@@oooooooooooooooo@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@oooooooooooooooo@@@@@@@@********************************
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************
 ****************************************@@@@@@@@oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo@@@@@@@@****************************************

@@ -99,6 +99,26 @@ function paletteRegister(access, kind) {
 }
 
 /**
+ * OPRI (0xFF6C) — dans quel ordre les objets se recouvrent.
+ *
+ * Le DMG range ses objets par coordonnée X, le CGB par position dans l'OAM. Un
+ * seul bit dit lequel des deux : 0 = ordre CGB, 1 = ordre DMG. C'est le boot ROM
+ * du CGB qui le pose, après avoir regardé si la cartouche se déclare CGB —
+ * autrement dit un jeu DMG tournant sur un CGB garde ses priorités DMG.
+ *
+ * Les sept autres bits n'existent pas et se lisent à 1, comme partout ailleurs.
+ */
+class OPRIRegister extends Register(8) {
+    getValue() {
+        return 0xFE | (super.getValue() & 0x01);
+    }
+
+    setValue(value) {
+        super.setValue(value & 0x01);
+    }
+}
+
+/**
  * LE PPU CGB — une surcharge du DMG, pas un second PPU.
  *
  * Il ne redéfinit que les endroits où le matériel diverge, ouverts au lot 0. Au
@@ -118,6 +138,7 @@ export default function(machine) {
             this.VBK = new VBKRegister();
             this.bgPalettes = new PaletteAccess();
             this.objPalettes = new PaletteAccess();
+            this.OPRI = new OPRIRegister();
         }
 
         buildRegistersMapping() {
@@ -128,6 +149,7 @@ export default function(machine) {
                 0xFF69: paletteRegister(this.bgPalettes, 'data'),
                 0xFF6A: paletteRegister(this.objPalettes, 'spec'),
                 0xFF6B: paletteRegister(this.objPalettes, 'data'),
+                0xFF6C: this.OPRI,
             };
         }
 
@@ -198,6 +220,63 @@ export default function(machine) {
         /** Bits 0-2 : laquelle des huit palettes de fond colorie cette tuile. */
         backgroundColor(shade, attrs) {
             return this.bgPalettes.color(attrs & 0x07, shade);
+        }
+
+        // ─── LES OBJETS ───
+
+        /**
+         * LCDC bit 0 ne coupe plus le décor, il lui retire seulement sa priorité
+         * (voir `spriteOverBackground`). Le décor du CGB est donc TOUJOURS
+         * dessiné, et la fenêtre reste commandée par le seul bit 5.
+         */
+        backgroundVisible() {
+            return true;
+        }
+
+        /** Bit 3 des attributs OAM : la banque où vit le motif de l'objet. */
+        spriteBank(sprite) {
+            return byte.getBit(sprite.attrs, 3);
+        }
+
+        /** Bits 0-2 : l'une des huit palettes d'objet. OBP0/OBP1 ne servent plus. */
+        spriteColor(shade, sprite) {
+            return this.objPalettes.color(sprite.attrs & 0x07, shade);
+        }
+
+        /**
+         * LA TABLE DE PRIORITÉS À TROIS ENTRÉES, écrite dans l'ordre où le
+         * matériel la résout (pandocs, « BG-to-OBJ Priority in CGB Mode ») :
+         *
+         *   1. teinte de fond 0        -> l'objet passe, toujours ;
+         *   2. LCDC bit 0 à 0          -> le décor a perdu sa priorité, l'objet passe ;
+         *   3. bit 7 de l'étiquette OU bit 7 de l'OAM -> le décor passe devant ;
+         *   4. sinon                   -> l'objet passe.
+         *
+         * Le piège de lecture est dans la troisième ligne : le bit 7 de l'OAM
+         * donne la priorité à l'objet quand il est À ZÉRO. Deux drapeaux, un OU,
+         * et la règle bascule si on écrit un ET.
+         */
+        spriteOverBackground(sprite, x) {
+            if (this.bgLine[x] === 0) return true;
+            if (!byte.getFlag(this.LCDC.getValue(), 0)) return true;
+            return !byte.getFlag(sprite.attrs, 7) && !this.bgPriority[x];
+        }
+
+        /** OPRI bit 0 : 1 réclame l'ordre DMG, celui de la coordonnée X. */
+        get dmgSpritePriority() {
+            return byte.getFlag(this.OPRI.getValue(), 0);
+        }
+
+        /**
+         * En CGB, seule la position dans l'OAM compte. Tri DÉCROISSANT comme en
+         * DMG, pour la même raison : `renderSprites` retient le DERNIER écrit,
+         * donc l'index le plus petit doit passer en dernier.
+         */
+        spriteOrder(visibles) {
+            if (this.dmgSpritePriority) return super.spriteOrder(visibles);
+            return visibles.sort(function(a, b) {
+                return b.index - a.index;
+            });
         }
     }
 

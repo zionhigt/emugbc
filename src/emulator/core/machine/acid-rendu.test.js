@@ -8,7 +8,7 @@ import buildMemory from '../memory';
 import buildDecoder from '../decodeur';
 import buildMachine from './index';
 import buildCartridge from '../cartridge/Cartridge';
-import { CGB } from '../models';
+import { CGB, AUTO } from '../models';
 import { DMG_COLORS } from '../ppu/index';
 import { toRgb555, comparePixels } from '../../../test/refPng';
 
@@ -113,18 +113,17 @@ describe.skipIf(!existsSync(ROM))('dmg-acid2 : le filet du chemin de rendu', () 
 });
 
 /**
- * cgb-acid2 — LA LIGNE DE BASE, PAS UN VERDICT.
+ * cgb-acid2 — DEVENU UN VERDICT, au lot 5.
  *
- * Cette ROM n'a aucune chance de rendre juste aujourd'hui : il n'existe ni
- * banque de VRAM, ni palettes, ni étiquettes de tuile. Elle est branchée
- * MAINTENANT quand même, et c'est délibéré — c'est la conséquence de la règle
- * d'oracle du cahier. Un oracle gardé pour la fin ne peut plus localiser la
- * faute ; celui-ci va au contraire enregistrer un état à chaque lot, et l'écart
- * entre deux instantanés dira ce que le lot a réellement changé à l'image.
+ * Elle a été branchée dès le lot 0.5, alors qu'elle n'avait aucune chance de
+ * rendre juste : ni banque de VRAM, ni palettes, ni étiquettes de tuile. C'était
+ * délibéré, et c'est la règle d'oracle du cahier — un oracle gardé pour la fin ne
+ * peut plus localiser la faute. Elle a donc d'abord servi de MESURE, un compte de
+ * pixels faux qui devait décroître à chaque lot : 100 %, puis 28,1 % au lot 4,
+ * puis zéro au lot 5.
  *
- * Ne pas lire un instantané vert comme « cgb-acid2 passe ». Il ne passera que
- * quand il sera comparé à l'IMAGE DE RÉFÉRENCE de son dépôt, qui reste à
- * récupérer — voir le prérequis P1 du cahier.
+ * Maintenant qu'elle est à zéro, c'est un verdict : le rendu CGB est celui d'un
+ * vrai CGB, pixel pour pixel, et plus seulement « plausible ».
  */
 describe.skipIf(!existsSync(ROM_CGB))('cgb-acid2 : la ligne de base du jalon CGB', () => {
   it('démarre et peint quelque chose en modèle CGB', () => {
@@ -139,6 +138,16 @@ describe.skipIf(!existsSync(ROM_CGB))('cgb-acid2 : la ligne de base du jalon CGB
     expect(toAscii(runRom(ROM_CGB, FRAMES, CGB).ppu.screen)).toMatchSnapshot();
   });
 
+  it('rend la même chose en « auto » : c\'est la cartouche qui bascule', () => {
+    // Le réglage par défaut du front depuis le lot F. Cette ROM porte 0xC0
+    // (CGB seulement), donc `auto` doit choisir CGB sans qu'on le lui dise —
+    // et rendre exactement la même image que le forçage.
+    const machine = runRom(ROM_CGB, FRAMES, AUTO);
+
+    expect(machine.model).toBe(CGB);
+    expect([...machine.ppu.screen]).toEqual([...runRom(ROM_CGB, FRAMES, CGB).ppu.screen]);
+  });
+
   /**
    * LE CLIQUET — l'oracle réel du jalon, depuis que l'image de référence est là.
    *
@@ -149,8 +158,10 @@ describe.skipIf(!existsSync(ROM_CGB))('cgb-acid2 : la ligne de base du jalon CGB
    *
    * Baisser cette borne fait partie du travail d'un lot. La remonter, jamais.
    */
-  it.skipIf(!existsSync(REFERENCE))('ne s\'éloigne pas de l\'image de référence', () => {
-    const MAX_WRONG = 6476; // lot 4 : le fond est colorié, les sprites non
+  it.skipIf(!existsSync(REFERENCE))('rend l\'image de référence, au pixel près', () => {
+    // Le cliquet est arrivé à zéro au lot 5, et cesse donc d'être un cliquet :
+    // c'est désormais un VERDICT. 100 % -> 28,1 % (lot 4) -> 0.
+    const MAX_WRONG = 0;
     const { pixels } = toRgb555(REFERENCE);
     const { wrong, total, first } = comparePixels(runRom(ROM_CGB, FRAMES, CGB).ppu.screen, pixels);
 
