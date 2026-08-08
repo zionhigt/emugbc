@@ -36,17 +36,36 @@ import buildTimer from '../timer/index';
  *   2. « If a channel is triggered when the frame sequencer's next step is one that
  *      doesn't clock the length counter and the length counter is now enabled and length
  *      is being set to 64 (256 for wave channel) because it was previously zero, it is
- *      set to 63 instead. »
+ *      set to 63 instead (255 for wave channel). »
  *
- * La 1 exige un FRONT sur le bit 6 — « PREVIOUSLY disabled and now enabled ». La 2 dit
- * seulement « is now enabled », ce qui se lit comme si l'état courant suffisait — mais
- * c'est un raccourci : `02-len ctr` sous-test 6 refuse ce cas en toutes lettres. Un
- * trigger sans front, sur un compteur vidé, remonte à 64 et ne reçoit AUCUN cran. Les
- * deux règles exigent donc le front ; ce qui les sépare, c'est l'état du compteur — la 1
- * le veut non nul, la 2 à zéro, et elles ne peuvent jamais s'appliquer ensemble.
+ * LA DIFFÉRENCE EST LITTÉRALE, elle est dans les mots du wiki et nulle part ailleurs :
  *
- * (Le wiki ajoute que la CGB-02 se contente d'un « a été débranché un jour » : c'est une
- * variante du front, pas sa disparition. On est sur DMG.)
+ *   - règle 1 : « was PREVIOUSLY disabled AND now enabled » — deux conditions, donc un
+ *     FRONT sur le bit 6 ;
+ *   - règle 2 : « the length counter is now enabled » — une seule, donc l'état courant du
+ *     bit 6, point. Pas de « previously disabled » ici, et ce n'est pas une abréviation.
+ *
+ * On le note parce que l'asymétrie a l'air d'une faute de rédaction et ne l'est pas :
+ * réaligner les deux conditions par souci de symétrie est précisément la « correction »
+ * qui casse `03-trigger`. Cette ROM jumelle deux sous-tests, l'un qui abaisse le bit 6
+ * juste avant de déclencher et l'autre qui ne l'abaisse pas, et elle exige 63 des deux.
+ * Le second — celui sans front — est le sous-test 8.
+ *
+ * ET LES DEUX RÈGLES NE S'EXCLUENT PAS : elles s'enchaînent sur une seule écriture de
+ * NRx4, dans un ordre que pandocs donne explicitement —
+ *
+ *   « This ordering ensures the extra length clock takes precedence before the
+ *     trigger-related reload occurs. »
+ *
+ * D'abord le cran gratuit du front, sur la valeur courante du compteur ; puis le
+ * rechargement au trigger, qui lit le compteur tel que le premier geste vient de le
+ * laisser. Un compteur à 1 déclenché avec un front les subit donc tous les deux : le cran
+ * le vide, le rechargement le remonte à 63. Les traiter comme exclusifs rend 0.
+ *
+ * (Variante matérielle qu'on n'implémente pas : sur CGB-02, pour la règle 1, « the length
+ * counter only has to have been disabled before; the current length enable state doesn't
+ * matter » — ce qui casse Prehistorik Man, et a été corrigé sur CGB-04/05. On émule une
+ * DMG : hors périmètre, et ce n'est pas un oubli.)
  */
 
 const TIC = 2048;        // un tic de carillon, en cycles machine
@@ -406,12 +425,15 @@ describe('Minuteur - le trigger le remonte, mais seulement à sec', () => {
  *      au maximum même si la longueur est débranchée — l'état est reconstitué en silence,
  *      et ne se voit que plus tard, quand on rebranche.
  *
- *   2. Quand la même écriture lève le bit 6 ET déclenche, le minuteur reçoit le cran
- *      gratuit APRÈS son rechargement : il repart à 63, pas à 64. C'est le seul endroit
- *      où l'ordre des deux gestes est observable, et il se lit dans cet ordre :
+ *   2. Quand la même écriture lève le bit 6 ET déclenche, le minuteur reçoit un cran
+ *      APRÈS son rechargement : il repart à 63, pas à 64. L'ordre se lit ainsi :
  *          le cran gratuit du front, sur l'ANCIENNE valeur (à sec : rien à retirer),
  *          puis le rechargement au maximum,
- *          puis le cran gratuit à nouveau, sur la valeur RECHARGÉE.
+ *          puis le cran du rechargement, sur la valeur RECHARGÉE.
+ *
+ * Ce troisième geste ne demande pas de front — seulement que le bit 6 soit levé à cet
+ * instant. Le bloc suivant s'occupe de ça ; ici le bit 6 monte toujours dans l'écriture,
+ * donc les deux lectures donnent le même chiffre et on ne les sépare pas encore.
  */
 describe('Minuteur - trigger et branchement dans la même écriture', () => {
 
@@ -479,29 +501,44 @@ describe('Minuteur - trigger et branchement dans la même écriture', () => {
     });
 
     /**
-     * SANS FRONT, PAS DE CRAN — arbitré par `02-len ctr` sous-test 6, relevé au journal :
-     * il déclenche au tic 377 (étape 1, donc une étape qui ne clocke pas la longueur) sur
-     * un compteur vidé par les cloches, sans avoir retouché le bit 6, et il exige 64.
+     * CE QUI RETIENT LE CRAN, C'EST LA PHASE — pas l'absence de front.
      *
-     * C'est le garde-fou de la règle 2 : sa formulation « and the length counter is now
-     * enabled » laisse croire que l'état courant suffit. Il n'en est rien.
+     * Ce test a longtemps porté la justification inverse : il se réclamait de `02-len ctr`
+     * sous-test 6, « au tic 377 étape 1 », pour conclure qu'un trigger sans front ne reçoit
+     * aucun cran. Deux relevés au journal démentent cette lecture :
+     *
+     *   - au tic 377 étape 1, `02-len ctr` n'écrit rien du tout dans NRx4 : il ne fait que
+     *     lire NR52 pour constater que le canal s'est tu ;
+     *   - le site réellement visé est l'écriture NR14 = 0xC0 du tic 386, ÉTAPE 2. Une étape
+     *     paire : la prochaine frappe la longueur, donc aucun cran n'est dû à personne. Le
+     *     64 vient de là, et le bit 6 déjà levé n'y est pour rien.
+     *
+     * Et la sonde posée dans la branche « trigger + compteur nul + longueur branchée + pas
+     * de front + étape sans longueur » confirme le reste : sur les 12 ROMs, elle n'est
+     * empruntée que par `03-trigger`. `02-len ctr` ne l'atteint jamais et n'a donc jamais
+     * eu voix au chapitre.
+     *
+     * Ce que le test observait reste vrai — 64 — mais il l'exige maintenant de sa vraie
+     * cause. Le cas sans front sur une étape SANS longueur, lui, rend 63 : bloc suivant.
      */
-    it('trigger sans front, sur un compteur vidé par la cloche du même tic : 64', () => {
+    it('sur une étape qui frappe la longueur, un trigger sans front recharge à 64 plein', () => {
         const { machine, chan } = buildPlayable();
 
-        machine.totalCycles = 479 * TIC;
+        // Tic 478, pair : l'écriture d'armement ne reçoit aucun cran gratuit, et le front
+        // du bit 6 y est consommé une fois pour toutes.
+        machine.totalCycles = 478 * TIC;
         chan.NR1.setValue(0xC0 | 0x3F);              // compteur à 1
-        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);  // le front est consommé ICI
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+        expect(chan.lengthRemaining(478 * TIC), 'armé à un seul cran').toBe(1);
+        expect(chan.lengthRemaining(479 * TIC), 'la cloche du tic 479 le vide').toBe(0);
 
+        // Tic 480, PAIR : la prochaine étape est une étape de longueur. L'écriture porte le
+        // trigger et le bit 6 déjà levé — donc aucun front — mais c'est la phase qui décide.
         machine.totalCycles = 480 * TIC;
-        chan.NR1.setValue(0xC0 | 0x3F);              // on le remonte à 1
-
-        // Le tic 481 est impair : sa cloche vide le compteur. L'écriture qui suit porte le
-        // trigger, mais aucun front — le bit 6 était déjà levé au tic 479.
-        machine.totalCycles = 481 * TIC;
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
 
-        expect(chan.lengthRemaining(481 * TIC), 'rechargé à fond, et rien ne lui est retiré').toBe(64);
+        expect(chan.lengthRemaining(480 * TIC), 'rechargé à fond, et rien ne lui est retiré').toBe(64);
+        expect(chan.isEnabledAt(480 * TIC), 'et la note repart').toBe(true);
     });
 
     it('sur un minuteur encore plein, le trigger ne recharge pas mais le cran tombe', () => {
@@ -513,5 +550,122 @@ describe('Minuteur - trigger et branchement dans la même écriture', () => {
         chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
 
         expect(chan.lengthRemaining(3 * TIC), 'pas de rechargement, mais le cran gratuit').toBe(3);
+    });
+});
+
+/**
+ * LA RÈGLE 2 N'A PAS BESOIN DE FRONT — et elle vient APRÈS la règle 1, pas à sa place.
+ *
+ * Le bloc précédent lève toujours le bit 6 dans l'écriture qui déclenche : le front y est
+ * là par construction, et on ne peut donc pas savoir lequel des deux — le front ou l'état
+ * courant — commande le cran du rechargement. Ici on les sépare.
+ *
+ * Source : wiki gbdev, « Obscure Behavior », règle 2 citée en tête de fichier. Elle dit
+ * « the length counter is now enabled », sans le « was PREVIOUSLY disabled and » que la
+ * règle 1 porte explicitement — l'état courant du bit 6 suffit donc, et rien de plus.
+ * L'oracle le confirme : `03-trigger` jumelle deux sous-tests, l'un avec front et l'autre
+ * sans, et exige 63 des deux. Le sous-test 8 est celui sans front.
+ *
+ * Second point, qui ne se voit qu'une fois le premier corrigé : les deux règles
+ * s'ENCHAÎNENT sur une même écriture, et pandocs fixe leur ordre — « This ordering ensures
+ * the extra length clock takes precedence before the trigger-related reload occurs. » Le
+ * cran du front tombe d'abord, et le rechargement lit le compteur tel que ce cran vient de
+ * le laisser. Un compteur à 1 finit donc à 63 — vidé par le premier geste, remonté par le
+ * second — et pas à 0.
+ *
+ * Le carillon démarre à la date 0 sur l'étape 0, qui est paire : toutes les mises en place
+ * de ce bloc partent de DEPART, une étape paire elle aussi, pour que l'écriture d'armement
+ * ne reçoive jamais de cran gratuit et n'aille pas fausser le compte.
+ */
+describe('Minuteur - le rechargement au trigger ne demande pas de front', () => {
+
+    const DEPART = 2 * TIC; // étape 2 : paire, et pas la date 0
+
+    /**
+     * Compteur à un seul cran, armé à DEPART avec le bit 6 levé — donc le front est déjà
+     * consommé — puis vidé par la cloche du tic 3.
+     */
+    const buildDrainedByClock = () => {
+        const harness = buildPlayable();
+        harness.machine.totalCycles = DEPART;
+        harness.chan.NR1.setValue(0xC0 | 0x3F);
+        harness.chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+        return harness;
+    };
+
+    it.each([
+        { nom: 'le bit 6 était déjà levé, aucun front', debranche: false },
+        { nom: 'le bit 6 monte dans l\'écriture, avec front', debranche: true },
+    ])('un compteur à sec déclenché sur une étape sans longueur repart à 63 - $nom', ({ debranche }) => {
+        const { machine, chan } = buildDrainedByClock();
+        expect(chan.lengthRemaining(3 * TIC), 'la cloche du tic 3 l\'a vidé').toBe(0);
+
+        machine.totalCycles = 5 * TIC; // impair : la prochaine étape ne frappe pas la longueur
+        if (debranche) chan.NR4.setValue(0x00); // on rabat le bit 6, pour se donner un front
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(5 * TIC), 'rechargé à 64, puis le cran du rechargement').toBe(63);
+        expect(chan.isEnabledAt(5 * TIC), 'et la note repart').toBe(true);
+    });
+
+    /**
+     * Le site exact de `03-trigger` sous-test 8, relevé au journal : trois écritures de
+     * NR14 sur la même étape (impaire), NR14 = 0x80 puis 0x40 puis 0xC0. C'est le cran
+     * gratuit du 0x40 qui vide le compteur, et le 0xC0 qui suit n'a plus aucun front à
+     * offrir — le bit 6 n'est jamais redescendu entre les deux.
+     */
+    it('le cran gratuit vide le compteur, et le trigger suivant le remonte à 63 sans front', () => {
+        const { machine, chan } = buildPlayable();
+        machine.totalCycles = DEPART;
+        chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
+        chan.NR4.setValue(TRIGGER);     // longueur DÉBRANCHÉE : le cran est gelé
+
+        machine.totalCycles = 3 * TIC;  // impair
+        chan.NR4.setValue(LENGTH_ENABLE);
+        expect(chan.lengthRemaining(3 * TIC), 'le cran gratuit du front l\'a vidé').toBe(0);
+        expect(chan.isEnabledAt(3 * TIC), 'et a tué la note au passage').toBe(false);
+
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE); // même étape, et plus aucun front
+
+        expect(chan.lengthRemaining(3 * TIC), 'rechargé quand même à 63').toBe(63);
+        expect(chan.isEnabledAt(3 * TIC), 'et la note revient').toBe(true);
+    });
+
+    /**
+     * L'ENCHAÎNEMENT. Un compteur à 1, déclenché avec un front sur une étape sans longueur,
+     * reçoit les deux gestes : le cran du front le vide, et le rechargement — qui lit
+     * l'APRÈS, pas l'avant — le trouve nul et le remonte. Traiter les deux règles comme
+     * exclusives laisse le compteur à 0 et la note condamnée à la prochaine lecture.
+     */
+    it('trigger avec front sur un compteur à 1 : le cran le vide, le rechargement le remonte à 63', () => {
+        const { machine, chan } = buildPlayable();
+        machine.totalCycles = DEPART;
+        chan.NR1.setValue(0xC0 | 0x3F); // un seul cran
+        chan.NR4.setValue(TRIGGER);     // longueur DÉBRANCHÉE : le cran reste gelé à 1
+
+        machine.totalCycles = 3 * TIC;  // impair
+        expect(chan.lengthRemaining(3 * TIC), 'toujours un cran, rien ne l\'a entamé').toBe(1);
+
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE); // front ET trigger, sur ce cran unique
+
+        expect(chan.lengthRemaining(3 * TIC), 'vidé puis rechargé, pas laissé à sec').toBe(63);
+        expect(chan.isEnabledAt(3 * TIC), 'la note tient').toBe(true);
+    });
+
+    /**
+     * La contre-épreuve du précédent : deux crans au lieu d'un. Le cran du front laisse 1,
+     * qui n'est pas nul — le rechargement ne se déclenche donc pas, et le trigger n'ajoute
+     * rien. C'est ce qui borne l'enchaînement à la seule valeur 1.
+     */
+    it('sur deux crans, le même geste laisse 1 : le rechargement ne se déclenche pas', () => {
+        const { machine, chan } = buildPlayable();
+        machine.totalCycles = DEPART;
+        chan.NR1.setValue(0xC0 | 0x3E); // deux crans
+        chan.NR4.setValue(TRIGGER);
+
+        machine.totalCycles = 3 * TIC;
+        chan.NR4.setValue(TRIGGER | LENGTH_ENABLE);
+
+        expect(chan.lengthRemaining(3 * TIC), 'le cran du front, et rien d\'autre').toBe(1);
     });
 });
