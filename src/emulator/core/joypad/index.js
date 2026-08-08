@@ -78,8 +78,14 @@ export default function() {
             }
         }
 
+        /**
+         * Les bits 6 et 7 de P1 n'existent pas et se lisent TOUJOURS à 1 —
+         * `unused_hwio` l'arbitre nommément (`test P1 %11000000`). Ce n'est pas
+         * cosmétique : un jeu qui lit P1 et compare l'octet entier au lieu de
+         * masquer les quatre bits bas ne trouverait jamais son compte.
+         */
         read (addr) {
-            return (this.select.getValue() & 0x30) | (this.activeReg.getValue() & 0x0F);
+            return 0xC0 | (this.select.getValue() & 0x30) | (this.activeReg.getValue() & 0x0F);
         };
 
         write (addr, value) {

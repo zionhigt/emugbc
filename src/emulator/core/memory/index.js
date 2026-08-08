@@ -67,6 +67,40 @@ class Section {
     }
 }
 
+/**
+ * LES TROUS DU PLAN $FFxx.
+ *
+ * Toute adresse d'IO qui ne mène à aucun registre se lit 0xFF, et l'écriture s'y
+ * perd. Ce n'est pas « de la mémoire qu'on n'utilise pas » : il n'y a rien
+ * derrière, et le bus laisse ses lignes en l'air, donc à 1. `unused_hwio`
+ * arbitre chacune de ces adresses une par une.
+ *
+ * C'est aussi le tiroir dans lequel le CGB viendra poser ses propres registres
+ * (VBK, BCPS/BCPD, HDMA, SVBK...) : aujourd'hui trous, demain occupés.
+ */
+class UnmappedSection extends Section {
+    read() {
+        return 0xFF;
+    }
+    write() {
+        return null;
+    }
+}
+
+/**
+ * Un registre bien réel, mais dont certains bits n'existent pas et se lisent à 1.
+ * Même geste que `maskRegistersMapping` côté APU, pour les registres qui vivent
+ * en RAM plate faute de propriétaire — SC et IF.
+ */
+function FactoryMaskedSection(mask) {
+    class MaskedSection extends Section {
+        read(addr) {
+            return this.memory._read(addr) | mask;
+        }
+    }
+    return MaskedSection;
+}
+
 function FactoryMBCSection(mbc) {
     class MBCSection extends Section {
         constructor(memory) {
@@ -168,9 +202,20 @@ function FactorySerialSection(serial) {
             return this.serial.write(addr, value);
         }
 
+        /**
+         * SC (0xFF02) n'a que deux bits sur DMG : le 7 (départ du transfert) et
+         * le 0 (horloge interne ou externe). Les cinq du milieu se lisent à 1 —
+         * `unused_hwio` : `test SC %01111110`.
+         *
+         * Le masque vit ICI et non dans une section à part : 0xFF01 et 0xFF02
+         * doivent rester sous la MÊME section, c'est elle qui guette le bit 7 de
+         * SC pour déclencher l'écho. Les séparer coupe la sonnette, et avec elle
+         * le verdict de toutes les ROMs blargg et mooneye.
+         */
         read(addr) {
             this.serial.read(addr);
-            return super.read(addr);
+            const value = super.read(addr);
+            return addr === 0xFF02 ? value | 0x7E : value;
         }
 
         echo() {
@@ -277,15 +322,21 @@ export default function(cartridge, serialbus, timer, ppu, joypad, apu) {
     memory.bindRange("joypad", 0xFF00, 0xFF00, joypad);
     serialbus = FactorySerialSection(serialbus);
     memory.bindRange("serial", 0xFF01, 0xFF02, serialbus);
-    memory.bindRange("overflow1", 0xFF03, 0xFF03, Section);
+    memory.bindRange("unmapped_ff03", 0xFF03, 0xFF03, UnmappedSection);
     timer = FactoryTimerSection(timer);
     memory.bindRange("timer", 0xFF04, 0xFF07, timer);
-    memory.bindRange("overflow2", 0xFF08, 0xFF0F, Section);
+    memory.bindRange("unmapped_ff08", 0xFF08, 0xFF0E, UnmappedSection);
+    // IF : cinq sources d'interruption, donc trois bits hauts en l'air. Attention,
+    // la machine lit et écrit IF par `_read`/`_write`, sans passer par ce masque —
+    // c'est voulu : le masque est ce que voit le CPU, pas ce que vaut le registre.
+    memory.bindRange("interrupt_flag", 0xFF0F, 0xFF0F, FactoryMaskedSection(0xE0));
     apu = FactoryAPUSection(apu);
     memory.bindRange("apu", 0xFF10, 0xFF3F, apu);
-    // memory.bindRange("overflow2_1", 0xFF27, 0xFF3F, Section);
     ppu = FactoryPPUSection(ppu);
     memory.bindRange("ppu", 0xFF40, 0xFF4B, ppu);
-    memory.bindRange("overflow3", 0xFF4C, 0xFFFF, Section);
+    // Tout ce bloc est vide sur DMG. C'est là que le CGB posera ses registres.
+    memory.bindRange("unmapped_ff4c", 0xFF4C, 0xFF7F, UnmappedSection);
+    // HRAM (0xFF80-0xFFFE) et IE (0xFFFF) : de la vraie mémoire, elle.
+    memory.bindRange("hram", 0xFF80, 0xFFFF, Section);
     return memory;
 }

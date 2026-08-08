@@ -222,6 +222,12 @@ describe('Machine : le chef d\'orchestre', () => {
       return machine.totalCycles - avant;
     };
 
+    // IF n'a que cinq sources ; ses trois bits hauts n'existent pas et se lisent
+    // à 1 (`unused_hwio-GS` : `test IF %11100000`). Ces tests parlent des CINQ
+    // bits utiles — on les isole, plutôt que de comparer un octet dont le haut
+    // ne les regarde pas.
+    const sonneries = (cpu) => cpu.memory.read(0xff0f) & 0b11111;
+
     it('personne ne sonne (IE=0, IF=0) : 0 cycle, rien ne bouge', () => {
       const { cpu, machine } = armCpu();
       expect(coutDuDispatch(machine), 'aucun coût').toBe(0);
@@ -233,13 +239,13 @@ describe('Machine : le chef d\'orchestre', () => {
       const { cpu, machine } = armCpu({ ie: 0b00100, iF: 0b00100, ime: false });
       expect(coutDuDispatch(machine), 'aucun service disjoncteur baissé').toBe(0);
       expect(hex(cpu.registers.PC.getValue()), 'PC intact').toBe(hex(0xc234));
-      expect(cpu.memory.read(0xff0f), 'IF NON acquitté : la frappe attend').toBe(0b00100);
+      expect(sonneries(cpu), 'IF NON acquitté : la frappe attend').toBe(0b00100);
     });
 
     it("frappe sans autorisation (IF levé, IE muet) : on n'ouvre pas", () => {
       const { cpu, machine } = armCpu({ ie: 0b00000, iF: 0b00100 });
       expect(coutDuDispatch(machine)).toBe(0);
-      expect(cpu.memory.read(0xff0f), 'la frappe reste en attente dans IF').toBe(0b00100);
+      expect(sonneries(cpu), 'la frappe reste en attente dans IF').toBe(0b00100);
     });
 
     it('service complet du Timer : 5 cycles, PC=0x50, IME coupé, IF acquitté, retour empilé', () => {
@@ -247,7 +253,7 @@ describe('Machine : le chef d\'orchestre', () => {
       expect(coutDuDispatch(machine), 'le coût du saut').toBe(5);
       expect(hex(cpu.registers.PC.getValue()), 'PC au vecteur Timer').toBe(hex(0x0050));
       expect(cpu.ime, 'IME coupé dans le même souffle').toBe(false);
-      expect(cpu.memory.read(0xff0f), 'IF acquitté : le bit servi est éteint').toBe(0);
+      expect(sonneries(cpu), 'IF acquitté : le bit servi est éteint').toBe(0);
       expect(cpu.memory.read(0xffff), 'IE JAMAIS modifié par le dispatch').toBe(0b00100);
       expect(hex(cpu.memory.read(0xfffd), 2), 'retour empilé, octet haut').toBe('0xC2');
       expect(hex(cpu.memory.read(0xfffc), 2), 'retour empilé, octet bas').toBe('0x34');
@@ -259,7 +265,7 @@ describe('Machine : le chef d\'orchestre', () => {
       machine.dispatch();
       expect(hex(cpu.registers.PC.getValue()), 'servi : VBlank, 0x40').toBe(hex(0x0040));
       expect(
-        cpu.memory.read(0xff0f),
+        sonneries(cpu),
         'le Timer frappe toujours — SEUL le bit servi est acquitté',
       ).toBe(0b00100);
     });

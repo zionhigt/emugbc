@@ -32,11 +32,23 @@ describe('Timer : le contrôleur des 4 registres, dérivé de l\'horloge machine
     it.each([
       { addr: TIMA, nom: 'TIMA' },
       { addr: TMA, nom: 'TMA' },
-      { addr: TAC, nom: 'TAC' },
     ])('$nom (écrit puis relu)', ({ addr }) => {
       const { timer } = makeTimer();
       timer.write(addr, 0x42);
       expect(hex(timer.read(addr), 2), 'la valeur doit survivre').toBe('0x42');
+    });
+
+    // TAC quitte la liste ci-dessus : il n'a que trois bits, et les cinq du haut
+    // se lisent à 1 quoi qu'on écrive. L'ancienne version de ce test attendait
+    // 0x42 tel quel — elle décrivait notre implémentation, pas le matériel.
+    // `unused_hwio-GS` l'arbitre : `test TAC %11111000`.
+    it('TAC : les trois bits utiles survivent, les cinq autres se lisent à 1', () => {
+      const { timer } = makeTimer();
+      timer.write(TAC, 0x42);
+
+      expect(hex(timer.read(TAC) & 0x07, 2), 'les bits 0-2 survivent').toBe('0x02');
+      expect(hex(timer.read(TAC) & 0xF8, 2), 'les bits 3-7 n\'existent pas').toBe('0xF8');
+      expect(hex(timer.read(TAC), 2)).toBe('0xFA');
     });
   });
 

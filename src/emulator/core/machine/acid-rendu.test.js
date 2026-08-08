@@ -8,6 +8,7 @@ import buildMemory from '../memory';
 import buildDecoder from '../decodeur';
 import buildMachine from './index';
 import buildCartridge from '../cartridge/Cartridge';
+import { CGB } from '../models';
 
 /**
  * LE HARNAIS DE RENDU — prérequis P1 du jalon CGB.
@@ -29,6 +30,7 @@ import buildCartridge from '../cartridge/Cartridge';
  */
 
 const ROM = resolve(process.cwd(), 'src/test/fixtures/dmg-acid2.gb');
+const ROM_CGB = resolve(process.cwd(), 'src/test/fixtures/cgb-acid2.gbc');
 
 // De quoi laisser la ROM s'installer et peindre : elle dessine dès les premières
 // trames, la marge est là pour ne pas dépendre d'un compte exact.
@@ -46,14 +48,14 @@ const buildManivelle = () => {
   };
 };
 
-const runRom = (path, frames) => {
+const runRom = (path, frames, model) => {
   const serial = { output: [], read() {}, write() {}, echo() {} };
   const clock = buildManivelle();
   const memory = buildMemory(undefined, serial);
   const cpu = new CPU(memory);
   const Decoder = buildDecoder(cpu, instructions);
   const Machine = buildMachine(memory, cpu, new Decoder(), clock, serial);
-  const machine = new Machine();
+  const machine = model === undefined ? new Machine() : new Machine(model);
   machine.plugCartridge(new Cartridge(new Uint8Array(readFileSync(path))));
   for (let i = 0; i < frames; i++) clock.tick();
   return machine;
@@ -94,5 +96,33 @@ describe.skipIf(!existsSync(ROM))('dmg-acid2 : le filet du chemin de rendu', () 
     const a = runRom(ROM, FRAMES).ppu.screen;
     const b = runRom(ROM, FRAMES).ppu.screen;
     expect([...a]).toEqual([...b]);
+  });
+});
+
+/**
+ * cgb-acid2 — LA LIGNE DE BASE, PAS UN VERDICT.
+ *
+ * Cette ROM n'a aucune chance de rendre juste aujourd'hui : il n'existe ni
+ * banque de VRAM, ni palettes, ni étiquettes de tuile. Elle est branchée
+ * MAINTENANT quand même, et c'est délibéré — c'est la conséquence de la règle
+ * d'oracle du cahier. Un oracle gardé pour la fin ne peut plus localiser la
+ * faute ; celui-ci va au contraire enregistrer un état à chaque lot, et l'écart
+ * entre deux instantanés dira ce que le lot a réellement changé à l'image.
+ *
+ * Ne pas lire un instantané vert comme « cgb-acid2 passe ». Il ne passera que
+ * quand il sera comparé à l'IMAGE DE RÉFÉRENCE de son dépôt, qui reste à
+ * récupérer — voir le prérequis P1 du cahier.
+ */
+describe.skipIf(!existsSync(ROM_CGB))('cgb-acid2 : la ligne de base du jalon CGB', () => {
+  it('démarre et peint quelque chose en modèle CGB', () => {
+    const { ppu, model } = runRom(ROM_CGB, FRAMES, CGB);
+
+    expect(model, 'forcé en CGB : la ROM est marquée 0xC0, CGB seulement').toBe(CGB);
+    expect(new Set(ppu.screen).size, 'un écran uni voudrait dire qu\'elle n\'a rien dessiné')
+      .toBeGreaterThan(1);
+  });
+
+  it('instantané de l\'état AVANT tout support CGB', () => {
+    expect(toAscii(runRom(ROM_CGB, FRAMES, CGB).ppu.screen)).toMatchSnapshot();
   });
 });

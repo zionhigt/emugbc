@@ -138,8 +138,8 @@ c'est un trou de justesse DMG qu'on ne se connaissait pas.
 | `unused_hwio-C.gb` | échoue | **lots 2 et 3**, après P2 |
 | `boot_hwio-C.gb` | échoue | lots 2-3, appoint |
 | `vblank_stat_intr-C.gb` | non mesuré | lot 2-3, appoint |
-| `dmg-acid2.gb` | **jamais exécuté** | prérequis P1 |
-| `cgb-acid2.gb` | **absent du dépôt** | lots 4-5, en mesure continue |
+| `dmg-acid2.gb` | **exécuté depuis le lot 0.5** | filet du rendu |
+| `cgb-acid2.gbc` | **déposé, branché en ligne de base** | lots 4-5, en mesure continue |
 
 ---
 
@@ -328,7 +328,7 @@ cartouche soit connue. Le déplacer maintenant ne sélectionnerait rien.
 
 ---
 
-### Lot 1.5 — Fermer les masques de lecture DMG *(prérequis P2)*
+### Lot 1.5 — Fermer les masques de lecture DMG — **FERMÉ**
 
 **Objectif** : rendre `unused_hwio-GS.gb` vert. Bits inutilisés et registres non
 mappés du plan `$FFxx` : tous doivent se lire à 1.
@@ -337,7 +337,31 @@ Ce n'est pas du CGB, c'est un trou de justesse DMG découvert en mesurant. Mais
 sans lui, `unused_hwio-C` reste illisible aux lots 2 et 3 : on ne saurait pas si
 l'échec vient du CGB ou d'un masque DMG manquant.
 
-**Oracle** : `unused_hwio-GS.gb` (et `-C` doit rester rouge — il attend le CGB).
+**Oracle** : `unused_hwio-GS.gb`, **désormais vert**. Et `-C` doit rester ROUGE —
+c'est le négatif du lot : il prouve qu'on n'a pas satisfait le CGB par accident.
+À retourner quand le lot 3 sera fermé.
+
+**Ce qui était faux, relevé en rejouant la table de la ROM contre notre mémoire
+plutôt qu'en devinant :**
+
+- quatre registres nommés : **P1** (bits 6-7), **SC** (1-6), **TAC** (3-7),
+  **IF** (5-7). IE était déjà juste.
+- **60 des 65 adresses non mappées** : seules `$FF15 $FF1F $FF27-29` étaient
+  correctes, parce que l'APU y avait déjà posé des registres muets.
+
+Chaque propriétaire masque désormais ses propres bits, comme l'APU le fait déjà
+avec `maskRegistersMapping`. Les trous du plan passent par une `UnmappedSection`
+qui rend 0xFF et perd les écritures — **c'est le tiroir dans lequel le CGB
+viendra poser VBK, les palettes, HDMA et SVBK**.
+
+**Piège rencontré** : sortir `$FF02` de la section série pour lui coller son
+masque a coupé la sonnette (c'est cette section qui guette le bit 7 de SC pour
+déclencher l'écho), et avec elle le verdict de TOUTES les ROMs blargg et
+mooneye. Le masque doit vivre DANS la section, pas à côté.
+
+**Cinq tests portés, aucun supprimé** : le round-trip de TAC et quatre tests de
+`dispatch` encodaient l'ancien comportement — ils décrivaient notre
+implémentation, pas le matériel.
 
 ---
 
@@ -390,8 +414,10 @@ ne peut pas trancher.
 
 **TU** : chaque bit de l'attribut isolément, puis en combinaison (miroir X + Y).
 
-**Oracle** : `cgb-acid2.gb`, en MESURE et non en verdict — le compte de pixels
-faux doit CHUTER par rapport au lot 3. **À déposer avant d'ouvrir ce lot.**
+**Oracle** : `cgb-acid2.gbc`, en MESURE et non en verdict — l'écart avec
+l'instantané du lot précédent dit ce que le lot a changé à l'image. Déposé et
+branché depuis le lot 1.5 ; l'image de référence de son dépôt reste à récupérer
+pour transformer la mesure en preuve.
 
 ---
 
@@ -408,7 +434,7 @@ un interrupteur de priorité, pas un interrupteur de fond), le bit 7 de l'attrib
 de tuile, le bit 7 de l'attribut OAM. C'est la règle qu'on croit connaître et
 qu'on n'a pas : elle sera écrite en table dans les TU, cas par cas.
 
-**Oracle** : `cgb-acid2.gb`, et cette fois à ZÉRO pixel faux.
+**Oracle** : `cgb-acid2.gbc`, et cette fois comparé à l'image de référence.
 
 ---
 

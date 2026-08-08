@@ -296,8 +296,18 @@ export default function(machine) {
             }
         }
 
+        /**
+         * TAC n'a que trois bits ; les cinq du haut se lisent à 1 (`unused_hwio` :
+         * `test TAC %11111000`). Les autres registres du timer n'ont aucun bit
+         * mort, d'où une table à une seule entrée plutôt qu'un cas particulier
+         * noyé dans la lecture.
+         */
+        get readMasks() {
+            return { 0xFF07: 0xF8 };
+        }
+
         read (addr) {
-            return this.registersMapping[addr].getValue();
+            return this.registersMapping[addr].getValue() | (this.readMasks[addr] || 0);
         };
 
         write (addr, value) {
