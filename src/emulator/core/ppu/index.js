@@ -215,6 +215,23 @@ export default function(machine) {
             this.coincidence = 0;
 
             this.fetcher = new Fetcher(this);
+
+            // Bâtie UNE fois : les douze registres naissent ici et ne sont jamais
+            // remplacés. Voir le getter plus bas.
+            this._registersMapping = {
+                0xFF40: this.LCDC,
+                0xFF41: this.STAT,
+                0xFF42: this.SCY,
+                0xFF43: this.SCX,
+                0xFF44: this.LY,
+                0xFF45: this.LYC,
+                0xFF46: this.DMA,
+                0xFF47: this.BGP,
+                0xFF48: this.OBP0,
+                0xFF49: this.OBP1,
+                0xFF4A: this.WY,
+                0xFF4B: this.WX,
+            };
         }
 
         sleep() {
@@ -247,21 +264,13 @@ export default function(machine) {
             return this.machine.totalCycles;
         }
 
+        /**
+         * Table figée après construction, comme celle de l'APU : la rebâtir à chaque
+         * `read`/`write` mettait un objet de douze clés entières sur le chemin de tout
+         * accès à 0xFF40-0xFF4B, dont STAT et LY que les jeux sondent en boucle.
+         */
         get registersMapping() {
-            return {
-                0xFF40: this.LCDC,
-                0xFF41: this.STAT,
-                0xFF42: this.SCY,
-                0xFF43: this.SCX,
-                0xFF44: this.LY,
-                0xFF45: this.LYC,
-                0xFF46: this.DMA,
-                0xFF47: this.BGP,
-                0xFF48: this.OBP0,
-                0xFF49: this.OBP1,
-                0xFF4A: this.WY,
-                0xFF4B: this.WX,
-            }
+            return this._registersMapping;
         }
 
         renderWindow(line) {

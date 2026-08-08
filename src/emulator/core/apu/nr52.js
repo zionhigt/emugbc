@@ -9,8 +9,9 @@ export default function(apu) {
         }
 
         setRegistersZero() {
-            for (let addr in this.apu.registersMapping) {
-                const r = this.apu.registersMapping[addr];
+            const registers = this.apu.registersMapping;
+            for (let addr in registers) {
+                const r = registers[addr];
                 if (r === this) continue;
                 if (r.reset) r.reset();
                 else r.setValue(0);

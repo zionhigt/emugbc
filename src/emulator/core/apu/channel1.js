@@ -58,6 +58,7 @@ export default function(apu) {
                 this._sweepTimer = 0;
                 this._isSweepArmed = false;
                 this._hasSubtractedSinceTrigger = false;
+                this._hasWarnedBackwards = false;
             }
 
             get sweepTimerPeriod() {
@@ -99,9 +100,17 @@ export default function(apu) {
                 this.NR4.write(high);
             }
 
+            /**
+             * Le garde du retour en arrière ne DIT plus rien qu'une fois : il est sur le
+             * chemin du mixeur, appelé 44 100 fois par seconde. S'il se déclenchait en jeu,
+             * le `console.warn` inconditionnel coûtait à lui seul plus cher que tout l'APU.
+             */
             frequencyAt(cycle) {
                 if (this.apu.sweepTicks(cycle) < this._sweptTicks) {
-                    console.warn("Special case");
+                    if (!this._hasWarnedBackwards) {
+                        this._hasWarnedBackwards = true;
+                        console.warn("Special case");
+                    }
                     return;
                 }
                 if (!this._isSweepArmed || !super.isEnabledAt(cycle)) {

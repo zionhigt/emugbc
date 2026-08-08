@@ -5,6 +5,17 @@ import { Register } from "../../lib/register";
 // Vue de `machine.totalCycles`, qui compte en cycles machine, elle en vaut 1.
 const WINDOW = 4;
 
+// Le numéro du bit surveillé pour chacun des quatre réglages de TAC (doc §Timer
+// Operation) : une table constante, elle vit au module. Elle était rebâtie à
+// chaque lecture de `periode` et de `isSignal`, sur le chemin d'un `check()`
+// appelé à tous les cycles machine.
+const WATCHED_BIT = {
+    0b00: 9,
+    0b01: 3,
+    0b10: 5,
+    0b11: 7,
+};
+
 // Le détecteur de front, mutualisé entre DIV et TAC — les deux seuls registres dont
 // l'écriture peut faire tomber le signal (bit surveillé du compteur ET bit 2 de TAC).
 // Les sous-classes implémentent `_setValue` ; le wrapper photographie le signal avant
@@ -161,6 +172,14 @@ export default function(machine) {
             this.dateAlarme = Infinity;
             this.lastReload = -Infinity;
             this.cranBase = 0;
+
+            // Figée après construction : les quatre registres ne sont jamais remplacés.
+            this._registersMapping = {
+                0xFF04: this.DIV,
+                0xFF05: this.TIMA,
+                0xFF06: this.TMA,
+                0xFF07: this.TAC,
+            };
         }
 
         innerCyclesAt(cycle) {
@@ -176,21 +195,11 @@ export default function(machine) {
         }
 
         get registersMapping() {
-            return {
-                0xFF04: this.DIV,
-                0xFF05: this.TIMA,
-                0xFF06: this.TMA,
-                0xFF07: this.TAC,
-            }
+            return this._registersMapping;
         }
 
         get periodMapping() {
-            return {
-                0b00: 9,
-                0b01: 3,
-                0b10: 5,
-                0b11: 7,
-            }
+            return WATCHED_BIT;
         }
 
         // `periodMapping` donne le numéro de bit du compteur surveillé (doc §Timer

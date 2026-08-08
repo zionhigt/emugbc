@@ -13,11 +13,38 @@ const LENGTH_ADDRESSES = [0xFF11, 0xFF16, 0xFF1B, 0xFF20]
 const SWEEP_STEPS = [2, 6];
 const ENVELOPE_STEPS = [7];
 
+// Compté à la main plutôt qu'avec `filter().length` : sur le chemin du mixeur,
+// cette fonction est appelée une bonne dizaine de fois par échantillon, soit
+// ~500 000 fois par seconde. Un `filter` y allouerait autant de tableaux
+// intermédiaires — c'était la première source de pression GC de l'APU.
 const executedSteps = (ticks, steps) => {
     const rounds = Math.floor(ticks / 8);
     const rest = ticks % 8;
-    const inLastRound = steps.filter((step) => step < rest).length;
+    let inLastRound = 0;
+    for (let i = 0; i < steps.length; i++) {
+        if (steps[i] < rest) inLastRound++;
+    }
     return rounds * steps.length + inLastRound;
+};
+
+// Les bits qu'une lecture rend toujours levés — une table constante, pas un
+// état : elle vit au module, hors de toute instance.
+const MASK_REGISTERS = {
+    0xFF10: 0x80,
+    0xFF11: 0x3F,
+    0xFF13: 0xFF,
+    0xFF14: 0xBF,
+    0xFF16: 0x3F,
+    0xFF18: 0xFF,
+    0xFF19: 0xBF,
+    0xFF1A: 0x7F,
+    0xFF1B: 0xFF,
+    0xFF1C: 0x9F,
+    0xFF1D: 0xFF,
+    0xFF1E: 0xBF,
+    0xFF1F: 0xFF,
+    0xFF20: 0xFF,
+    0xFF23: 0xBF,
 };
 
 class NilRegister extends Register(8) {
@@ -50,6 +77,34 @@ export default function(machine) {
                 this._WaveRAM[i] = new (Register(8));
             }
 
+            // Bâtie UNE fois, en fin de construction : tous les registres
+            // existent, et aucun n'est jamais remplacé ensuite. Voir le
+            // commentaire du getter plus bas.
+            this._registersMapping = this._buildRegistersMapping();
+        }
+
+        /**
+         * L'adresse vers l'objet registre. Cette table ne bouge plus après la
+         * construction — chaque canal peuple ses cinq registres à la naissance et
+         * n'en échange aucun ensuite ; NR50/NR51/NR52 et les registres muets non plus.
+         *
+         * Elle était auparavant rebâtie à CHAQUE appel, or elle est sur le chemin de
+         * toute lecture et de toute écriture entre 0xFF10 et 0xFF3F. Mesuré : ~6,9 µs
+         * par reconstruction (une trentaine de clés entières, quatre étalements),
+         * contre 14 ns pour une lecture mémoire ordinaire. Un jeu qui pilote sa
+         * musique y laissait des millisecondes par trame.
+         */
+        _buildRegistersMapping() {
+            return {
+                0xFF24: this.nr50,
+                0xFF25: this.nr51,
+                0xFF26: this.nr52,
+                ...this.channel1.registers,
+                ...this.channel2.registers,
+                ...this.channel3.registers,
+                ...this.channel4.registers,
+                ...this._nilRegisters,
+            };
         }
 
         get isPowered() {
@@ -64,35 +119,11 @@ export default function(machine) {
         }
 
         get registersMapping() {
-            return {
-                0xFF24: this.nr50,
-                0xFF25: this.nr51,
-                0xFF26: this.nr52,
-                ...this.channel1.registers,
-                ...this.channel2.registers,
-                ...this.channel3.registers,
-                ...this.channel4.registers,
-                ...this._nilRegisters,
-            }
+            return this._registersMapping;
         }
+
         get maskRegistersMapping() {
-            return {
-                0xFF10: 0x80,
-                0xFF11: 0x3F,
-                0xFF13: 0xFF,
-                0xFF14: 0xBF,
-                0xFF16: 0x3F,
-                0xFF18: 0xFF,
-                0xFF19: 0xBF,
-                0xFF1A: 0x7F,
-                0xFF1B: 0xFF,
-                0xFF1C: 0x9F,
-                0xFF1D: 0xFF,
-                0xFF1E: 0xBF,
-                0xFF1F: 0xFF,
-                0xFF20: 0xFF,
-                0xFF23: 0xBF,
-            }
+            return MASK_REGISTERS;
         }
 
         powerOn() {

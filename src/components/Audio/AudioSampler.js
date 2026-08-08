@@ -16,6 +16,11 @@ const MAX_SAMPLE = 480; // 4 voies × 15 × facteur de volume 8 : le plafond du 
 // continu et les toutes basses fréquences (quelques Hz), pas la musique.
 const DC_BLOCK_R = 0.999;
 
+// Une trame vaut ~739 échantillons (44 100 / 59,7275). Le tampon en tient
+// largement deux : `drain` vide à chaque trame, cette marge n'est là que pour
+// les tours où le worker enchaîne deux trames avant de rendre la main.
+const BUFFER_SAMPLES = 2048;
+
 export default class AudioSampler {
   constructor() {
     // Accumulateur en cycles fractionnaires : jamais remis à zéro, jamais
@@ -25,8 +30,13 @@ export default class AudioSampler {
     this._prevOutLeft = 0;
     this._prevInRight = 0;
     this._prevOutRight = 0;
-    this._left = [];
-    this._right = [];
+    // Tampons TYPÉS et réutilisés d'une trame à l'autre. Des tableaux ordinaires
+    // faisaient deux `push` par échantillon (44 100 par seconde et par voie, avec
+    // le redimensionnement du stockage derrière), puis un `Float32Array.from` par
+    // trame qui recopiait le tout en repassant par des nombres boxés.
+    this._left = new Float32Array(BUFFER_SAMPLES);
+    this._right = new Float32Array(BUFFER_SAMPLES);
+    this._count = 0; // échantillons écrits depuis le dernier drain
   }
 
   // y[n] = x[n] - x[n-1] + R·y[n-1] : le classique DC-blocker à un pôle.
@@ -61,18 +71,36 @@ export default class AudioSampler {
       this._prevInRight = xRight;
       this._prevOutRight = outRight;
 
-      this._left.push(outLeft);
-      this._right.push(outRight);
+      if (this._count === this._left.length) this._grow();
+      this._left[this._count] = outLeft;
+      this._right[this._count] = outRight;
+      this._count++;
       this.nextCycle += CYCLES_PER_SAMPLE;
     }
   }
 
-  /** Vide le tampon accumulé depuis le dernier drain — à appeler une fois par trame. */
+  // Filet, jamais le cas courant : si une trame s'étire assez pour dépasser la
+  // marge, on double plutôt que de perdre des échantillons (un trou s'entendrait).
+  _grow() {
+    const doubled = this._left.length * 2;
+    const left = new Float32Array(doubled);
+    const right = new Float32Array(doubled);
+    left.set(this._left);
+    right.set(this._right);
+    this._left = left;
+    this._right = right;
+  }
+
+  /**
+   * Vide le tampon accumulé depuis le dernier drain — à appeler une fois par trame.
+   * `slice` rend deux Float32Array neufs, avec leur propre ArrayBuffer : c'est ce
+   * qu'il faut, l'appelant les TRANSFÈRE au thread principal (postMessage), donc on
+   * ne peut pas lui prêter une vue sur le tampon qu'on continue d'écrire.
+   */
   drain() {
-    const left = Float32Array.from(this._left);
-    const right = Float32Array.from(this._right);
-    this._left.length = 0;
-    this._right.length = 0;
+    const left = this._left.slice(0, this._count);
+    const right = this._right.slice(0, this._count);
+    this._count = 0;
     return { left, right };
   }
 }
