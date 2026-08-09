@@ -355,10 +355,39 @@ modèles. Une seule des huit lignes du tableau pouvait dire la vérité.
 - Six tests unitaires ont été PORTÉS, aucun supprimé : ceux qui assuraient le
   gel assurent maintenant qu'il n'y a pas de gel.
 
-**`spsw-tima` reste ROUGE.** Son `TEST_DS_IF` est désormais juste aux huit octets
-près ; ce qui échoue est son `TEST_INC_EDGE` — vingt-quatre sondes qui placent la
-bascule à un cycle machine près autour d'un front de TIMA, et dont une partie
-distingue les révisions de puce. C'est le mur des phases, comme les autres.
+#### `spsw-tima` reste ROUGE — mais on sait exactement où, et à combien près
+
+Son `TEST_DS_IF` est juste aux huit octets près. Son `TEST_INC_EDGE`, rejoué
+sonde par sonde dans un banc à nous : **24 sur 26**.
+
+Les deux qui manquent sont UNE frontière, au réglage 4 kHz : la ROM place le cran
+supplémentaire entre `d1 = 110` et `d1 = 111`, nous entre 109 et 110. **Un cycle
+machine.**
+
+Et cette sonde-là ne mesure pas la même chose que les autres, ce qui est tout
+l'intérêt. À 4 kHz la période fait 256 cycles machine : bouger `d1` d'un cran ne
+peut PAS changer le comptage. Ce que la sonde attrape est donc le **front
+descendant** de la remise à zéro de DIV — le §An Edge Case du chapitre timer,
+qui pousse TIMA quand le bit surveillé était haut. Les trois autres cadences, au
+contraire, franchissent une frontière de période : elles mesurent le comptage,
+et le comptage est juste chez nous.
+
+**Deux explications ont été essayées et écartées, et leur échec est informatif :**
+
+| tentative | résultat |
+|---|---|
+| `STOP` ne paie qu'une lecture (`cpu.pay(-1)`), l'hypothèse évidente | 4 kHz réparé, **262/65/16 kHz cassés** — 20/26 |
+| le front jugé un cycle machine avant la remise à zéro | 16/26, le décalage déteint sur le comptage |
+
+Les deux mécanismes veulent des décalages **opposés** : aucun décalage global ne
+peut satisfaire les deux à la fois. Ce qui sépare le front du comptage sur du
+vrai matériel, je ne le sais pas — et on ne pose donc pas de règle par cadence
+pour forcer le vert, ce serait figer une coïncidence plutôt qu'une explication.
+
+*(Le rejeu n'est pas déposé comme test : sa table d'attendus est transcrite à la
+main depuis la source de la ROM, et une transcription fautive vaudrait moins que
+l'oracle lui-même. Il se refait en quinze lignes à partir de ce qui est décrit
+ici.)*
 
 ---
 
@@ -568,12 +597,13 @@ saurais par où commencer. Les quatre ROMs qui n'y figurent pas ne sont pas
 oubliées : je n'ai simplement aucun levier connu à leur proposer, et le dire vaut
 mieux que de les ranger dans une liste qui laisserait croire le contraire.
 
-1. **`spsw-tima`**, toujours le plus près du but — son `TEST_DS_IF` est juste
-   aux huit octets près depuis la correction du lot 3. Ce qui reste est son
-   `TEST_INC_EDGE` : vingt-quatre sondes qui placent la bascule à un cycle
-   machine près autour d'un front de TIMA. Choisir laquelle des deux révisions
-   on vise reste la décision d'ouverture — l'écart entre elles, `OFS`, ne joue
-   que sur ces sondes-là.
+1. **`spsw-tima`**, et le but est à UN CYCLE MACHINE : 24 sondes sur 26, et les
+   deux qui manquent sont la même frontière à 4 kHz (voir le lot 3). Ce qui
+   bloque est nommé — le front descendant de la remise à zéro de DIV et le
+   comptage veulent des décalages opposés — et deux explications sont déjà
+   écartées. Choisir laquelle des deux révisions on vise reste la décision
+   d'ouverture : l'écart entre elles, `OFS`, ne joue que sur les sondes 65 et
+   16 kHz, qui passent déjà toutes les deux en révision B/C.
 2. `spsw-mode0` et `spsw-ch2-lc-delay`, qui valent un chapitre à eux deux : ce
    sont les mêmes phases, côté écran et côté son.
 3. `spsw-interrupts`, en dernier et sans regret (voir le lot 5).
