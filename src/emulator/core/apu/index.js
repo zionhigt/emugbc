@@ -215,8 +215,16 @@ export default function(machine) {
             return reg.setValue(value);
         };
 
+        /**
+         * `cycle` est une date du MONDE — c'est ce que rend `totalMachineCycles`
+         * ici. On interroge donc le compteur du timer par sa lecture du monde et
+         * non par celle du processeur : même remise à zéro, autre montre. En
+         * vitesse simple les deux rendent le même nombre ; c'est la bascule qui
+         * les sépare, et une date du monde lue contre l'origine du processeur
+         * fait RECULER le séquenceur.
+         */
         divTicks(cycle) {
-            return Math.floor(this.machine.timer.innerCyclesAt(cycle) / FRAME_PERIOD);
+            return Math.floor(this.machine.timer.innerSystemCyclesAt(cycle) / FRAME_PERIOD);
         }
 
         frameTicks(cycle) {

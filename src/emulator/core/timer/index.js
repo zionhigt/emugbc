@@ -82,6 +82,11 @@ class DIVregister extends Collapse(8) {
     hookBeforeSetValue(value) {
         this.parent._capture();
         this.parent._innerCycles = this.parent.totalMachineCycles;
+        // La même remise à zéro sur la montre du monde : c'est elle que lit le
+        // séquenceur de trames de l'APU. Les deux origines bougent ENSEMBLE ou
+        // le séquenceur cesse de suivre DIV — et c'est ce couplage-là que
+        // blargg `dmg_sound` arbitre depuis toujours.
+        this.parent._innerSystemCycles = this.parent.totalSystemCycles;
         this.parent.cranBase = 0;
     }
 
@@ -163,6 +168,13 @@ export default function(machine) {
         constructor() {
             this.machine = machine;
             this._innerCycles = this.totalMachineCycles; // Almost a bad boy. Whatcha gonna do !!
+            // LA MÊME ORIGINE, SUR L'AUTRE MONTRE. Le compteur du timer est
+            // celui du PROCESSEUR, et c'est bien lui que DIV et TIMA lisent.
+            // Mais l'APU tire son séquenceur de trames du MÊME compteur remis à
+            // zéro aux mêmes instants, tout en devant garder ses 512 Hz dans le
+            // monde réel. On note donc la remise à zéro sur les deux montres, et
+            // chacun lit la sienne. Voir `innerSystemCyclesAt`.
+            this._innerSystemCycles = this.totalSystemCycles;
             this.DIV = new DIVregister(this);
             this.TIMA = new TIMAregister(this);
             this.TAC = new TACregister(this);
@@ -184,6 +196,26 @@ export default function(machine) {
 
         innerCyclesAt(cycle) {
             return 4 * (cycle - this._innerCycles);
+        }
+
+        /**
+         * LE MÊME COMPTEUR, LU DEPUIS LE MONDE — c'est l'APU qui s'en sert.
+         *
+         * Son séquenceur de trames est cadencé par DIV, donc par la montre du
+         * processeur, MAIS il doit rester à 512 Hz dans le monde réel. Le
+         * matériel résout ça en changeant de bit surveillé (bit 4 en simple,
+         * bit 5 en double) ; chez nous ça revient à compter la même période sur
+         * la montre du monde, qui ne s'accélère pas.
+         *
+         * Ce qu'il ne fallait PAS faire, et qui était fait : passer une date du
+         * monde à `innerCyclesAt`, dont l'origine est sur la montre du
+         * processeur. Tant que les deux montres portent le même nombre ça
+         * marche ; à la première bascule le séquenceur RECULE de quatre pas —
+         * mesuré — et rejoue quatre pas de compteur de longueur, d'enveloppe et
+         * de balayage.
+         */
+        innerSystemCyclesAt(cycle) {
+            return 4 * (cycle - this._innerSystemCycles);
         }
 
         /**
@@ -209,6 +241,12 @@ export default function(machine) {
          */
         freeze(duration) {
             this._innerCycles += duration;
+            // `duration` est en cycles PROCESSEUR ; le monde, lui, n'en voit
+            // passer que la moitié en double régime. Geler les deux origines du
+            // même temps RÉEL, c'est ce qui fait que le séquenceur de l'APU
+            // s'arrête aussi — pandocs le dit d'une phrase : « DIV does not
+            // tick, so some audio events are not processed. »
+            this._innerSystemCycles += duration / (this.machine.doubleSpeed ? 2 : 1);
         }
 
         /**
@@ -240,6 +278,11 @@ export default function(machine) {
             // première instruction d'après. `spsw-div` le donne au cycle près :
             // le compteur repart UN cycle machine AVANT le processeur. Sans ce
             // décalage la ROM lit encore 0 là où elle attend 1.
+            //
+            // Il ne vaut que pour le compteur du PROCESSEUR. L'origine du monde
+            // reste gelée de toute la durée : rien ne mesure la phase du
+            // séquenceur de l'APU à ce niveau-là, et on ne propage pas une
+            // correction qu'on ne saurait pas justifier.
             this._innerCycles -= 1;
         }
 
@@ -249,6 +292,11 @@ export default function(machine) {
         
         get totalMachineCycles() {
             return this.machine.totalCycles;
+        }
+
+        /** L'heure du monde, celle que l'APU lit. Voir `innerSystemCyclesAt`. */
+        get totalSystemCycles() {
+            return this.machine.systemCycles;
         }
 
         get registersMapping() {

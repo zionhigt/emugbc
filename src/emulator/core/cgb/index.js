@@ -96,7 +96,12 @@ class KEY1Register extends Register(8) {
 function pcmRegister(machine, odd, even) {
     return {
         getValue() {
-            const cycle = machine.totalCycles;
+            // L'HEURE DU MONDE, pas celle du processeur. Toutes les dates que
+            // l'APU reçoit sont des dates du monde — c'est ce que le mélangeur
+            // lui passe. Lire ici `totalCycles` marchait tant qu'il n'y avait
+            // qu'une montre ; en double régime ça demande à une voie son
+            // amplitude à une date deux fois trop loin dans le futur.
+            const cycle = machine.systemCycles;
             const low = machine.apu[odd].amplitude(cycle) & 0x0F;
             const high = machine.apu[even].amplitude(cycle) & 0x0F;
             return (high << 4) | low;
