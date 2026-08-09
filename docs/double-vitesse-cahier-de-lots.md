@@ -49,7 +49,12 @@ Et le cas retors, celui qui mérite d'être nommé tout de suite : **le séquenc
 de trames de l'APU regarde les deux à la fois.** Il est cadencé par DIV — la
 montre du CPU — mais il doit rester à 512 Hz dans le monde réel. Le matériel
 résout ça en changeant de bit : DIV bit 4 en vitesse simple, **bit 5** en vitesse
-double. Chez nous, c'est une période qui double. Voir le lot 4.
+double.
+
+*(Chez nous ce n'est finalement pas une période qui double, comme annoncé ici,
+mais une SECONDE ORIGINE notée sur la montre du monde : le compteur du timer est
+remis à zéro aux mêmes instants sur les deux montres, et chacun lit la sienne.
+Voir le lot 4 — c'est là qu'un vrai bug attendait.)*
 
 ---
 
@@ -78,7 +83,7 @@ la migration au cycle a laissé derrière elle.
 | Une seule horloge pour tout le monde | lot 0 — `machine.systemCycles` |
 | `0xFF4D` n'est pas mappé : il se lit 0xFF | lot 1 — KEY1 chez `core/cgb/` |
 | `cpu.stop()` lève un drapeau que personne ne lit | lot 1 |
-| Le séquenceur APU est soudé à DIV bit 4 | lot 4 |
+| Le séquenceur APU lit une date du monde contre une origine du CPU | lot 4 — `innerSystemCyclesAt` |
 
 ### Le piège qui se lit déjà dans le code existant
 
@@ -118,11 +123,22 @@ Fibonacci `B=3 C=5 D=8 E=13 H=21 L=34` si le test réussit.
 | `caution/spsw-interrupts-cgbBC.gb`, `-cgbE.gb` | les IRQ pendant l'arrêt | 5 |
 
 **État de départ, mesuré avant d'écrire une ligne** : les huit échouent, toutes
-de la même façon — `regs=[0,107,20,6,152,16]`, PC figé à `0x12D0`. C'est la
-signature d'un `STOP` qui n'a rien fait : la ROM attend une bascule qui n'arrive
-jamais. Un point de départ uniforme, ce qui est une bonne nouvelle : le premier
-lot qui débloque `STOP` les fera toutes bouger d'un coup, et c'est ensuite que
-leurs verdicts divergeront.
+de la même façon — `regs=[0,107,20,6,152,16]`, PC figé à `0x12D0`.
+
+*(Deux corrections apportées depuis, et elles comptent pour la suite.* `0x12D0`
+n'est pas un `STOP` qui bloque : c'est la boucle de parking `EI / HALT / JR` que
+ces ROMs exécutent APRÈS avoir rendu leur verdict — elles allaient au bout depuis
+le début, elles échouaient simplement. *Et cette uniformité n'est pas une
+signature commune* : les huit convergent vers le même épilogue d'échec, qui écrit
+« TEST FAILED! » à l'écran et pose ses propres registres. Les registres lus à la
+fin ne disent donc rien de l'endroit où chacune a échoué.*)*
+
+**Comment on les a réellement lues, à partir du lot 3** : pas en fouillant leur
+binaire, mais **en lisant leur source** (`.asm` et `.inc` du dépôt AGE) puis en
+rejouant leur séquence exacte dans un banc à nous. C'est ce qui a permis de dire
+« notre marche est à 62, la ROM l'attend à 61 » au lieu de « c'est rouge ». Une
+ROM qui rend un verdict binaire ne localise rien ; sa SOURCE, elle, dit ce
+qu'elle attend et à quel cycle.
 
 ### Deux ROMs portent un avertissement, et il est à lire
 
@@ -158,6 +174,23 @@ deux compteurs sont égaux, donc « rien ne bouge » est vérifiable à l'octet 
 **Le demi-pas** : en vitesse double un cycle CPU vaut un demi cycle système. On
 compte donc en DEMIS (`_systemHalfCycles`, entier) et on rend la moitié. Un
 demi-cycle machine vaut exactement deux dots — le PPU ne perd rien.
+
+### D4 — Sur quelle montre se comptent les 2050 cycles — **TRANCHÉE** *(lot 2)*
+
+Question qui n'existait pas quand ce cahier a été écrit, et qui saute aux yeux
+dès qu'on a deux montres : pandocs dit « 2050 cycles machine (8200 dots) »,
+**sans dire lesquels**. À l'aller le processeur bat deux fois plus vite qu'au
+retour : la même phrase donne donc deux durées différentes selon le sens.
+
+**Tranchée : la montre du MONDE.** Cet arrêt n'est pas un compte d'instructions,
+c'est un DÉLAI PHYSIQUE — le temps que l'oscillateur se stabilise — et un délai
+physique dure la même chose en secondes quel que soit le régime qui en sortira.
+L'écran voit donc passer 8200 dots dans les deux sens ; le processeur paie deux
+fois plus de SES cycles quand il en ressort en double régime.
+
+*Aucun oracle disponible ne l'arbitre* : `spsw-mode0`, qui le pourrait, mesure
+l'alignement LY/STAT au dot près et reste rouge pour d'autres raisons. La
+décision est donc à relire si ce lot rouvre.
 
 ### D2 — Qui possède KEY1 — **proposition : `core/cgb/`**
 
@@ -244,62 +277,175 @@ maintenant les DEUX façons dont il peut bouger.
 
 ---
 
-### Lot 2 — Le PPU garde son heure
-
-**Objectif** : en vitesse double, le PPU avance deux fois moins vite par cycle
-CPU — c'est-à-dire à la même vitesse qu'avant dans le monde réel.
-
-En principe le lot 0 l'a déjà fait. Ce lot-là est celui qui le PROUVE, et qui
-traite les surprises : le verrou VRAM/OAM pendant l'arrêt de 2050 cycles, que
-pandocs décrit mode par mode (écran noir en mode 0/1, fond sans objets en mode 2,
-rien de changé en mode 3).
-
-**Oracle** : `spsw-mode0-cgbBCE.gb`.
-
----
-
-### Lot 3 — Le timer double vraiment
+### Lot 3 — Le timer double vraiment — **FERMÉ** *(fait AVANT le lot 2)*
 
 **Objectif** : DIV et TIMA suivent la montre du CPU, donc battent deux fois plus
 vite dans le monde réel — sauf pendant l'arrêt de `STOP`, où DIV ne tourne pas.
 
-**Oracles** : `spsw-div-cgbBCE.gb`, `spsw-tima-cgbBC.gb`, `spsw-tima-cgbE.gb`.
-Les deux variantes de `tima` diffèrent par la révision de puce : elles ne peuvent
-pas être vertes toutes les deux, et **choisir laquelle on vise est une décision à
-prendre au moment d'ouvrir le lot**, pas une fatalité à subir.
+**Oracle** : `spsw-div-cgbBCE.gb`, **désormais VERT**. C'est le premier des huit
+à tomber.
+
+**La phrase de pandocs contenait DEUX gestes, et j'en avais lu un** (§FF04) :
+*« this register is reset when executing the `stop` instruction, and only begins
+ticking again once stop mode ends. »* Le gel du compteur, oui — mais aussi **la
+remise à zéro**. Le gel seul laisse DIV à la valeur qu'il avait avant la bascule,
+et ce décalage-là ne se voit dans aucun test de gel. `timer.enterStopMode()`
+porte les deux, et la remise à zéro passe par le chemin ORDINAIRE de DIV pour que
+le front descendant du §An Edge Case joue aussi ici.
+
+**Le gel tient en une ligne** parce que le timer ne COMPTE pas des cycles : il
+LIT une horloge, et `_innerCycles` dit où elle en était à la dernière remise à
+zéro. Geler, c'est décaler cette origine — tout ce qui vit dans le référentiel du
+compteur (`dateAlarme`, `cranBase`, `lastReload`) reste juste sans y toucher.
+
+**LA PHASE, et c'est elle qui a fait la différence.** Pandocs donne la DURÉE de
+l'arrêt, jamais l'instant exact où le compteur repart par rapport à la première
+instruction d'après. La ROM, elle, le donne au cycle près. En rejouant sa
+séquence exacte chez nous (`ldh [rDIV],a` / N nops / bascule / M nops /
+`ldh a,[rDIV]`), notre marche tombait à M=62 alors qu'elle l'attend à M=61 :
+**le compteur repart UN cycle machine avant le processeur**. Un `-1` sur
+`_innerCycles`, et les cinq groupes de la ROM passent d'un coup.
+
+Ce `-1` ne vaut QUE pour le compteur du processeur. L'origine du monde — celle
+que lit l'APU — reste gelée de toute la durée : rien ne mesure sa phase à ce
+niveau-là, et on ne propage pas une correction qu'on ne saurait pas justifier.
+
+**Ce que `spsw-tima` dit encore, et il reste rouge.** En rejouant son
+`TEST_DS_IF` chez nous, cadence par cadence :
+
+```
+                nous        attendu
+4 kHz      $00 $E0      $80 $E0
+262 kHz    $04 $E4      $04 $E4      <- TIMA juste
+65 kHz     $01 $E4      $01 $E4      <- TIMA juste
+16 kHz     $00 $E4      $00 $E4      <- TIMA juste
+```
+
+**Trois valeurs de TIMA sur quatre sont justes**, et c'est une confirmation forte
+du modèle « compteur gelé » : elles ne comptent que les quinze cycles de mise en
+place, pas les 2050 de l'arrêt. Ce qui manque est ailleurs — le drapeau
+d'interruption du timer, que ces ROMs attendent levé sans qu'un débordement soit
+possible sur cette durée. Je n'ai pas de lecture qui explique les deux à la fois,
+et je ne pose donc pas de test qui figerait une explication que je n'ai pas.
 
 ---
 
-### Lot 4 — L'APU, qui regarde les deux montres
+### Lot 2 — Le PPU garde son heure — **FERMÉ**
+
+**Objectif** : en vitesse double, le PPU avance deux fois moins vite par cycle
+CPU — c'est-à-dire à la même vitesse qu'avant dans le monde réel.
+
+En principe le lot 0 l'a déjà fait. Ce lot-là est celui qui le PROUVE — **et pas
+au niveau du getter**, où la preuve ne vaut rien (elle relit ce que le code vient
+d'écrire), mais au niveau de l'ÉCRAN : combien de cycles processeur pour une
+ligne. 114 en simple, **228 en double**, et 114 de nouveau après la bascule
+retour. Le nombre qui double est celui du processeur : c'est la seule façon
+honnête de dire que l'écran, lui, n'a pas bougé.
+
+**La vraie décision du lot est D4** (§4) : l'arrêt de `STOP` se compte sur la
+montre du monde. Conséquence vérifiée : l'écran avance de 18 lignes pile pendant
+une bascule (2 cycles de lecture d'opcode + 2050 d'arrêt = 8208 dots = 18 × 456).
+
+**Et le PPU n'est pas suspendu par `STOP`** — c'est le PROCESSEUR qui l'est.
+Confondre les deux ferait rater une VBlank entière au jeu qui bascule juste
+avant.
+
+**Oracle** : `spsw-mode0-cgbBCE.gb`, **toujours rouge**, et il faut dire
+pourquoi : ce n'est pas un test de cadence mais d'ALIGNEMENT — il lit LY deux
+fois de suite et STAT à des délais choisis, de part et d'autre de cinq bascules,
+pour vérifier que l'alignement LCD/CPU change quand on double et redouble. C'est
+le mur du dot du chapitre PPU, à franchir une seconde fois et à travers une
+bascule. Hors de portée de ce lot ; ce que le lot promettait — que l'écran garde
+sa cadence — est tenu et tenu par des tests.
+
+---
+
+### Lot 4 — L'APU, qui regarde les deux montres — **FERMÉ**
 
 **Objectif** : les fréquences des voies restent celles du monde (le lot 0 s'en
 charge), et le séquenceur de trames reste à 512 Hz — bit 4 de DIV en simple,
 **bit 5** en double, ce qui chez nous s'écrit « la période double ».
 
-**Le lot le plus risqué du jalon**, et il faut le dire : l'APU est un chapitre
-CLOS, qualifié par blargg 12/12 et à l'oreille. On vient toucher son horloge.
-`dmg_sound` reste vert ou le lot ne passe pas.
+**Le lot le plus risqué du jalon** : l'APU est un chapitre CLOS, qualifié par
+blargg 12/12 et à l'oreille. **`dmg_sound` est resté 12/12.**
 
-**Oracle** : `spsw-ch2-lc-delay-cgbBCE.gb`, avec `dmg_sound` en filet.
+**LE BUG QUE CE LOT A TROUVÉ, et il était bien réel.** L'APU demandait au timer
+`innerCyclesAt(date du monde)` — une date du MONDE lue contre une origine posée
+sur la montre du PROCESSEUR. Tant qu'il n'y a qu'une horloge les deux nombres
+sont identiques et personne ne voit rien. Mesuré à la première bascule : le
+séquenceur **RECULE de quatre pas**. Quatre pas rejoués, c'est quatre coups de
+compteur de longueur, d'enveloppe et de balayage — muet en test, très audible
+dans un jeu.
+
+Le correctif ne double pas la période comme ce cahier l'annonçait : il donne au
+timer **une seconde origine, notée sur la montre du monde**
+(`innerSystemCyclesAt`). Les deux origines bougent ENSEMBLE à chaque remise à
+zéro de DIV — c'est ce couplage-là que blargg arbitre depuis toujours — et le
+séquenceur compte sa période de 8192 sur celle qui ne s'accélère pas. Le
+résultat est le même que le bit 5 du matériel, par un chemin qui ne demande pas
+au reste de l'APU de savoir qu'il existe deux régimes.
+
+Le gel de `STOP` vaut pour les deux origines, ce qui donne gratuitement la phrase
+de pandocs : *« DIV does not tick, so some audio events are not processed. »*
+
+**Une seconde lecture de la même famille, trouvée en tirant le fil** : PCM12 /
+PCM34 (`$FF76-77`) passaient `machine.totalCycles` à `amplitude(cycle)`, qui
+attend une date du monde. En double régime, c'est demander à une voie ce qu'elle
+vaudra deux fois plus loin dans le futur.
+
+**Oracle** : `spsw-ch2-lc-delay-cgbBCE.gb`, **toujours rouge** — il mesure le
+délai exact du compteur de longueur de la voie 2 en travers d'une bascule, à
+l'échelle du cycle. Le filet `dmg_sound` 12/12, lui, a tenu, et c'était la
+condition du lot.
 
 ---
 
-### Lot 5 — Les interruptions pendant l'arrêt
+### Lot 5 — Les interruptions pendant l'arrêt — **FERMÉ**
 
 **Objectif** : ce qui se passe quand une IRQ tombe pendant les 2050 cycles.
 
-Deux ROMs, deux révisions de puce, et un avertissement du dépôt (voir §3). Petit
-lot, incertain, sans conséquence sur les jeux : à traiter en dernier, et à
-abandonner sans remords s'il s'avère être un puits.
+**La réponse tient en une phrase, et le dépôt AGE la donne** : l'arrêt est un
+`halt` déguisé, et il se réveille comme un `halt` — dès qu'une source ARMÉE lève
+son drapeau. **La bascule, elle, a bien lieu** : ce n'est pas elle qu'on
+interrompt, c'est l'attente qui la suit. Un émulateur qui sortirait de `onStop`
+en voyant le drapeau laisserait le jeu en vitesse simple alors qu'il se croit en
+double.
+
+La condition est `IE & IF & 0x1F` — celle du RÉVEIL, pas celle du SERVICE, qui
+demande en plus `ime` et reste l'affaire de `dispatch()`. Le masque n'est pas
+décoratif : IF se lit avec ses trois bits du haut à 1, et les prendre pour des
+sources en attente couperait TOUS les arrêts, ce qui viderait le lot 3 de son
+contenu.
+
+**L'avertissement du dépôt, et il mérite d'être répété** : son auteur a rendu une
+vraie CGB E instable en enchaînant ces deux ROMs, au point qu'un reset n'y
+suffisait plus — l'oscillateur n'avait plus le temps de se stabiliser. Le manuel
+Nintendo déconseille explicitement la manœuvre. On émule le comportement, pas le
+vice.
+
+**Oracles** : `spsw-interrupts-cgbBC.gb` et `-cgbE.gb`, **toujours rouges**. Ils
+mesurent, dans le gestionnaire d'interruption, DIV et TIMA à des délais choisis —
+donc la phase exacte d'un arrêt écourté, une précision que rien ne nous donne.
 
 ---
 
-### Lot F — Le front
+### Lot F — Le front — **FERMÉ**
 
-**À faire** : afficher le régime dans l'overlay, à côté du modèle. `WK CGB 2x`
-dit d'un coup d'œil ce qu'aucun log ne dira.
+**Fait** :
 
-Ne bloque rien.
+- **le régime dans l'overlay**, à côté du modèle. Il n'apparaît QUE doublé :
+  « 1x » affiché en permanence serait du bruit, « 2x » est l'information. Il
+  voyage par le battement de métriques déjà en place (5 fois par seconde) et le
+  main ne re-rend que s'il a BOUGÉ — un `setState` cinq fois par seconde
+  re-rendrait la page entière, ce que tout le dessin de l'overlay évite ;
+- **le son rééchantillonné sur l'heure du monde**, et ce point n'était pas au
+  programme. `AudioSampler` convertit des cycles machine en 44 100 Hz avec une
+  CONSTANTE, et on lui passait `totalCycles`. En double régime il aurait produit
+  deux fois trop d'échantillons — un la à 880 Hz, et un tampon qui déborde. Le
+  lot F de ce jalon-ci n'est donc pas cosmétique, contrairement à celui du
+  précédent.
+
+Corrigé aux deux endroits : le worker et le repli main-thread.
 
 ---
 
@@ -318,25 +464,53 @@ la veille reste ce qu'elle est.
 
 ## 7. Où on en est
 
-**Lots 0 et 1 fermés. 1774 tests au vert.**
+**Tous les lots sont fermés. 1807 tests au vert** (1774 à l'ouverture du lot 3),
+dont blargg `cpu_instrs` 11/11, blargg `dmg_sound` 12/12 et mooneye PPU 12/12
+inchangés — le filet du §3 a tenu de bout en bout.
 
-| lot | état | ce qu'il reste à prouver |
+| lot | état | son oracle |
 |---|---|---|
-| 0 — base de temps système | **FERMÉ** | — |
-| 1 — KEY1 et STOP | **FERMÉ** | — |
-| 2 — le PPU garde son heure | ouvert | `spsw-mode0` |
-| 3 — le timer double vraiment | ouvert | `spsw-div`, `spsw-tima` ×2 |
-| 4 — l'APU et ses deux montres | ouvert | `spsw-ch2-lc-delay`, filet `dmg_sound` |
-| 5 — les IRQ pendant l'arrêt | ouvert | `spsw-interrupts` ×2 |
-| F — le régime dans l'overlay | ouvert | — |
+| 0 — base de temps système | **FERMÉ** | la suite entière |
+| 1 — KEY1 et STOP | **FERMÉ** | bascule mesurée, 4 à 168 fois par ROM |
+| 3 — le timer double vraiment | **FERMÉ** | **`spsw-div` VERT** |
+| 2 — le PPU garde son heure | **FERMÉ** | TU (114 → 228 cycles la ligne) |
+| 4 — l'APU et ses deux montres | **FERMÉ** | `dmg_sound` 12/12 tenu |
+| 5 — les IRQ pendant l'arrêt | **FERMÉ** | TU (réveil, bascule maintenue) |
+| F — le régime et le son | **FERMÉ** | `regime-front.test.jsx` |
 
-Les huit oracles sont toujours rouges, et le tableau de bord
-(`age-speed-switch.test.js`) les tient ligne par ligne. **Ce qui a changé et ne
-se voit pas dans ce tableau** : la bascule a désormais lieu pour de bon, et le
-temps du monde se dédouble avec elle. Ce qui manque est du détail de cadence —
-c'est-à-dire précisément ce que ces huit ROMs savent mesurer et que rien d'autre
-ne sait voir.
+### Les oracles, un par un — et sept sont encore rouges
 
-**Le prochain lot est le 3**, et pas le 2 : DIV qui ne tourne pas pendant les
-2050 cycles d'arrêt est la seule pièce dont on connaît déjà la forme exacte
-(l'origine du timer se décale, une ligne), et trois des huit ROMs en dépendent.
+| ROM | état | ce qui l'en sépare |
+|---|---|---|
+| `spsw-div-cgbBCE` | **VERT** | — |
+| `spsw-tima-cgbBC`, `-cgbE` | rouge | TIMA juste sur 3 cadences /4 ; le drapeau d'IRQ qu'elles attendent reste inexpliqué |
+| `spsw-mode0-cgbBCE` | rouge | alignement LY/STAT au dot près, à travers cinq bascules |
+| `spsw-ch2-lc-delay-cgbBCE` | rouge | le délai du compteur de longueur au cycle près |
+| `spsw-interrupts-cgbBC`, `-cgbE` | rouge | la phase exacte d'un arrêt écourté |
+
+**Ce que ces sept rouges disent, et ce qu'ils ne disent pas.** Ils ne disent pas
+que la double vitesse ne marche pas : elle marche, et trois choses le prouvent
+autrement — la ligne d'écran passe bien de 114 à 228 cycles processeur, le
+séquenceur audio garde ses 512 Hz au lieu de reculer de quatre pas, et `spsw-div`
+tombe au cycle près. Ils disent que **les six restants mesurent des phases**, pas
+des cadences : où tombe exactement un front par rapport à une instruction, à
+travers une bascule. C'est le même mur que le dot du chapitre PPU, et il se
+franchit avec le même budget — un chapitre, pas un lot.
+
+**La leçon du jalon.** Deux bugs de ce jalon étaient le MÊME bug, et aucun test
+existant ne pouvait les voir : une date lue sur une montre, comparée à une
+origine posée sur l'autre. Le séquenceur de l'APU reculait de quatre pas, PCM12
+demandait le futur, et le rééchantillonneur audio aurait doublé la hauteur du
+son. Tant qu'il n'y a qu'une horloge, ces trois lignes sont indistinguables de
+lignes justes. **Dédoubler le temps ne casse rien : ça RÉVÈLE** ce qui n'avait
+jamais eu besoin d'être juste.
+
+### Si le jalon rouvre
+
+Par ordre de valeur décroissante :
+
+1. **`spsw-tima`**, le plus près du but — trois valeurs sur quatre déjà justes.
+   Choisir laquelle des deux révisions on vise reste la décision d'ouverture.
+2. **D4** (§4), à relire : la durée de l'arrêt comptée sur la montre du monde
+   n'est arbitrée par aucun oracle disponible.
+3. `spsw-mode0`, qui vaut un chapitre à lui seul.
