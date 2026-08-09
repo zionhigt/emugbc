@@ -106,19 +106,27 @@ describe('la bascule ne fait pas reculer le séquenceur', () => {
     expect(pas(rig), 'et il ne rejoue pas des pas déjà joués').not.toBeLessThan(0);
   });
 
-  it('l\'arrêt de STOP ne lui fait pas non plus avancer un pas', () => {
-    // Pandocs le dit d'une phrase : « DIV does not tick, so some audio events
-    // are not processed. » L'arrêt vaut 8200 dots, soit EXACTEMENT une période
-    // de séquenceur : un émulateur qui laisserait le compteur tourner pendant
-    // l'arrêt offrirait un pas gratuit à chaque bascule.
+  it('l\'arrêt de STOP le fait avancer de HUIT périodes — il n\'est pas gelé', () => {
+    // Ce test assurait le contraire, sur la foi de pandocs : « DIV does not
+    // tick, so some audio events are not processed. » `spsw-tima` a démenti le
+    // gel, et le séquenceur suit le même compteur que TIMA : l'arrêt vaut
+    // 131072 T-cycles, soit exactement seize périodes de 8192.
+    //
+    // Vu du MONDE, l'arrêt vaut la moitié — 16385 cycles machine, soit HUIT
+    // périodes de 8192 T. Huit est un multiple de huit : le séquenceur ressort
+    // donc sur le MÊME pas de son cycle de huit, encore une coïncidence qui
+    // rendait le gel indiscernable, cette fois côté audio.
+    //
+    // On lit `divTicks` juste après la bascule : `STOP` a remis le compteur à
+    // zéro au DÉBUT de l'arrêt, donc ce nombre est exactement ce que l'arrêt a
+    // fait défiler. Un compteur gelé rendrait zéro.
     const rig = makeMachine();
     basculer(rig);
 
-    // `STOP` remet DIV à zéro, donc le séquenceur repart de son premier pas ;
-    // ce qui compte est qu'il lui reste une période PLEINE à parcourir, et non
-    // ce que l'arrêt lui aurait grignoté.
-    expect(cyclesJusquAuProchainPas(rig), 'une période pleine, en cycles processeur doublés')
-      .toBe(PAS * 2);
+    const apres = rig.apu.divTicks(rig.apu.totalMachineCycles);
+
+    expect(apres, 'huit périodes de séquenceur pendant l\'arrêt, pas zéro').toBe(8);
+    expect(apres % 8, 'et il retombe sur le même pas du cycle de huit').toBe(0);
   });
 });
 

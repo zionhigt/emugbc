@@ -19,17 +19,19 @@ import { CGB } from '../models';
  *    mais rien ne l'avait encore écrit noir sur blanc, et une inversion des deux
  *    compteurs ne se verrait qu'à l'oreille d'un jeu.
  *
- * 2. **`STOP` remet DIV à zéro, et le compteur ne tourne pas de tout l'arrêt.**
- *    Là, c'est neuf. Pandocs le dit en une phrase (§FF04) : *« this register is
- *    reset when executing the `stop` instruction, and only begins ticking again
- *    once stop mode ends. »* DEUX gestes dans cette phrase, et il faut les deux —
- *    `spsw-div` lit DIV de part et d'autre d'une bascule et compare.
+ * 2. **`STOP` remet DIV à zéro — et NE LE GÈLE PAS.** Là, c'est neuf, et ce
+ *    fichier a d'abord assuré le contraire, sur la foi de pandocs (§FF04) :
+ *    *« this register is reset when executing the `stop` instruction, and only
+ *    begins ticking again once stop mode ends. »*
  *
- * L'IMAGE À RETENIR pour le gel : le timer ne COMPTE pas des cycles, il LIT une
- * horloge. Son origine (`_innerCycles`) dit où cette horloge en était quand on
- * l'a remis à zéro. Geler le compteur, ce n'est donc pas l'empêcher de compter —
- * c'est **déplacer l'origine d'autant** : l'horloge avance, la différence ne
- * bouge pas.
+ * CES TESTS SONT DONC PORTÉS, PAS AJOUTÉS : ceux qui assuraient le gel assurent
+ * maintenant le contraire, parce que les ROMs ont retourné la lecture. Et
+ * l'illusion valait la peine d'être comprise — l'arrêt dure 131072 T-cycles,
+ * soit EXACTEMENT 512 crans de DIV. Un compteur qui tourne tout ce temps revient
+ * donc sur la même valeur qu'avant : indiscernable d'un compteur gelé, tant
+ * qu'on ne regarde que DIV. Seul TIMA à 4 kHz peut trancher (128 incréments,
+ * qui ne sont pas un multiple de 256), et c'est très exactement la ligne de
+ * `spsw-tima` qui refusait de concorder.
  */
 
 const KEY1 = 0xFF4D;
@@ -38,8 +40,14 @@ const TIMA = 0xFF05;
 const TMA = 0xFF06;
 const TAC = 0xFF07;
 
-/** Le CPU s'arrête 2050 cycles machine après la bascule (pandocs). */
-const ARRET = 2050;
+/**
+ * L'arrêt qui suit la bascule, en cycles machine du PROCESSEUR. Le +1 est la
+ * phase, mesurée sur `spsw-div`. Voir `STOP_PAUSE` dans machine/index.js.
+ */
+const ARRET = 32769;
+
+/** 131072 T-cycles d'arrêt, ça fait 512 crans de DIV. Pile. */
+const CRANS_PENDANT_L_ARRET = 512;
 
 /** Un cran de DIV = 256 T-cycles = 64 cycles machine. */
 const CRAN_DIV = 64;
@@ -70,7 +78,7 @@ const basculer = ({ cpu, decoder, memory }) => {
   decoder.step();
 };
 
-describe('timer.freeze : la couture, sur un timer nu', () => {
+describe('enterStopMode : la couture, sur un timer nu', () => {
   // Le banc du timer, celui de `timer.test.js` : une fausse machine dont on
   // tourne l'aiguille à la main. Le timer ne reçoit pas les cycles, il les lit.
   const makeTimer = () => {
@@ -79,66 +87,59 @@ describe('timer.freeze : la couture, sur un timer nu', () => {
     return { machine, timer: new Timer() };
   };
 
-  it('geler N cycles, c\'est ne pas les avoir vus passer', () => {
-    const { machine, timer } = makeTimer();
-    machine.totalCycles = CRAN_DIV * 3;
-    expect(timer.read(DIV), 'trois crans avant le gel').toBe(3);
-
-    timer.freeze(CRAN_DIV * 10);
-    machine.totalCycles += CRAN_DIV * 10;
-
-    expect(timer.read(DIV), 'l\'horloge a avancé de dix crans, DIV d\'aucun').toBe(3);
-  });
-
-  it('et le compteur repart de là où il s\'était arrêté', () => {
-    const { machine, timer } = makeTimer();
-    machine.totalCycles = CRAN_DIV * 3;
-    timer.freeze(CRAN_DIV * 10);
-    machine.totalCycles += CRAN_DIV * 10;
-
-    machine.totalCycles += CRAN_DIV * 2;
-
-    expect(timer.read(DIV), 'le gel décale l\'origine, il ne perd pas le compte').toBe(5);
-  });
-
-  it('TIMA non plus n\'avance pas pendant le gel', () => {
-    const { machine, timer } = makeTimer();
-    timer.write(TAC, 0b101); // timer en marche, un cran tous les 4 cycles machine
-    timer.write(TIMA, 0x00);
-    expect(timer.read(TIMA)).toBe(0x00);
-
-    timer.freeze(CRAN_DIV * 10);
-    machine.totalCycles += CRAN_DIV * 10;
-    timer.check();
-
-    expect(timer.read(TIMA), 'sinon il déborderait 160 fois pendant un arrêt').toBe(0x00);
-  });
-
-  it('enterStopMode : la remise à zéro EN PLUS du gel', () => {
-    // Les deux moitiés de la phrase de pandocs. Ne faire que le gel laisse DIV
-    // à la valeur qu'il avait avant la bascule — c'est ce décalage que
-    // `spsw-div` mesure, et il ne se voit dans aucun test de gel.
-    //
-    // L'appel est ATOMIQUE avec le paiement de l'arrêt, et le banc le reproduit
-    // : `enterStopMode` avance l'origine du compteur de toute la durée, donc
-    // entre l'appel et le paiement l'origine est EN AVANCE sur l'horloge. Dans
-    // la machine, `cpu.pay` suit immédiatement et personne ne regarde entre les
-    // deux ; ici on tourne l'aiguille à la main, il faut le faire pareil.
+  it('remet le compteur à zéro', () => {
     const { machine, timer } = makeTimer();
     machine.totalCycles = CRAN_DIV * 200;
     expect(timer.read(DIV), 'DIV est loin de zéro avant la bascule').toBe(200);
 
-    timer.enterStopMode(CRAN_DIV * 10);
-    machine.totalCycles += CRAN_DIV * 10;
-    expect(timer.read(DIV), 'l\'arrêt entier n\'a pas fait un cran, et le compteur repart de zéro')
-      .toBe(0);
+    timer.enterStopMode();
 
-    machine.totalCycles += CRAN_DIV * 3;
-    expect(timer.read(DIV), 'trois crans, comptés depuis la fin de l\'arrêt').toBe(3);
+    expect(timer.read(DIV)).toBe(0);
+  });
+
+  it('et NE LE GÈLE PAS : le temps de l\'arrêt lui compte', () => {
+    // Le test qui a changé de sens. Il assurait le gel ; il assure maintenant
+    // l'inverse, parce que `spsw-tima` a tranché contre pandocs.
+    const { machine, timer } = makeTimer();
+    timer.enterStopMode();
+
+    machine.totalCycles += CRAN_DIV * 10;
+
+    expect(timer.read(DIV), 'dix crans passés, dix crans comptés').toBe(10);
+  });
+
+  it('l\'arrêt entier vaut 512 crans, donc DIV retombe sur zéro', () => {
+    // LA COÏNCIDENCE QUI A COÛTÉ UN LOT. 32768 cycles machine = 131072
+    // T-cycles = 512 × 256. Après un arrêt, DIV lit donc 0 — exactement ce que
+    // rendrait un compteur gelé. C'est cette égalité, et elle seule, qui a fait
+    // passer `spsw-div` pour un modèle faux.
+    const { machine, timer } = makeTimer();
+    timer.enterStopMode();
+
+    machine.totalCycles += ARRET - 1;
+
+    expect(CRANS_PENDANT_L_ARRET * CRAN_DIV, 'l\'arrêt, en cycles machine').toBe(ARRET - 1);
+    expect(timer.read(DIV), 'indiscernable d\'un gel — c\'était tout le piège').toBe(0);
+  });
+
+  it('TIMA, lui, compte bel et bien pendant l\'arrêt', () => {
+    // Et c'est la seule chose qui distingue les deux modèles. Au réglage le plus
+    // lent (4 kHz, un cran tous les 256 cycles machine), l'arrêt vaut 128
+    // incréments — pas un multiple de 256, donc visible.
+    const { machine, timer } = makeTimer();
+    timer.write(TMA, 0x00);
+    timer.write(TIMA, 0x00);
+    timer.write(TAC, 0b100); // 4 kHz
+    timer.enterStopMode();
+
+    machine.totalCycles += ARRET - 1;
+    timer.check();
+
+    expect(timer.read(TIMA), 'les 128 incréments que `spsw-tima` attend').toBe(0x80);
   });
 });
 
-describe('l\'arrêt de STOP : le temps que le timer ne voit pas', () => {
+describe('l\'arrêt de STOP, à travers la vraie machine', () => {
   it('la bascule remet DIV à zéro, quelle que soit l\'heure qu\'il était', () => {
     const rig = makeMachine();
     rig.cpu.pay(CRAN_DIV * 100);
@@ -149,32 +150,33 @@ describe('l\'arrêt de STOP : le temps que le timer ne voit pas', () => {
     expect(rig.memory.read(DIV), 'et zéro après : STOP l\'a remis à zéro').toBe(0);
   });
 
-  it('et il ne voit pas passer les 2050 cycles de l\'arrêt', () => {
+  it('DIV lit encore zéro à la sortie — 512 crans pile, pas un gel', () => {
     const rig = makeMachine();
     const avantCycles = rig.machine.totalCycles;
 
     basculer(rig);
 
-    const paye = rig.machine.totalCycles - avantCycles;
-    expect(paye, 'l\'arrêt a bien été facturé au processeur').toBeGreaterThanOrEqual(ARRET);
-    expect(rig.memory.read(DIV), `DIV aurait fait ${Math.floor(paye / CRAN_DIV)} crans s'il avait tourné`)
+    expect(rig.machine.totalCycles - avantCycles, 'l\'arrêt a bien été facturé au processeur')
+      .toBeGreaterThanOrEqual(ARRET);
+    expect(rig.memory.read(DIV), 'le compteur a fait 512 tours complets, il retombe sur zéro')
       .toBe(0);
   });
 
-  it('il ne repart qu\'une fois l\'arrêt fini', () => {
+  it('et il repart de là, pas d\'ailleurs', () => {
     const rig = makeMachine();
     basculer(rig);
 
     rig.cpu.pay(CRAN_DIV * 3);
 
-    expect(rig.memory.read(DIV), 'trois crans, comptés depuis la fin de l\'arrêt et non depuis STOP')
-      .toBe(3);
+    expect(rig.memory.read(DIV), 'trois crans depuis la fin de l\'arrêt').toBe(3);
   });
 
-  it('TIMA ne déborde pas pendant l\'arrêt', () => {
-    // Le réglage le plus rapide : un cran tous les 4 cycles machine. Sur 2050
-    // cycles, un timer qui tournerait pendant l\'arrêt ferait 512 crans, donc
-    // DEUX débordements — et deux interruptions que la ROM n'attend pas.
+  it('TIMA, lui, DÉBORDE pendant l\'arrêt — et la ROM l\'exige', () => {
+    // Le test qui a changé de sens. Au réglage le plus rapide (un cran tous les
+    // 4 cycles machine), l'arrêt vaut 8192 incréments, donc 32 débordements et
+    // l'interruption qui va avec. `spsw-tima` attend précisément ce drapeau
+    // levé : c'est en cherchant d'où il pouvait bien venir que le modèle « le
+    // compteur est gelé » est tombé.
     const rig = makeMachine();
     rig.memory.write(TMA, 0x00);
     rig.memory.write(TIMA, 0x00);
@@ -183,8 +185,7 @@ describe('l\'arrêt de STOP : le temps que le timer ne voit pas', () => {
 
     basculer(rig);
 
-    expect(rig.memory.read(TIMA), 'l\'arrêt n\'a compté pour rien').toBeLessThan(0x10);
-    expect(rig.machine.IF & 0b100, 'et n\'a levé aucune interruption de timer').toBe(0);
+    expect(rig.machine.IF & 0b100, 'le drapeau d\'interruption du timer').toBe(0b100);
   });
 });
 

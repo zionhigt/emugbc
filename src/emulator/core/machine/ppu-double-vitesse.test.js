@@ -17,8 +17,9 @@ import { CGB } from '../models';
  * trame. En double régime la réponse doit DOUBLER, ce qui est exactement la
  * façon de dire que l'écran, lui, n'a pas bougé.
  *
- * Et un second point, qui lui n'est pas gratuit : COMBIEN DE TEMPS DURE L'ARRÊT
- * de `STOP`, vu du monde. Voir le describe du même nom.
+ * Et un second point, qui lui n'est pas gratuit : SUR QUELLE MONTRE se comptent
+ * les cycles de l'arrêt de `STOP`. Voir le describe du même nom — la réponse a
+ * changé, et c'est un oracle qui l'a changée.
  */
 
 const KEY1 = 0xFF4D;
@@ -30,8 +31,8 @@ const LIGNE = 114;
 /** Une trame : 154 lignes. */
 const TRAME = LIGNE * 154;
 
-/** L'arrêt de `STOP`, en cycles machine du monde (8200 dots). */
-const ARRET = 2050;
+/** L'arrêt de `STOP`, en cycles machine DU PROCESSEUR. Voir `STOP_PAUSE`. */
+const ARRET = 32769;
 
 const CODE = 0xFF80;
 
@@ -114,55 +115,52 @@ describe('l\'écran ne double pas de vitesse', () => {
   });
 });
 
-describe('l\'arrêt de STOP dure 8200 dots — du temps du MONDE', () => {
+describe('l\'arrêt de STOP se compte sur la montre du PROCESSEUR', () => {
   // La question que pandocs laisse ouverte : « 2050 cycles machine », mais
-  // comptés sur quelle montre ? On tranche pour celle du MONDE, parce que
-  // l'arrêt n'est pas un compte d'instructions, c'est un DÉLAI PHYSIQUE — le
-  // temps que l'oscillateur se stabilise. Un délai physique dure la même chose
-  // en secondes quel que soit le régime qui en sortira.
+  // comptés sur quelle montre ? Ce fichier a d'abord tranché pour le MONDE, au
+  // motif qu'un délai d'oscillateur est un délai physique. C'était une jolie
+  // idée sans oracle derrière, et `spsw-tima` l'a démentie : elle ne bascule
+  // QUE vers le double régime, et le compte d'incréments qu'elle attend est
+  // celui d'un arrêt facturé en cycles DU PROCESSEUR.
   //
-  // Conséquence directe et vérifiable : l'écran avance d'autant dans les deux
-  // sens de bascule. Le processeur, lui, paie deux fois plus de SES cycles
-  // quand il en sort en double régime — même durée, montre plus rapide.
-  it('vers le double régime : le monde avance de 2050, le processeur de 4100', () => {
+  // Conséquence directe, et c'est elle qu'on vérifie ici : l'écran voit passer
+  // deux fois MOINS de temps quand la bascule mène au double régime.
+  it('vers le double régime : le processeur paie 32769, le monde n\'en voit que la moitié', () => {
     const rig = makeMachine();
     const mondeAvant = rig.machine.systemCycles;
     const cpuAvant = rig.machine.totalCycles;
     basculer(rig);
 
-    expect(rig.machine.systemCycles - mondeAvant, 'l\'écran a vu passer 8200 dots')
+    expect(rig.machine.totalCycles - cpuAvant, 'la montre du processeur')
       .toBeGreaterThanOrEqual(ARRET);
-    expect(rig.machine.systemCycles - mondeAvant).toBeLessThan(ARRET + 10);
-    expect(rig.machine.totalCycles - cpuAvant, 'et le processeur deux fois plus de ses cycles à lui')
-      .toBeGreaterThanOrEqual(ARRET * 2);
+    expect(rig.machine.systemCycles - mondeAvant, 'et le monde, moitié moins')
+      .toBeLessThan(ARRET / 2 + 10);
   });
 
-  it('et le retour en simple régime dure exactement aussi longtemps, vu de l\'écran', () => {
+  it('le retour en simple régime dure DEUX FOIS PLUS, vu de l\'écran', () => {
     const rig = makeMachine();
     basculer(rig);
 
     const mondeAvant = rig.machine.systemCycles;
     basculer(rig);
 
-    expect(rig.machine.systemCycles - mondeAvant, 'le même délai physique')
+    expect(rig.machine.systemCycles - mondeAvant, 'même compte de cycles processeur, montre plus lente')
       .toBeGreaterThanOrEqual(ARRET);
-    expect(rig.machine.systemCycles - mondeAvant).toBeLessThan(ARRET + 10);
   });
 
   it('l\'écran AVANCE pendant l\'arrêt, il n\'est pas suspendu avec le processeur', () => {
-    // C'est le PROCESSEUR que `STOP` arrête, pas l'écran. Confondre les deux
-    // ferait rater une VBlank entière au jeu qui bascule juste avant.
-    //
-    // Le compte tombe rond : 2 cycles pour lire l'opcode et son octet, puis
-    // 2050 d'arrêt, soit 2052 cycles du monde = 8208 dots = très exactement 18
-    // lignes de 456. On se cale d'abord sur une frontière de ligne, sinon le
-    // reste de la ligne en cours ferait pencher le compte à 17.
+    // C'est le PROCESSEUR que `STOP` arrête, pas l'écran. Et l'arrêt est LONG :
+    // 32769 cycles processeur, soit ~16385 du monde à l'aller, soit 143 lignes —
+    // presque une trame entière. Un jeu qui bascule juste avant une VBlank la
+    // rate. C'est aussi pourquoi le harnais des ROMs a dû passer de 60 à 300
+    // trames : chaque bascule lui en coûte près d'une.
     const rig = makeMachine();
     jusquAuChangementDeLigne(rig);
 
-    const avant = rig.memory.read(LY);
+    const mondeAvant = rig.machine.systemCycles;
     basculer(rig);
 
-    expect((rig.memory.read(LY) - avant + 154) % 154, 'dix-huit lignes de plus').toBe(18);
+    const lignes = Math.floor((rig.machine.systemCycles - mondeAvant) / LIGNE);
+    expect(lignes, 'presque une trame entière de 154 lignes').toBe(143);
   });
 });

@@ -11,8 +11,23 @@ const MACHINE_FREQUENCE = 1048576; // Hz
 const MACHINE_FRAMES_PER_SECONDES = 59.7275;
 const DEFAULT_BUDGET = Number.parseInt(MACHINE_FREQUENCE / MACHINE_FRAMES_PER_SECONDES);
 
-/** Le CPU s'arrête 2050 cycles machine (8200 dots) après une bascule de régime. */
-const STOP_PAUSE = 2050;
+/**
+ * L'ARRÊT QUI SUIT UNE BASCULE, en cycles machine DU PROCESSEUR.
+ *
+ * Ce cahier a longtemps porté 2050, le chiffre de pandocs. Il est faux, et ce
+ * sont les ROMs qui l'ont dit : `spsw-tima` attend TIMA = $80 au réglage 4 kHz
+ * après une bascule, soit 128 incréments de 1024 T-cycles chacun — 131072
+ * T-cycles, donc 32768 cycles machine. Le +1 est la phase, mesurée sur
+ * `spsw-div` (voir `timer.enterStopMode`).
+ *
+ * POURQUOI 2050 SEMBLAIT JUSTE, et c'est joli : 131072 T-cycles, c'est
+ * exactement 512 crans de DIV. Un arrêt de cette durée laisse donc DIV sur la
+ * MÊME valeur qu'avant — indiscernable d'un compteur gelé, tant qu'on ne
+ * regarde que DIV. Seul TIMA à 4 kHz peut trancher, parce que ses 128
+ * incréments ne sont PAS un multiple de 256. C'est très exactement la ligne du
+ * tableau de `spsw-tima` qui refusait de concorder.
+ */
+const STOP_PAUSE = 32769;
 
 export default function(memory, cpu, decoder, clock, serial) {
     class Machine {
@@ -128,29 +143,18 @@ export default function(memory, cpu, decoder, clock, serial) {
             this._doubleSpeed = !this._doubleSpeed;
             this.cgb.KEY1.disarm();
             this.cpu.resumeFromStop();
-            // Le processeur s'arrête le temps que l'oscillateur se stabilise. Ce
-            // n'est pas du confort : `spsw-div` et `spsw-tima` mesurent
-            // exactement ce que le timer a fait, ou pas, pendant cet arrêt.
+            // Le processeur s'arrête le temps que l'oscillateur se stabilise, et
+            // pendant ce temps LE COMPTEUR DU TIMER TOURNE. `STOP` le remet à
+            // zéro, il ne le gèle pas — voir `timer.enterStopMode`, et la
+            // constante `STOP_PAUSE` pour la mesure qui a retourné cette
+            // lecture-là.
             //
-            // Et il n'a rien fait : DIV repart de zéro et ne tourne pas de tout
-            // l'arrêt. Les deux gestes se posent AVANT le paiement, sinon le
-            // timer voit passer les 8200 T-cycles d'un coup — de quoi faire
-            // déborder TIMA deux fois au réglage le plus rapide, et lever deux
-            // interruptions que la ROM n'attend pas.
-            //
-            // (La PHASE exacte du redémarrage du compteur — un cycle machine
-            // avant le processeur, mesurée sur `spsw-div` — est l'affaire du
-            // timer : voir `enterStopMode`.)
-            //
-            // L'ARRÊT SE COMPTE SUR LA MONTRE DU MONDE. Pandocs donne « 2050
-            // cycles machine (8200 dots) » sans dire sur quelle montre, et la
-            // question n'est pas académique : à l'aller le processeur bat deux
-            // fois plus vite qu'au retour. On tranche pour le monde parce que
-            // cet arrêt n'est pas un compte d'instructions — c'est un DÉLAI
-            // PHYSIQUE, le temps que l'oscillateur se stabilise, et un délai
-            // physique dure la même chose en secondes quel que soit le régime
-            // qui en sortira. Le processeur, lui, paie deux fois plus de SES
-            // cycles quand il en ressort en double régime.
+            // L'ARRÊT SE COMPTE SUR LA MONTRE DU PROCESSEUR. La question n'est
+            // pas académique : à l'aller il bat deux fois plus vite qu'au
+            // retour. C'est `spsw-tima` qui tranche — elle ne bascule QUE vers
+            // le double régime, et attend le même compte d'incréments que ce que
+            // donne un arrêt facturé en cycles du processeur. Le monde, lui, en
+            // voit deux fois moins passer quand la bascule mène au double.
             //
             // UNE INTERRUPTION EN ATTENTE COUPE L'ARRÊT COURT. Cet arrêt est un
             // `halt` déguisé, et il se réveille comme un `halt` : dès qu'une
@@ -161,11 +165,8 @@ export default function(memory, cpu, decoder, clock, serial) {
             // dépôt AGE raconte pourquoi : son auteur a rendu une vraie CGB E
             // instable en enchaînant ces ROMs, au point qu'un reset n'y
             // suffisait plus. On émule le comportement, pas le vice.
-            const arret = this.pendingInterrupt
-                ? 0
-                : STOP_PAUSE * (this.doubleSpeed ? 2 : 1);
-            this.timer.enterStopMode(arret);
-            this.cpu.pay(arret);
+            this.timer.enterStopMode();
+            if (!this.pendingInterrupt) this.cpu.pay(STOP_PAUSE);
         }
 
         /**

@@ -175,22 +175,25 @@ deux compteurs sont égaux, donc « rien ne bouge » est vérifiable à l'octet 
 compte donc en DEMIS (`_systemHalfCycles`, entier) et on rend la moitié. Un
 demi-cycle machine vaut exactement deux dots — le PPU ne perd rien.
 
-### D4 — Sur quelle montre se comptent les 2050 cycles — **TRANCHÉE** *(lot 2)*
+### D4 — Combien dure l'arrêt, et sur quelle montre — **RETOURNÉE PAR UN ORACLE**
 
 Question qui n'existait pas quand ce cahier a été écrit, et qui saute aux yeux
 dès qu'on a deux montres : pandocs dit « 2050 cycles machine (8200 dots) »,
 **sans dire lesquels**. À l'aller le processeur bat deux fois plus vite qu'au
 retour : la même phrase donne donc deux durées différentes selon le sens.
 
-**Tranchée : la montre du MONDE.** Cet arrêt n'est pas un compte d'instructions,
-c'est un DÉLAI PHYSIQUE — le temps que l'oscillateur se stabilise — et un délai
-physique dure la même chose en secondes quel que soit le régime qui en sortira.
-L'écran voit donc passer 8200 dots dans les deux sens ; le processeur paie deux
-fois plus de SES cycles quand il en ressort en double régime.
+**Première réponse, et elle était fausse** : la montre du MONDE, au motif qu'un
+délai d'oscillateur est un délai physique et dure la même chose en secondes quel
+que soit le régime. Jolie idée, aucun oracle derrière — et ce cahier le disait
+en toutes lettres, ce qui est au moins ça.
 
-*Aucun oracle disponible ne l'arbitre* : `spsw-mode0`, qui le pourrait, mesure
-l'alignement LY/STAT au dot près et reste rouge pour d'autres raisons. La
-décision est donc à relire si ce lot rouvre.
+**Réponse arbitrée : la montre du PROCESSEUR, et l'arrêt vaut 32769 cycles, pas
+2050.** C'est `spsw-tima` qui a tranché les deux d'un coup (voir le lot 3). Elle
+ne bascule que dans un sens, vers le double régime, et le compte d'incréments
+qu'elle attend n'est celui d'aucun arrêt facturé au monde.
+
+Conséquence à garder en tête : **une bascule coûte presque une trame d'écran**
+(~143 lignes à l'aller). Un jeu qui bascule juste avant une VBlank la rate.
 
 ### D2 — Qui possède KEY1 — **proposition : `core/cgb/`**
 
@@ -199,12 +202,18 @@ indocumentés ; KEY1 est de la même famille — un registre système, pas du de
 La bascule, elle, est demandée par `STOP`, donc par le CPU : il faudra un chemin
 `cpu -> machine -> cgb`. Ce chemin n'existe pas encore.
 
-### D3 — Ce que coûte `STOP` — **proposition : 2050 cycles machine**
+### D3 — Ce que coûte `STOP` — **proposition : 2050 cycles machine** *(RÉFUTÉE)*
 
 Pandocs : le CPU s'arrête 2050 cycles machine (8200 dots) après `STOP`, et **DIV
 ne tourne pas** pendant ce temps. C'est une durée, pas un détail de confort :
 `spsw-div` et `spsw-tima` mesurent exactement ce que le timer a fait — ou pas —
 pendant cet arrêt.
+
+> **Les deux moitiés de cette proposition sont fausses**, et c'est `spsw-tima`
+> qui l'a établi : l'arrêt vaut **32769** cycles machine, et le compteur
+> **tourne** pendant tout ce temps. Voir D4 et le lot 3. Gardé ici tel quel :
+> c'est cette phrase-là qui a orienté tout le lot 3, et savoir d'où venait
+> l'erreur vaut mieux que de la faire disparaître.
 
 ---
 
@@ -277,56 +286,79 @@ maintenant les DEUX façons dont il peut bouger.
 
 ---
 
-### Lot 3 — Le timer double vraiment — **FERMÉ** *(fait AVANT le lot 2)*
+### Lot 3 — Le timer double vraiment — **FERMÉ**, puis **CORRIGÉ**
 
 **Objectif** : DIV et TIMA suivent la montre du CPU, donc battent deux fois plus
-vite dans le monde réel — sauf pendant l'arrêt de `STOP`, où DIV ne tourne pas.
+vite dans le monde réel — et quelque chose de particulier arrive pendant l'arrêt
+de `STOP`.
 
-**Oracle** : `spsw-div-cgbBCE.gb`, **désormais VERT**. C'est le premier des huit
-à tomber.
+**Oracles** : `spsw-div-cgbBCE.gb` **VERT**, et `spsw-stop-prefetch-cgbBCE.gb`
+**VERT** aussi, gagnée par la correction ci-dessous alors qu'elle appartenait au
+lot 1.
 
-**La phrase de pandocs contenait DEUX gestes, et j'en avais lu un** (§FF04) :
-*« this register is reset when executing the `stop` instruction, and only begins
-ticking again once stop mode ends. »* Le gel du compteur, oui — mais aussi **la
-remise à zéro**. Le gel seul laisse DIV à la valeur qu'il avait avant la bascule,
-et ce décalage-là ne se voit dans aucun test de gel. `timer.enterStopMode()`
-porte les deux, et la remise à zéro passe par le chemin ORDINAIRE de DIV pour que
-le front descendant du §An Edge Case joue aussi ici.
+#### Ce que le lot a d'abord conclu — et qui était faux
 
-**Le gel tient en une ligne** parce que le timer ne COMPTE pas des cycles : il
-LIT une horloge, et `_innerCycles` dit où elle en était à la dernière remise à
-zéro. Geler, c'est décaler cette origine — tout ce qui vit dans le référentiel du
-compteur (`dateAlarme`, `cranBase`, `lastReload`) reste juste sans y toucher.
+Pandocs, §FF04 : *« this register is reset when executing the `stop`
+instruction, and only begins ticking again once stop mode ends. »* Deux gestes,
+la remise à zéro ET le gel. Le lot a implémenté les deux, plus une PHASE mesurée
+sur `spsw-div` (le compteur repart un cycle machine avant le processeur), et
+`spsw-div` est passée au vert. Trois valeurs de TIMA sur quatre concordaient
+aussi. Tout allait bien.
 
-**LA PHASE, et c'est elle qui a fait la différence.** Pandocs donne la DURÉE de
-l'arrêt, jamais l'instant exact où le compteur repart par rapport à la première
-instruction d'après. La ROM, elle, le donne au cycle près. En rejouant sa
-séquence exacte chez nous (`ldh [rDIV],a` / N nops / bascule / M nops /
-`ldh a,[rDIV]`), notre marche tombait à M=62 alors qu'elle l'attend à M=61 :
-**le compteur repart UN cycle machine avant le processeur**. Un `-1` sur
-`_innerCycles`, et les cinq groupes de la ROM passent d'un coup.
+Sauf une ligne : `spsw-tima` attend **TIMA = $80 au réglage 4 kHz**, là où le
+modèle gelé rend $00. Et elle attend le drapeau d'interruption du timer levé sur
+trois cadences, sans qu'aucun débordement soit possible en 2050 cycles.
 
-Ce `-1` ne vaut QUE pour le compteur du processeur. L'origine du monde — celle
-que lit l'APU — reste gelée de toute la durée : rien ne mesure sa phase à ce
-niveau-là, et on ne propage pas une correction qu'on ne saurait pas justifier.
+#### Ce que la table dit quand on la résout au lieu de la lire
 
-**Ce que `spsw-tima` dit encore, et il reste rouge.** En rejouant son
-`TEST_DS_IF` chez nous, cadence par cadence :
+Nos quatre valeurs avec le compteur gelé (`$00 $04 $01 $00`) sont exactement ce
+que produit le code AUTOUR du `STOP`. L'écart avec l'attendu donne donc, cadence
+par cadence, ce que l'arrêt lui-même a ajouté — quatre équations, plus quatre
+contraintes sur le drapeau d'interruption :
 
 ```
-                nous        attendu
-4 kHz      $00 $E0      $80 $E0
-262 kHz    $04 $E4      $04 $E4      <- TIMA juste
-65 kHz     $01 $E4      $01 $E4      <- TIMA juste
-16 kHz     $00 $E4      $00 $E4      <- TIMA juste
+4 kHz   (1024 T)   0 + delta = 128 mod 256   AUCUN débordement
+262 kHz   (16 T)   4 + delta =   4 mod 256   au moins un débordement
+65 kHz    (64 T)   1 + delta =   1 mod 256   au moins un débordement
+16 kHz   (256 T)   0 + delta =   0 mod 256   au moins un débordement
 ```
 
-**Trois valeurs de TIMA sur quatre sont justes**, et c'est une confirmation forte
-du modèle « compteur gelé » : elles ne comptent que les quinze cycles de mise en
-place, pas les 2050 de l'arrêt. Ce qui manque est ailleurs — le drapeau
-d'interruption du timer, que ces ROMs attendent levé sans qu'un débordement soit
-possible sur cette durée. Je n'ai pas de lecture qui explique les deux à la fois,
-et je ne pose donc pas de test qui figerait une explication que je n'ai pas.
+**Huit contraintes, une seule solution : l'arrêt vaut 131072 T-cycles**, soit
+32768 cycles machine — et le compteur **tourne** pendant tout ce temps. Pas 2050,
+et pas de gel. Vérifié : les quatre valeurs de TIMA et les quatre drapeaux
+tombent alors exactement.
+
+#### Pourquoi le modèle faux tenait si bien
+
+**131072 T-cycles, c'est EXACTEMENT 512 crans de DIV.** Un compteur qui tourne
+pendant un tel arrêt revient donc sur la même valeur qu'avant : il est
+rigoureusement indiscernable d'un compteur gelé, tant qu'on ne regarde que DIV.
+C'est pour ça que `spsw-div` passait — et c'est probablement pour ça que la doc
+dit « DIV does not tick ». Qui mesure DIV de part et d'autre observe qu'il n'a
+pas bougé, et en conclut le gel.
+
+Ce qui tranche est TIMA à 4 kHz, et lui seul : sa période de 1024 T donne 128
+incréments sur l'arrêt, et **128 n'est pas un multiple de 256**. Les trois autres
+cadences tombent sur des multiples de 256 et rendent la même chose dans les deux
+modèles. Une seule des huit lignes du tableau pouvait dire la vérité.
+
+#### Ce que la correction a coûté et rapporté
+
+- `spsw-stop-prefetch` **est passée au vert** : elle mesure elle aussi ce que
+  `STOP` avale, et la durée juste la satisfait. Deuxième ROM à corroborer.
+- La PHASE mesurée reste vraie, mais elle a déménagé : le `-1` sur `_innerCycles`
+  est devenu le `+1` de `STOP_PAUSE = 32769`.
+- **Le harnais des ROMs est passé de 60 à 300 trames.** Une bascule coûte
+  désormais presque une trame d'écran, et `spsw-div` en enchaîne assez pour ne
+  plus finir dans 60. Elle est apparue ROUGE pendant l'expérience pour cette
+  seule raison — un faux négatif, le genre qui envoie chercher un bug ailleurs.
+- Six tests unitaires ont été PORTÉS, aucun supprimé : ceux qui assuraient le
+  gel assurent maintenant qu'il n'y a pas de gel.
+
+**`spsw-tima` reste ROUGE.** Son `TEST_DS_IF` est désormais juste aux huit octets
+près ; ce qui échoue est son `TEST_INC_EDGE` — vingt-quatre sondes qui placent la
+bascule à un cycle machine près autour d'un front de TIMA, et dont une partie
+distingue les révisions de puce. C'est le mur des phases, comme les autres.
 
 ---
 
@@ -342,13 +374,14 @@ ligne. 114 en simple, **228 en double**, et 114 de nouveau après la bascule
 retour. Le nombre qui double est celui du processeur : c'est la seule façon
 honnête de dire que l'écran, lui, n'a pas bougé.
 
-**La vraie décision du lot est D4** (§4) : l'arrêt de `STOP` se compte sur la
-montre du monde. Conséquence vérifiée : l'écran avance de 18 lignes pile pendant
-une bascule (2 cycles de lecture d'opcode + 2050 d'arrêt = 8208 dots = 18 × 456).
+**La vraie décision du lot est D4** (§4), et elle a été RETOURNÉE depuis par
+`spsw-tima` : l'arrêt de `STOP` se compte sur la montre du PROCESSEUR, pas sur
+celle du monde. Les tests du lot ont été portés en conséquence.
 
-**Et le PPU n'est pas suspendu par `STOP`** — c'est le PROCESSEUR qui l'est.
-Confondre les deux ferait rater une VBlank entière au jeu qui bascule juste
-avant.
+**Et le PPU n'est pas suspendu par `STOP`** — c'est le PROCESSEUR qui l'est. Ça
+ne se voyait guère avec un arrêt de 2050 cycles ; avec les 32769 réels, l'écran
+avance de **143 lignes** pendant une bascule, soit presque une trame entière. Un
+jeu qui bascule juste avant une VBlank la rate pour de bon.
 
 **Oracle** : `spsw-mode0-cgbBCE.gb`, **toujours rouge**, et il faut dire
 pourquoi : ce n'est pas un test de cadence mais d'ALIGNEMENT — il lit LY deux
@@ -385,8 +418,11 @@ séquenceur compte sa période de 8192 sur celle qui ne s'accélère pas. Le
 résultat est le même que le bit 5 du matériel, par un chemin qui ne demande pas
 au reste de l'APU de savoir qu'il existe deux régimes.
 
-Le gel de `STOP` vaut pour les deux origines, ce qui donne gratuitement la phrase
-de pandocs : *« DIV does not tick, so some audio events are not processed. »*
+*(La suite du lot 3 a retiré le gel : le compteur tourne pendant l'arrêt, donc le
+séquenceur aussi — huit périodes à l'aller. La phrase de pandocs « DIV does not
+tick, so some audio events are not processed » tombe avec le reste, et pour la
+même raison : huit est un multiple de huit, donc le séquenceur ressort sur le
+même pas de son cycle. Indiscernable d'un gel, une fois de plus.)*
 
 **Une seconde lecture de la même famille, trouvée en tirant le fil** : PCM12 /
 PCM34 (`$FF76-77`) passaient `machine.totalCycles` à `amplitude(cycle)`, qui
@@ -402,7 +438,7 @@ condition du lot.
 
 ### Lot 5 — Les interruptions pendant l'arrêt — **FERMÉ**
 
-**Objectif** : ce qui se passe quand une IRQ tombe pendant les 2050 cycles.
+**Objectif** : ce qui se passe quand une IRQ tombe pendant l'arrêt.
 
 **La réponse tient en une phrase, et le dépôt AGE la donne** : l'arrêt est un
 `halt` déguisé, et il se réveille comme un `halt` — dès qu'une source ARMÉE lève
@@ -464,7 +500,7 @@ la veille reste ce qu'elle est.
 
 ## 7. Où on en est
 
-**Tous les lots sont fermés. 1800 tests verts, et SEPT ROUGES** — les sept
+**Tous les lots sont fermés. 1801 tests verts, et SIX ROUGES** — les six
 oracles AGE que le jalon n'a pas satisfaits. Le filet du §3, lui, a tenu de bout
 en bout : blargg `cpu_instrs` 11/11, blargg `dmg_sound` 12/12 et mooneye PPU
 12/12 inchangés.
@@ -480,20 +516,20 @@ donne un test rouge, et le message dit ce qu'elle mesure et où elle s'arrête.
 | lot | état | son oracle |
 |---|---|---|
 | 0 — base de temps système | **FERMÉ** | la suite entière |
-| 1 — KEY1 et STOP | **FERMÉ** | bascule mesurée, 4 à 168 fois par ROM |
-| 3 — le timer double vraiment | **FERMÉ** | **`spsw-div` VERT** |
+| 1 — KEY1 et STOP | **FERMÉ** | **`spsw-stop-prefetch` VERT** (gagnée au lot 3) |
+| 3 — le timer double vraiment | **FERMÉ**, puis corrigé | **`spsw-div` et `spsw-stop-prefetch` VERTS** |
 | 2 — le PPU garde son heure | **FERMÉ** | TU (114 → 228 cycles la ligne) |
 | 4 — l'APU et ses deux montres | **FERMÉ** | `dmg_sound` 12/12 tenu |
 | 5 — les IRQ pendant l'arrêt | **FERMÉ** | TU (réveil, bascule maintenue) |
 | F — le régime et le son | **FERMÉ** | `regime-front.test.jsx` |
 
-### Les oracles, un par un — et sept sont encore rouges
+### Les oracles, un par un — et six sont encore rouges
 
 | ROM | état | ce qui l'en sépare |
 |---|---|---|
 | `spsw-div-cgbBCE` | **VERT** | — |
-| `spsw-tima-cgbBC`, `-cgbE` | rouge | TIMA juste sur 3 cadences /4 ; le drapeau d'IRQ qu'elles attendent reste inexpliqué |
-| `spsw-stop-prefetch-cgbBCE` | rouge | ce que `STOP` avale exactement — notre décodeur paie ses deux octets, le matériel non |
+| `spsw-stop-prefetch-cgbBCE` | **VERT** | — (gagnée en corrigeant la durée de l'arrêt) |
+| `spsw-tima-cgbBC`, `-cgbE` | rouge | son `TEST_DS_IF` est juste aux 8 octets près ; son `TEST_INC_EDGE` place la bascule au cycle près autour d'un front |
 | `spsw-mode0-cgbBCE` | rouge | alignement LY/STAT au dot près, à travers cinq bascules |
 | `spsw-ch2-lc-delay-cgbBCE` | rouge | le délai du compteur de longueur au cycle près |
 | `spsw-interrupts-cgbBC`, `-cgbE` | rouge | la phase exacte d'un arrêt écourté |
@@ -501,15 +537,24 @@ donne un test rouge, et le message dit ce qu'elle mesure et où elle s'arrête.
 **Ce que ces sept rouges disent, et ce qu'ils ne disent pas.** Ils ne disent pas
 que la double vitesse ne marche pas : elle marche, et trois choses le prouvent
 autrement — la ligne d'écran passe bien de 114 à 228 cycles processeur, le
-séquenceur audio garde ses 512 Hz au lieu de reculer de quatre pas, et `spsw-div`
-tombe au cycle près. Ils disent que **les sept restants mesurent des phases**, pas
+séquenceur audio garde ses 512 Hz au lieu de reculer de quatre pas, et deux ROMs
+tombent au cycle près. Ils disent que **les six restants mesurent des phases**, pas
 des cadences : où tombe exactement un front par rapport à une instruction, à
 travers une bascule. C'est le même mur que le dot du chapitre PPU, et il se
 franchit avec le même budget — un chapitre, pas un lot.
 
-**La leçon du jalon.** Deux bugs de ce jalon étaient le MÊME bug, et aucun test
-existant ne pouvait les voir : une date lue sur une montre, comparée à une
-origine posée sur l'autre. Le séquenceur de l'APU reculait de quatre pas, PCM12
+**La leçon du jalon, la seconde.** Trois fois sur ce jalon, un modèle faux a
+tenu parce qu'une COÏNCIDENCE ARITHMÉTIQUE le rendait indiscernable du vrai :
+l'arrêt vaut 512 crans de DIV pile, donc DIV semble gelé ; il vaut seize périodes
+de séquenceur, donc l'audio semble gelé aussi ; et il vaut huit périodes vu du
+monde, ce qui retombe sur le même pas du cycle de huit. Chaque fois, une seule
+mesure sur des dizaines pouvait dire la vérité — TIMA à 4 kHz, parce que 128
+n'est pas un multiple de 256. **Quand tout concorde sauf une ligne, c'est la
+ligne qui a raison.**
+
+**La leçon du jalon, la première.** Deux bugs de ce jalon étaient le MÊME bug, et
+aucun test existant ne pouvait les voir : une date lue sur une montre, comparée à
+une origine posée sur l'autre. Le séquenceur de l'APU reculait de quatre pas, PCM12
 demandait le futur, et le rééchantillonneur audio aurait doublé la hauteur du
 son. Tant qu'il n'y a qu'une horloge, ces trois lignes sont indistinguables de
 lignes justes. **Dédoubler le temps ne casse rien : ça RÉVÈLE** ce qui n'avait
@@ -523,15 +568,15 @@ saurais par où commencer. Les quatre ROMs qui n'y figurent pas ne sont pas
 oubliées : je n'ai simplement aucun levier connu à leur proposer, et le dire vaut
 mieux que de les ranger dans une liste qui laisserait croire le contraire.
 
-1. **`spsw-tima`**, le plus près du but — trois valeurs sur quatre déjà justes.
-   Choisir laquelle des deux révisions on vise reste la décision d'ouverture.
-2. **`spsw-stop-prefetch`**, parce que la piste est nommée : notre décodeur paie
-   DEUX lectures pour `STOP` (l'opcode et son second octet) là où le matériel
-   n'en facture qu'une — le `-1` du lot 3 en est la trace, posé sur le compteur
-   plutôt que sur l'instruction. C'est un cycle à reprendre au bon endroit.
-3. **D4** (§4), à relire : la durée de l'arrêt comptée sur la montre du monde
-   n'est arbitrée par aucun oracle disponible.
-4. `spsw-mode0`, qui vaut un chapitre à lui seul.
+1. **`spsw-tima`**, toujours le plus près du but — son `TEST_DS_IF` est juste
+   aux huit octets près depuis la correction du lot 3. Ce qui reste est son
+   `TEST_INC_EDGE` : vingt-quatre sondes qui placent la bascule à un cycle
+   machine près autour d'un front de TIMA. Choisir laquelle des deux révisions
+   on vise reste la décision d'ouverture — l'écart entre elles, `OFS`, ne joue
+   que sur ces sondes-là.
+2. `spsw-mode0` et `spsw-ch2-lc-delay`, qui valent un chapitre à eux deux : ce
+   sont les mêmes phases, côté écran et côté son.
+3. `spsw-interrupts`, en dernier et sans regret (voir le lot 5).
 
 Et une chose à ne PAS refaire : rendre la suite verte en écrivant l'échec dans
 un tableau d'attendus. C'est ce qui a été fait à l'ouverture, et ça a masqué sept

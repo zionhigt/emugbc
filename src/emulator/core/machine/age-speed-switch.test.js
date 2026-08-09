@@ -38,8 +38,20 @@ import { CGB } from '../models';
 const FIXTURES = resolve(process.cwd(), 'src/test/fixtures/age/speed-switch');
 const FIBONACCI = [3, 5, 8, 13, 21, 34];
 
-// De quoi laisser une bascule et ses 2050 cycles d'arrêt se dérouler largement.
-const FRAMES = 60;
+/**
+ * CHAQUE BASCULE COÛTE PRESQUE UNE TRAME, et c'est ce qui a fixé ce nombre.
+ *
+ * L'arrêt qui suit un `STOP` armé vaut 32769 cycles processeur (voir
+ * `STOP_PAUSE`), soit ~143 lignes d'écran. Ces ROMs enchaînent des dizaines de
+ * bascules : `spsw-div` a besoin d'au moins 150 trames pour rendre son verdict,
+ * mesuré. 300 laisse le double de marge.
+ *
+ * Le nombre a longtemps valu 60, du temps où l'arrêt était cru long de 2050
+ * cycles. Il faisait alors passer `spsw-div` pour rouge alors qu'elle n'avait
+ * simplement pas fini de tourner — un faux négatif, et le genre qui envoie
+ * chercher un bug ailleurs.
+ */
+const FRAMES = 300;
 
 /**
  * Les huit ROMs et ce que chacune arbitre. Plus de colonne « attendu » : il n'y
