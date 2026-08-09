@@ -69,6 +69,10 @@ export default class DebugOverlay extends React.Component {
           {/* Le modèle RÉSOLU de la partie en cours : en réglage « auto », c'est
               la seule façon de savoir ce que la cartouche a obtenu. */}
           {this.props.model && <span className="dbg__min">{this.props.model.toUpperCase()}</span>}
+          {/* Le RÉGIME d'horloge. Il ne s'affiche qu'une fois doublé : « 1x »
+              partout tout le temps serait du bruit, « 2x » est l'information —
+              c'est le seul moment où un jeu CGB fait autre chose qu'une DMG. */}
+          {this.props.doubleSpeed && <span className="dbg__min">2x</span>}
         </div>
         <div className="dbg__row">
           trame <span className={heavy ? 'dbg__bad' : ''}>{val('total', ' ms')}</span>

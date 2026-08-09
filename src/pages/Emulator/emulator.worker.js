@@ -70,7 +70,11 @@ self.onmessage = ({ data }) => {
       // curseur avec les lectures du CPU (NR52 avance le sweep du canal 1) —
       // l'interroger après coup, une fois la trame rejouée, lui redemanderait
       // des dates déjà dépassées (voir channel1.js, frequencyAt).
-      machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.totalCycles));
+      // `systemCycles` et non `totalCycles` : le rééchantillonneur convertit des
+      // cycles machine en 44 100 Hz avec une constante, donc il lui faut l'heure
+      // du MONDE. Nourri de celle du processeur, il produirait deux fois trop
+      // d'échantillons dès qu'un jeu passe en double régime — un la à 880.
+      machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.systemCycles));
       machine.onTick((mach) => {
         if (renderer) {
           const t = performance.now();
@@ -107,4 +111,8 @@ self.postMessage({ type: 'ready' });
 setInterval(() => {
   const stats = profiler.stats();
   if (stats) self.postMessage({ type: 'metrics', stats });
+  // Le RÉGIME, à part des métriques : contrairement au modèle il change EN COURS
+  // de partie, à chaque `STOP` armé. Il voyage par le même battement de 5 fois
+  // par seconde, et le main ne rafraîchit que s'il a bougé.
+  if (machine) self.postMessage({ type: 'speed', doubleSpeed: machine.doubleSpeed });
 }, 200);

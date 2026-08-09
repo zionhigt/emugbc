@@ -76,7 +76,20 @@ class Emulator extends React.Component {
   // `model` : le modèle RÉSOLU de la partie en cours ('dmg' ou 'cgb'), à ne pas
   // confondre avec la préférence du store, qui peut valoir 'auto'. Il vient de
   // la machine — donc du worker quand elle y tourne.
-  state = { dockOpen: false, tab: 'cartouche', model: null };
+  // `doubleSpeed` : le RÉGIME d'horloge en cours. Contrairement au modèle, il
+  // change en cours de partie — d'où un rafraîchissement périodique, et non un
+  // message unique au chargement.
+  state = { dockOpen: false, tab: 'cartouche', model: null, doubleSpeed: false };
+
+  /**
+   * Le régime arrive cinq fois par seconde, et il ne change que quelques fois
+   * par partie. On ne re-rend QUE s'il a bougé : un `setState` cinq fois par
+   * seconde re-rendrait la page entière, ce que tout le dessin de l'overlay est
+   * fait pour éviter.
+   */
+  setSpeed = (doubleSpeed) => {
+    if (doubleSpeed !== this.state.doubleSpeed) this.setState({ doubleSpeed });
+  };
 
   canvasRef = React.createRef();
 
@@ -152,6 +165,7 @@ class Emulator extends React.Component {
       // Le modèle RÉSOLU : en 'auto', seule la machine sait ce qu'elle est
       // devenue, et elle est de l'autre côté du postMessage.
       else if (data.type === 'model') this.setState({ model: data.model });
+      else if (data.type === 'speed') this.setSpeed(data.doubleSpeed);
       else if (data.type === 'audio' && this.audioOutput) this.audioOutput.push(data.left, data.right);
     };
     // Une panne APRÈS le bonjour ne peut plus rien sauver (le canvas est parti),
@@ -187,13 +201,17 @@ class Emulator extends React.Component {
     // curseur avec les lectures du CPU (NR52 avance le sweep du canal 1) —
     // l'interroger après coup, une fois la trame rejouée, lui redemanderait des
     // dates déjà dépassées (voir channel1.js, frequencyAt).
-    this.machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.totalCycles));
+    // `systemCycles` : l'heure du MONDE. Voir le même appel dans le worker — le
+    // rééchantillonneur a une constante de cycles par échantillon, l'horloge du
+    // processeur lui ferait doubler la hauteur du son en double régime.
+    this.machine.subscribeCycleUpdate((mach) => sampler.advance(mach.apu, mach.systemCycles));
     this.machine.onTick((mach) => {
       if (renderer) {
         const t = performance.now();
         renderer.draw(mach.ppu.screen);
         this.profiler.recordDraw(performance.now() - t);
       }
+      this.setSpeed(mach.doubleSpeed); // ne re-rend que si le régime a bougé
       const { left, right } = sampler.drain(); // un seul push par trame
       this.audioOutput.push(left, right);
     });
@@ -449,6 +467,7 @@ class Emulator extends React.Component {
             profiler={this.profiler}
             mode={this.worker ? 'WK' : `MT ${this._workerReason || ''}`}
             model={this.state.model}
+            doubleSpeed={this.state.doubleSpeed}
           />
         )}
         <header className="emu-page__header">
