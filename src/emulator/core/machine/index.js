@@ -151,9 +151,35 @@ export default function(memory, cpu, decoder, clock, serial) {
             // physique dure la même chose en secondes quel que soit le régime
             // qui en sortira. Le processeur, lui, paie deux fois plus de SES
             // cycles quand il en ressort en double régime.
-            const arret = STOP_PAUSE * (this.doubleSpeed ? 2 : 1);
+            //
+            // UNE INTERRUPTION EN ATTENTE COUPE L'ARRÊT COURT. Cet arrêt est un
+            // `halt` déguisé, et il se réveille comme un `halt` : dès qu'une
+            // source armée lève son drapeau. La bascule, elle, a bien lieu — ce
+            // n'est pas elle qu'on interrompt, c'est l'attente qui la suit.
+            //
+            // Le manuel Nintendo déconseille explicitement de faire ça, et le
+            // dépôt AGE raconte pourquoi : son auteur a rendu une vraie CGB E
+            // instable en enchaînant ces ROMs, au point qu'un reset n'y
+            // suffisait plus. On émule le comportement, pas le vice.
+            const arret = this.pendingInterrupt
+                ? 0
+                : STOP_PAUSE * (this.doubleSpeed ? 2 : 1);
             this.timer.enterStopMode(arret);
             this.cpu.pay(arret);
+        }
+
+        /**
+         * Une source ARMÉE qui a levé son drapeau — les cinq bits utiles, et
+         * eux seuls : les trois du haut n'existent pas et se lisent à 1.
+         *
+         * C'est la condition de réveil d'un `halt`, et pas celle du SERVICE
+         * d'une interruption : celle-là demande en plus `ime`, et c'est
+         * `dispatch()` qui s'en charge. Les deux ne se confondent pas — un `halt`
+         * se réveille les interruptions coupées, il ne saute simplement nulle
+         * part.
+         */
+        get pendingInterrupt() {
+            return (this.IE & this.IF & 0x1F) !== 0;
         }
 
         emitCyclesUpdate() {
