@@ -12,10 +12,10 @@
     "tunnel": "cloudflared tunnel --url http://localhost:5173",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:unit": "vitest run src/emulator --environment node --exclude '**/blargg.test.js' --exclude '**/mooneye-*.test.js' --exclude '**/dmg-sound.test.js'",
+    "test:unit": "vitest run src/emulator --environment node --exclude '**/blargg.test.js' --exclude '**/mooneye-*.test.js' --exclude '**/dmg-sound.test.js' --exclude '**/age-*.test.js'",
     "test:back": "vitest run src/emulator --environment node",
     "test:ui": "vitest run src/components src/pages",
-    "test:roms": "vitest run src/emulator/core/machine/blargg.test.js src/emulator/core/machine/mooneye-timer.test.js src/emulator/core/machine/dmg-sound.test.js"
+    "test:roms": "vitest run src/emulator/core/machine/blargg.test.js src/emulator/core/machine/mooneye-timer.test.js src/emulator/core/machine/dmg-sound.test.js src/emulator/core/machine/age-speed-switch.test.js"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.0",

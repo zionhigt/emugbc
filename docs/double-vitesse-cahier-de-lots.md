@@ -464,9 +464,18 @@ la veille reste ce qu'elle est.
 
 ## 7. Où on en est
 
-**Tous les lots sont fermés. 1807 tests au vert** (1774 à l'ouverture du lot 3),
-dont blargg `cpu_instrs` 11/11, blargg `dmg_sound` 12/12 et mooneye PPU 12/12
-inchangés — le filet du §3 a tenu de bout en bout.
+**Tous les lots sont fermés. 1800 tests verts, et SEPT ROUGES** — les sept
+oracles AGE que le jalon n'a pas satisfaits. Le filet du §3, lui, a tenu de bout
+en bout : blargg `cpu_instrs` 11/11, blargg `dmg_sound` 12/12 et mooneye PPU
+12/12 inchangés.
+
+**La suite est rouge, et c'est voulu.** `age-speed-switch.test.js` a d'abord été
+écrit en « tableau de bord » : chaque ligne portait son résultat ATTENDU, et
+l'assertion comparait `passe === attendu`, si bien qu'une ROM rouge donnait un
+test vert. L'intention était de mesurer l'avancement sans faire rougir la suite ;
+le résultat était sept verts décrochés sur des oracles qui échouent, ce que ce
+dépôt refuse partout ailleurs. Le mécanisme est supprimé : une ROM qui échoue
+donne un test rouge, et le message dit ce qu'elle mesure et où elle s'arrête.
 
 | lot | état | son oracle |
 |---|---|---|
@@ -484,6 +493,7 @@ inchangés — le filet du §3 a tenu de bout en bout.
 |---|---|---|
 | `spsw-div-cgbBCE` | **VERT** | — |
 | `spsw-tima-cgbBC`, `-cgbE` | rouge | TIMA juste sur 3 cadences /4 ; le drapeau d'IRQ qu'elles attendent reste inexpliqué |
+| `spsw-stop-prefetch-cgbBCE` | rouge | ce que `STOP` avale exactement — notre décodeur paie ses deux octets, le matériel non |
 | `spsw-mode0-cgbBCE` | rouge | alignement LY/STAT au dot près, à travers cinq bascules |
 | `spsw-ch2-lc-delay-cgbBCE` | rouge | le délai du compteur de longueur au cycle près |
 | `spsw-interrupts-cgbBC`, `-cgbE` | rouge | la phase exacte d'un arrêt écourté |
@@ -492,7 +502,7 @@ inchangés — le filet du §3 a tenu de bout en bout.
 que la double vitesse ne marche pas : elle marche, et trois choses le prouvent
 autrement — la ligne d'écran passe bien de 114 à 228 cycles processeur, le
 séquenceur audio garde ses 512 Hz au lieu de reculer de quatre pas, et `spsw-div`
-tombe au cycle près. Ils disent que **les six restants mesurent des phases**, pas
+tombe au cycle près. Ils disent que **les sept restants mesurent des phases**, pas
 des cadences : où tombe exactement un front par rapport à une instruction, à
 travers une bascule. C'est le même mur que le dot du chapitre PPU, et il se
 franchit avec le même budget — un chapitre, pas un lot.
@@ -507,10 +517,22 @@ jamais eu besoin d'être juste.
 
 ### Si le jalon rouvre
 
-Par ordre de valeur décroissante :
+**Ce qui reste, c'est le tableau ci-dessus en entier : SEPT ROMs.** La liste
+ci-dessous n'en est pas le résumé, c'est un ORDRE D'ATTAQUE — les points où je
+saurais par où commencer. Les quatre ROMs qui n'y figurent pas ne sont pas
+oubliées : je n'ai simplement aucun levier connu à leur proposer, et le dire vaut
+mieux que de les ranger dans une liste qui laisserait croire le contraire.
 
 1. **`spsw-tima`**, le plus près du but — trois valeurs sur quatre déjà justes.
    Choisir laquelle des deux révisions on vise reste la décision d'ouverture.
-2. **D4** (§4), à relire : la durée de l'arrêt comptée sur la montre du monde
+2. **`spsw-stop-prefetch`**, parce que la piste est nommée : notre décodeur paie
+   DEUX lectures pour `STOP` (l'opcode et son second octet) là où le matériel
+   n'en facture qu'une — le `-1` du lot 3 en est la trace, posé sur le compteur
+   plutôt que sur l'instruction. C'est un cycle à reprendre au bon endroit.
+3. **D4** (§4), à relire : la durée de l'arrêt comptée sur la montre du monde
    n'est arbitrée par aucun oracle disponible.
-3. `spsw-mode0`, qui vaut un chapitre à lui seul.
+4. `spsw-mode0`, qui vaut un chapitre à lui seul.
+
+Et une chose à ne PAS refaire : rendre la suite verte en écrivant l'échec dans
+un tableau d'attendus. C'est ce qui a été fait à l'ouverture, et ça a masqué sept
+rouges pendant tout le jalon.

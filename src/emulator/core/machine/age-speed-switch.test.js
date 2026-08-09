@@ -21,14 +21,18 @@ import { CGB } from '../models';
  * du CPU à l'arrêt — la suite de Fibonacci si le test réussit. On les lit donc
  * directement, après avoir laissé tourner assez longtemps.
  *
- * CE FICHIER EST UN TABLEAU DE BORD, pas une suite de tests qui doit être verte.
- * Chaque lot du cahier fait basculer une ligne de `ATTENDU` de `false` à `true`,
- * et une ligne qui retomberait à `false` est une régression nommée. C'est la
- * règle d'oracle du cahier CGB (§3), appliquée dès l'ouverture cette fois :
- * l'oracle est là AVANT le code, et il mesure au lieu de juger à la fin.
+ * UNE ROM QUI ÉCHOUE DONNE UN TEST ROUGE. Point.
  *
- * État de départ, mesuré avant d'écrire une ligne du jalon : les huit échouent
- * identiquement, PC figé à 0x12D0 — la signature d'un `STOP` qui n'a rien fait.
+ * Ce fichier a d'abord été écrit en « tableau de bord » : chaque ligne portait
+ * son résultat ATTENDU, et l'assertion comparait `passe === attendu`. Une ROM
+ * rouge donnait donc un test VERT tant que sa ligne disait `false`. L'intention
+ * était de mesurer l'avancement sans faire rougir la suite — le résultat est
+ * qu'on décrochait sept verts sur des oracles qui échouent, ce qui est
+ * exactement le motif que ce dépôt refuse.
+ *
+ * La suite est donc ROUGE tant que les huit ne passent pas, et c'est la vérité :
+ * le jalon a livré ce qu'il pouvait livrer, il n'a pas satisfait ses oracles. Ce
+ * qu'ils mesurent encore est dit dans le message d'échec de chacun.
  */
 
 const FIXTURES = resolve(process.cwd(), 'src/test/fixtures/age/speed-switch');
@@ -38,18 +42,19 @@ const FIBONACCI = [3, 5, 8, 13, 21, 34];
 const FRAMES = 60;
 
 /**
- * `false` = échoue aujourd'hui, et c'est ATTENDU tant que son lot n'est pas fait.
- * Le lot qui la vise est en commentaire ; le faire passe la ligne à `true`.
+ * Les huit ROMs et ce que chacune arbitre. Plus de colonne « attendu » : il n'y
+ * a qu'un attendu, elles passent toutes. Le lot en regard dit seulement où
+ * chercher quand l'une d'elles rougit.
  */
-const ATTENDU = [
-  ['spsw-stop-prefetch-cgbBCE.gb', false], // lot 1 — ce que STOP avale
-  ['spsw-mode0-cgbBCE.gb', false],         // lot 2 — les modes du PPU
-  ['spsw-div-cgbBCE.gb', true],            // lot 3 — DIV
-  ['spsw-tima-cgbBC.gb', false],           // lot 3 — TIMA, révision B/C
-  ['spsw-tima-cgbE.gb', false],            // lot 3 — TIMA, révision E
-  ['spsw-ch2-lc-delay-cgbBCE.gb', false],  // lot 4 — le compteur de longueur
-  ['spsw-interrupts-cgbBC.gb', false],     // lot 5 — les IRQ pendant l'arrêt
-  ['spsw-interrupts-cgbE.gb', false],      // lot 5 — idem, révision E
+const ORACLES = [
+  ['spsw-stop-prefetch-cgbBCE.gb', 'lot 1 — ce que STOP avale exactement'],
+  ['spsw-mode0-cgbBCE.gb', 'lot 2 — l\'alignement LCD/CPU en travers d\'une bascule'],
+  ['spsw-div-cgbBCE.gb', 'lot 3 — DIV remis à zéro, gelé, et sa phase'],
+  ['spsw-tima-cgbBC.gb', 'lot 3 — TIMA, révision B/C'],
+  ['spsw-tima-cgbE.gb', 'lot 3 — TIMA, révision E'],
+  ['spsw-ch2-lc-delay-cgbBCE.gb', 'lot 4 — le compteur de longueur de la voie 2'],
+  ['spsw-interrupts-cgbBC.gb', 'lot 5 — les IRQ pendant l\'arrêt'],
+  ['spsw-interrupts-cgbE.gb', 'lot 5 — idem, révision E'],
 ];
 
 const Cartridge = buildCartridge();
@@ -77,16 +82,16 @@ const runRom = (name) => {
   return { registers, pc: cpu.registers.PC.getValue() };
 };
 
-describe.skipIf(!existsSync(FIXTURES))('AGE speed-switch : le tableau de bord du jalon', () => {
-  it.each(ATTENDU)('%s', (name, attendu) => {
-    const { registers, pc } = runRom(name);
+describe.skipIf(!existsSync(FIXTURES))('AGE speed-switch : les huit oracles du jalon', () => {
+  it.each(ORACLES)('%s — %s', (nom, arbitre) => {
+    const { registers, pc } = runRom(nom);
     const passe = FIBONACCI.every((v, i) => v === registers[i]);
 
     expect(
       passe,
-      attendu
-        ? `régression : registres [${registers}] au lieu de Fibonacci, PC=0x${pc.toString(16)}`
-        : `elle passe maintenant — mettre sa ligne d'ATTENDU à true (PC=0x${pc.toString(16)})`,
-    ).toBe(attendu);
+      `${arbitre}\n` +
+        `      registres [${registers}] au lieu de Fibonacci [${FIBONACCI}], ` +
+        `PC=0x${pc.toString(16)}`,
+    ).toBe(true);
   });
 });
