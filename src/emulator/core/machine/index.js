@@ -131,7 +131,29 @@ export default function(memory, cpu, decoder, clock, serial) {
             // Le processeur s'arrête le temps que l'oscillateur se stabilise. Ce
             // n'est pas du confort : `spsw-div` et `spsw-tima` mesurent
             // exactement ce que le timer a fait, ou pas, pendant cet arrêt.
-            this.cpu.pay(STOP_PAUSE);
+            //
+            // Et il n'a rien fait : DIV repart de zéro et ne tourne pas de tout
+            // l'arrêt. Les deux gestes se posent AVANT le paiement, sinon le
+            // timer voit passer les 8200 T-cycles d'un coup — de quoi faire
+            // déborder TIMA deux fois au réglage le plus rapide, et lever deux
+            // interruptions que la ROM n'attend pas.
+            //
+            // (La PHASE exacte du redémarrage du compteur — un cycle machine
+            // avant le processeur, mesurée sur `spsw-div` — est l'affaire du
+            // timer : voir `enterStopMode`.)
+            //
+            // L'ARRÊT SE COMPTE SUR LA MONTRE DU MONDE. Pandocs donne « 2050
+            // cycles machine (8200 dots) » sans dire sur quelle montre, et la
+            // question n'est pas académique : à l'aller le processeur bat deux
+            // fois plus vite qu'au retour. On tranche pour le monde parce que
+            // cet arrêt n'est pas un compte d'instructions — c'est un DÉLAI
+            // PHYSIQUE, le temps que l'oscillateur se stabilise, et un délai
+            // physique dure la même chose en secondes quel que soit le régime
+            // qui en sortira. Le processeur, lui, paie deux fois plus de SES
+            // cycles quand il en ressort en double régime.
+            const arret = STOP_PAUSE * (this.doubleSpeed ? 2 : 1);
+            this.timer.enterStopMode(arret);
+            this.cpu.pay(arret);
         }
 
         emitCyclesUpdate() {

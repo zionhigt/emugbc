@@ -44,7 +44,7 @@ const FRAMES = 60;
 const ATTENDU = [
   ['spsw-stop-prefetch-cgbBCE.gb', false], // lot 1 — ce que STOP avale
   ['spsw-mode0-cgbBCE.gb', false],         // lot 2 — les modes du PPU
-  ['spsw-div-cgbBCE.gb', false],           // lot 3 — DIV
+  ['spsw-div-cgbBCE.gb', true],            // lot 3 — DIV
   ['spsw-tima-cgbBC.gb', false],           // lot 3 — TIMA, révision B/C
   ['spsw-tima-cgbE.gb', false],            // lot 3 — TIMA, révision E
   ['spsw-ch2-lc-delay-cgbBCE.gb', false],  // lot 4 — le compteur de longueur

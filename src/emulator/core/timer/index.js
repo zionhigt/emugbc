@@ -186,6 +186,63 @@ export default function(machine) {
             return 4 * (cycle - this._innerCycles);
         }
 
+        /**
+         * DU TEMPS QUE LE COMPTEUR N'A PAS VU PASSER — l'arrêt de `STOP`.
+         *
+         * Le CPU s'arrête 2050 cycles machine après une bascule de régime, et
+         * pandocs est explicite : DIV ne tourne pas pendant ce temps-là. Ce n'est
+         * pas du confort, `spsw-div` et `spsw-tima` lisent DIV de part et d'autre
+         * d'une bascule et comparent.
+         *
+         * Le geste tient en une ligne parce que le timer ne COMPTE pas des
+         * cycles : il LIT une horloge, et `_innerCycles` dit où elle en était
+         * quand on l'a remis à zéro. Geler le compteur, c'est donc décaler cette
+         * origine d'autant — l'horloge avance, la différence ne bouge pas. Tout
+         * ce qui vit dans le référentiel du compteur (`dateAlarme`, `cranBase`,
+         * `lastReload`) reste juste sans y toucher, puisque ce référentiel-là
+         * n'a pas bougé.
+         *
+         * À appeler AVANT que le processeur paie l'arrêt : après, le compteur
+         * aurait déjà vu passer les 8200 T-cycles d'un coup.
+         *
+         * @param {number} duration en cycles machine, l'unité de `totalCycles`
+         */
+        freeze(duration) {
+            this._innerCycles += duration;
+        }
+
+        /**
+         * CE QUE `STOP` FAIT AU TIMER, et c'est pandocs qui le dit en une phrase
+         * (§FF04) : *« this register is reset when executing the `stop`
+         * instruction, and only begins ticking again once stop mode ends. »*
+         *
+         * DEUX gestes, donc, et il faut les deux — n'en faire qu'un laisse la
+         * moitié du décalage que `spsw-div` mesure :
+         *
+         * 1. la remise à zéro, par le chemin ORDINAIRE de DIV et non en forçant
+         *    l'origine : écrire DIV peut faire tomber le bit surveillé, donc
+         *    pousser TIMA d'un cran (le §An Edge Case du chapitre timer). Cette
+         *    bizarrerie-là vaut aussi pour `STOP`, et elle est déjà écrite ;
+         * 2. le gel du compteur pendant tout l'arrêt.
+         *
+         * ATOMIQUE avec le paiement de l'arrêt : l'origine part de toute la
+         * durée d'un coup, donc entre cet appel et `cpu.pay(duration)` elle est
+         * EN AVANCE sur l'horloge et le compteur lirait n'importe quoi. Personne
+         * ne regarde entre les deux — mais les deux lignes ne se séparent pas.
+         *
+         * @param {number} duration l'arrêt, en cycles machine
+         */
+        enterStopMode(duration) {
+            this.DIV.setValue(0);
+            this.freeze(duration);
+            // LA PHASE, ET ELLE EST MESURÉE. Pandocs donne la DURÉE de l'arrêt,
+            // pas l'instant exact où le compteur repart par rapport à la
+            // première instruction d'après. `spsw-div` le donne au cycle près :
+            // le compteur repart UN cycle machine AVANT le processeur. Sans ce
+            // décalage la ROM lit encore 0 là où elle attend 1.
+            this._innerCycles -= 1;
+        }
+
         get innerCycles() {
             return this.innerCyclesAt(this.totalMachineCycles);
         }
